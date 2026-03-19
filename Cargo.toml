@@ -1,0 +1,17 @@
+[package]
+name = "dash-spv-ui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+description = "Cross-platform Dash SPV wallet GUI"
+license = "MIT"
+repository = "https://github.com/xdustinface/dash-spv-ui"
+
+[dependencies]
+dioxus = { version = "0.7", features = ["desktop"] }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+tracing = "0.1"
+
+[dev-dependencies]
