@@ -2,11 +2,15 @@ use dioxus::prelude::*;
 
 use crate::backend::mock::MockBackend;
 use crate::backend::r#trait::SpvBackend;
+use crate::backend::types::TransactionDirection;
 use crate::event_bridge::use_event_bridge;
+use crate::state::view_models::{format_balance, format_transaction};
+use crate::state::wallet::WalletState;
 
 #[component]
 pub fn Dashboard() -> Element {
     let backend = use_context::<Signal<MockBackend>>();
+    let wallet = use_context::<Signal<WalletState>>();
 
     // Start the event bridge coroutine to pipe backend events into UI state.
     use_event_bridge();
@@ -18,16 +22,135 @@ pub fn Dashboard() -> Element {
         }
     });
 
+    let balance = wallet.read().balance;
+    let transactions = wallet.read().transactions.clone();
+
     rsx! {
         div {
-            class: "text-white",
-            h1 {
-                class: "text-2xl font-bold mb-4",
-                "Dashboard"
+            class: "text-white p-6",
+
+            // Balance section
+            div {
+                class: "mb-8",
+                h2 {
+                    class: "text-gray-400 text-sm uppercase tracking-wide mb-2",
+                    "Available Balance"
+                }
+                p {
+                    class: "text-4xl font-bold",
+                    "{format_balance(balance.confirmed)}"
+                }
+
+                // Breakdown cards for non-zero secondary balances
+                div {
+                    class: "flex gap-4 mt-4",
+
+                    if balance.pending > 0 {
+                        BalanceCard { label: "Pending", amount: balance.pending }
+                    }
+                    if balance.immature > 0 {
+                        BalanceCard { label: "Immature", amount: balance.immature }
+                    }
+                    if balance.locked > 0 {
+                        BalanceCard { label: "Locked", amount: balance.locked }
+                    }
+                }
+            }
+
+            // Transaction history
+            div {
+                h3 {
+                    class: "text-lg font-semibold mb-4",
+                    "Transactions"
+                }
+
+                if transactions.is_empty() {
+                    div {
+                        class: "text-gray-500 text-center py-12",
+                        p { class: "text-lg", "No transactions yet" }
+                    }
+                } else {
+                    div {
+                        class: "space-y-1",
+                        for (i, tx) in transactions.iter().enumerate() {
+                            {
+                                let view = format_transaction(tx);
+                                let is_sent = tx.direction == TransactionDirection::Sent;
+                                let bg = if i % 2 == 0 { "bg-gray-800" } else { "bg-gray-850" };
+
+                                rsx! {
+                                    div {
+                                        class: "flex items-center justify-between {bg} hover:bg-gray-750 rounded-lg p-4 transition-colors",
+
+                                        // Left: direction + address + time
+                                        div {
+                                            class: "flex items-center gap-3",
+                                            span {
+                                                class: if is_sent { "text-red-400 text-lg" } else { "text-green-400 text-lg" },
+                                                if is_sent { "▲" } else { "▼" }
+                                            }
+                                            div {
+                                                p {
+                                                    class: "font-mono text-sm",
+                                                    "{view.address_short}"
+                                                }
+                                                p {
+                                                    class: "text-gray-500 text-xs",
+                                                    "{view.timestamp_display}"
+                                                }
+                                            }
+                                        }
+
+                                        // Right: amount + confirmations + badges
+                                        div {
+                                            class: "text-right flex items-center gap-2",
+                                            div {
+                                                p {
+                                                    class: if is_sent { "text-red-400 font-medium" } else { "text-green-400 font-medium" },
+                                                    "{view.amount_display}"
+                                                }
+                                                p {
+                                                    class: "text-gray-500 text-xs",
+                                                    "{view.confirmations_display}"
+                                                }
+                                            }
+                                            // Badges
+                                            if view.is_instant_send {
+                                                span {
+                                                    class: "bg-blue-600 text-xs rounded-full px-2 py-0.5",
+                                                    "IS"
+                                                }
+                                            }
+                                            if view.is_chain_locked {
+                                                span {
+                                                    class: "bg-purple-600 text-xs rounded-full px-2 py-0.5",
+                                                    "CL"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn BalanceCard(label: &'static str, amount: u64) -> Element {
+    rsx! {
+        div {
+            class: "bg-gray-800 rounded-lg p-4",
+            p {
+                class: "text-gray-400 text-xs uppercase tracking-wide mb-1",
+                "{label}"
             }
             p {
-                class: "text-gray-400",
-                "Wallet overview will appear here."
+                class: "text-sm font-medium",
+                "{format_balance(amount)}"
             }
         }
     }
