@@ -13,7 +13,7 @@ pub fn NetworkSelect() -> Element {
         let navigator = navigator;
         move |_| {
             app_state.write().select_network(network);
-            navigator.push(Route::Dashboard {});
+            navigator.push(Route::WalletChoice {});
         }
     };
 

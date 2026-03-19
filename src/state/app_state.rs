@@ -37,6 +37,7 @@ impl AppState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     NetworkSelect,
+    WalletChoice,
     WalletCreate,
     WalletImport,
     Dashboard,
