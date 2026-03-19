@@ -1,0 +1,22 @@
+# Rust
+target/
+
+# Dioxus
+.dioxus/
+dist/
+
+# Node (Tailwind)
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
