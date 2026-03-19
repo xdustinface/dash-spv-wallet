@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/xdustinface/dash-spv-ui"
 
 [dependencies]
-dioxus = { version = "0.7", features = ["desktop"] }
+dioxus = { version = "0.7", features = ["desktop", "router"] }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
