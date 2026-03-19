@@ -52,7 +52,7 @@ dx serve
 dx build --release
 
 # Run tests
-cargo test --lib
+cargo test
 ```
 
 ## Development

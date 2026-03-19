@@ -68,8 +68,8 @@ dx serve --desktop          # Desktop-specific
 dx build --release          # Release build
 
 # Testing
-cargo test --lib            # Run tests (skip doc-tests)
-cargo test --lib -- --nocapture  # With output
+cargo test            # Run tests (skip doc-tests)
+cargo test -- --nocapture  # With output
 
 # Linting
 cargo fmt --check           # Check formatting
@@ -89,7 +89,7 @@ dx check                    # Check rules-of-hooks
 - Every public function in `state/` and `backend/` must have tests
 - View model tests use `#[test]`, not Dioxus rendering
 - Backend tests run against the mock implementation
-- Use `cargo test --lib` to skip doc-test compilation
+- Use `cargo test` to skip doc-test compilation
 - Write tests early, test all critical edge cases
 - Before writing a new test function, check if an existing test can be extended
 

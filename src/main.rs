@@ -1,3 +1,5 @@
+mod backend;
+
 use dioxus::prelude::*;
 
 fn main() {
