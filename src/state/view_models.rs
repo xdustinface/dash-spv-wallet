@@ -1,5 +1,38 @@
 use crate::backend::types::{TransactionDirection, TransactionRecord};
 
+const SATS_PER_DASH: u64 = 100_000_000;
+
+/// Parse a DASH amount string to satoshis.
+///
+/// Accepts non-negative decimal strings with up to 8 decimal places.
+/// Returns `None` for empty, negative, non-numeric, or overly precise input.
+pub fn parse_dash_amount(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() || s.starts_with('-') {
+        return None;
+    }
+
+    let (whole_str, frac_str) = match s.split_once('.') {
+        Some((w, f)) => {
+            if f.len() > 8 {
+                return None;
+            }
+            (w, f)
+        }
+        None => (s, ""),
+    };
+
+    let whole: u64 = whole_str.parse().ok()?;
+    let frac: u64 = if frac_str.is_empty() {
+        0
+    } else {
+        let padded = format!("{frac_str:0<8}");
+        padded.parse().ok()?
+    };
+
+    whole.checked_mul(SATS_PER_DASH)?.checked_add(frac)
+}
+
 /// Format a satoshi amount as DASH string (e.g., "1.23456789 DASH").
 pub fn format_balance(satoshis: u64) -> String {
     let whole = satoshis / 100_000_000;
@@ -347,5 +380,47 @@ mod tests {
 
         let view = format_transaction(&tx);
         assert_eq!(view.address_short, "");
+    }
+
+    // -- parse_dash_amount --
+
+    #[test]
+    fn parse_dash_amount_zero() {
+        assert_eq!(parse_dash_amount("0"), Some(0));
+    }
+
+    #[test]
+    fn parse_dash_amount_one() {
+        assert_eq!(parse_dash_amount("1"), Some(100_000_000));
+    }
+
+    #[test]
+    fn parse_dash_amount_decimal() {
+        assert_eq!(parse_dash_amount("1.5"), Some(150_000_000));
+    }
+
+    #[test]
+    fn parse_dash_amount_one_satoshi() {
+        assert_eq!(parse_dash_amount("0.00000001"), Some(1));
+    }
+
+    #[test]
+    fn parse_dash_amount_empty() {
+        assert_eq!(parse_dash_amount(""), None);
+    }
+
+    #[test]
+    fn parse_dash_amount_non_numeric() {
+        assert_eq!(parse_dash_amount("abc"), None);
+    }
+
+    #[test]
+    fn parse_dash_amount_negative() {
+        assert_eq!(parse_dash_amount("-1"), None);
+    }
+
+    #[test]
+    fn parse_dash_amount_too_many_decimals() {
+        assert_eq!(parse_dash_amount("1.123456789"), None);
     }
 }
