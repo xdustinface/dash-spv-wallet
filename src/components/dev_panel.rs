@@ -1,0 +1,162 @@
+use dioxus::prelude::*;
+
+use crate::state::app_state::AppState;
+use crate::state::dev_log::{DevLog, EventCategory};
+
+#[component]
+pub fn DevPanel() -> Element {
+    let app_state = use_context::<Signal<AppState>>();
+    let mut dev_log = use_context::<Signal<DevLog>>();
+
+    let mut is_open = use_signal(|| false);
+    let mut filter = use_signal(|| None::<EventCategory>);
+
+    if !app_state.read().dev_mode {
+        return rsx! {};
+    }
+
+    let entries: Vec<(u64, EventCategory, String)> = {
+        let log = dev_log.read();
+        log.entries(*filter.read())
+            .iter()
+            .map(|e| (e.timestamp, e.category, e.message.clone()))
+            .collect()
+    };
+
+    let entry_count = entries.len();
+
+    rsx! {
+        div {
+            class: "border-t border-gray-700 bg-gray-850",
+
+            // Toggle bar
+            button {
+                class: "flex items-center justify-between w-full px-4 py-1 text-xs text-gray-400 hover:bg-gray-700 transition-colors",
+                onclick: move |_| {
+                    let current = *is_open.read();
+                    is_open.set(!current);
+                },
+
+                span {
+                    if *is_open.read() {
+                        "Dev Log [{entry_count}]"
+                    } else {
+                        "Dev Log [{entry_count}]"
+                    }
+                }
+
+                span {
+                    class: "text-gray-500",
+                    if *is_open.read() { "Collapse" } else { "Expand" }
+                }
+            }
+
+            // Panel content
+            if *is_open.read() {
+                div {
+                    class: "px-4 py-2",
+
+                    // Controls row
+                    div {
+                        class: "flex items-center gap-2 mb-2",
+
+                        // Filter dropdown
+                        FilterButton { label: "All", active: filter.read().is_none(), onclick: move |_| filter.set(None) }
+                        FilterButton { label: "Sync", active: *filter.read() == Some(EventCategory::Sync), onclick: move |_| filter.set(Some(EventCategory::Sync)) }
+                        FilterButton { label: "Network", active: *filter.read() == Some(EventCategory::Network), onclick: move |_| filter.set(Some(EventCategory::Network)) }
+                        FilterButton { label: "Wallet", active: *filter.read() == Some(EventCategory::Wallet), onclick: move |_| filter.set(Some(EventCategory::Wallet)) }
+                        FilterButton { label: "Error", active: *filter.read() == Some(EventCategory::Error), onclick: move |_| filter.set(Some(EventCategory::Error)) }
+
+                        // Spacer
+                        div { class: "flex-1" }
+
+                        // Clear button
+                        button {
+                            class: "px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-400 transition-colors",
+                            onclick: move |_| dev_log.write().clear(),
+                            "Clear"
+                        }
+                    }
+
+                    // Log entries
+                    div {
+                        class: "max-h-48 overflow-y-auto font-mono text-xs space-y-0.5",
+
+                        if entries.is_empty() {
+                            p {
+                                class: "text-gray-600 py-2",
+                                "No events yet."
+                            }
+                        }
+
+                        for (timestamp, category, message) in entries.iter() {
+                            div {
+                                class: "flex items-start gap-2 py-0.5",
+
+                                // Timestamp
+                                span {
+                                    class: "text-gray-600 shrink-0",
+                                    "{format_time(*timestamp)}"
+                                }
+
+                                // Category badge
+                                span {
+                                    class: "shrink-0 px-1.5 py-0.5 rounded text-xs font-medium {category_badge_class(category)}",
+                                    "{category_label(category)}"
+                                }
+
+                                // Message
+                                span {
+                                    class: "text-gray-300",
+                                    "{message}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn FilterButton(label: &'static str, active: bool, onclick: EventHandler<MouseEvent>) -> Element {
+    let class = if active {
+        "px-2 py-1 text-xs rounded bg-blue-600 text-white"
+    } else {
+        "px-2 py-1 text-xs rounded bg-gray-700 text-gray-400 hover:bg-gray-600 transition-colors"
+    };
+
+    rsx! {
+        button {
+            class,
+            onclick: move |evt| onclick.call(evt),
+            "{label}"
+        }
+    }
+}
+
+fn category_label(category: &EventCategory) -> &'static str {
+    match category {
+        EventCategory::Sync => "SYNC",
+        EventCategory::Network => "NET",
+        EventCategory::Wallet => "WALLET",
+        EventCategory::Error => "ERR",
+    }
+}
+
+fn category_badge_class(category: &EventCategory) -> &'static str {
+    match category {
+        EventCategory::Sync => "bg-blue-900 text-blue-300",
+        EventCategory::Network => "bg-green-900 text-green-300",
+        EventCategory::Wallet => "bg-purple-900 text-purple-300",
+        EventCategory::Error => "bg-red-900 text-red-300",
+    }
+}
+
+fn format_time(timestamp: u64) -> String {
+    let secs = timestamp % 60;
+    let mins = (timestamp / 60) % 60;
+    let hours = (timestamp / 3600) % 24;
+    format!("{hours:02}:{mins:02}:{secs:02}")
+}

@@ -1,5 +1,6 @@
 mod backend;
 mod components;
+mod event_bridge;
 mod router;
 mod screens;
 mod state;
@@ -13,6 +14,10 @@ use crate::backend::mock::MockBackend;
 use crate::backend::types::Network;
 use crate::router::Route;
 use crate::state::app_state::AppState;
+use crate::state::connection::ConnectionState;
+use crate::state::dev_log::DevLog;
+use crate::state::network::NetworkInfo;
+use crate::state::wallet::WalletState;
 
 #[derive(Parser)]
 #[command(name = "dash-spv-ui", about = "Dash SPV Wallet")]
@@ -100,6 +105,12 @@ fn app() -> Element {
     let _backend = use_context_provider(|| {
         Signal::new(MockBackend::builder(network).build())
     });
+
+    // Provide reactive state signals for the event bridge.
+    let _connection = use_context_provider(|| Signal::new(ConnectionState::default()));
+    let _wallet = use_context_provider(|| Signal::new(WalletState::default()));
+    let _network_info = use_context_provider(|| Signal::new(NetworkInfo::default()));
+    let _dev_log = use_context_provider(|| Signal::new(DevLog::default()));
 
     rsx! {
         Router::<Route> {}

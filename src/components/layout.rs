@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+use crate::components::dev_panel::DevPanel;
 use crate::components::sidebar::Sidebar;
 use crate::components::status_bar::StatusBar;
 use crate::state::app_state::AppState;
@@ -32,6 +33,7 @@ pub fn AppLayout() -> Element {
                     Outlet::<crate::router::Route> {}
                 }
 
+                DevPanel {}
                 StatusBar {}
             }
         }
