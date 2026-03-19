@@ -12,6 +12,7 @@ dioxus = { version = "0.7", features = ["desktop"] }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
+hex = "0.4"
 tracing = "0.1"
 
 [dev-dependencies]
