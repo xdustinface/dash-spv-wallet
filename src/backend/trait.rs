@@ -37,6 +37,9 @@ pub trait SpvBackend: Send + Sync + 'static {
 
     // -- Wallet --
 
+    /// Generate a new BIP-39 mnemonic phrase.
+    fn generate_mnemonic(&self) -> BackendResult<String>;
+
     /// Create a new wallet from a mnemonic phrase.
     fn create_wallet(&self, mnemonic: &str) -> impl Future<Output = BackendResult<()>> + Send;
 

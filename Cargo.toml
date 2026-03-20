@@ -8,9 +8,10 @@ license = "MIT"
 repository = "https://github.com/xdustinface/dash-spv-ui"
 
 [dependencies]
-dashcore = { path = "../rust-dashcore/dash", features = ["serde"] }
-dash-spv = { path = "../rust-dashcore/dash-spv" }
-key-wallet = { path = "../rust-dashcore/key-wallet" }
+dashcore = { path = "../rust-dashcore-spv-ui/dash", features = ["serde"] }
+dash-spv = { path = "../rust-dashcore-spv-ui/dash-spv" }
+key-wallet = { path = "../rust-dashcore-spv-ui/key-wallet" }
+key-wallet-manager = { path = "../rust-dashcore-spv-ui/key-wallet-manager" }
 
 dioxus = { version = "0.7", features = ["desktop", "router"] }
 clap = { version = "4", features = ["derive"] }

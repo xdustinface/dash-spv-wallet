@@ -165,6 +165,10 @@ impl SpvBackend for MockBackend {
         SyncProgress::default()
     }
 
+    fn generate_mnemonic(&self) -> BackendResult<String> {
+        Ok("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string())
+    }
+
     async fn create_wallet(&self, mnemonic: &str) -> BackendResult<()> {
         if self.wallet_loaded.load(Ordering::Relaxed) {
             return Err(BackendError::WalletAlreadyExists);

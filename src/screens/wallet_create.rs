@@ -5,18 +5,6 @@ use crate::backend::r#trait::SpvBackend;
 use crate::router::Route;
 use crate::state::app_state::AppState;
 
-/// BIP-39 test word list subset for generating display mnemonics.
-const WORD_LIST: [&str; 64] = [
-    "abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract",
-    "absurd", "abuse", "access", "accident", "account", "accuse", "achieve", "acid",
-    "across", "act", "action", "actor", "actress", "actual", "adapt", "add",
-    "addict", "address", "adjust", "admit", "adult", "advance", "advice", "afford",
-    "agree", "ahead", "aim", "air", "airport", "aisle", "alarm", "album",
-    "alert", "alien", "almost", "alone", "alpha", "already", "also", "alter",
-    "always", "amateur", "amazing", "among", "amount", "amused", "anchor", "ancient",
-    "anger", "angle", "animal", "ankle", "annual", "another", "anxiety", "apart",
-];
-
 /// Step in the wallet creation flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Step {
@@ -36,15 +24,20 @@ pub fn WalletCreate() -> Element {
     let mut is_creating = use_signal(|| false);
 
     let generate_mnemonic = move |_| {
-        let words: Vec<String> = (0..12)
-            .map(|i| {
-                // Simple deterministic-looking selection; real generation will come with NativeBackend.
-                let index = (i * 7 + 3) % WORD_LIST.len();
-                WORD_LIST[index].to_string()
-            })
-            .collect();
-        mnemonic_words.set(words);
-        step.set(Step::DisplayMnemonic);
+        match backend.read().generate_mnemonic() {
+            Ok(phrase) => {
+                let words: Vec<String> = phrase
+                    .split_whitespace()
+                    .map(|w| w.to_string())
+                    .collect();
+                mnemonic_words.set(words);
+                error_message.set(None);
+                step.set(Step::DisplayMnemonic);
+            }
+            Err(e) => {
+                error_message.set(Some(e.to_string()));
+            }
+        }
     };
 
     let save_and_create = move |_| async move {
@@ -81,6 +74,13 @@ pub fn WalletCreate() -> Element {
                         class: "text-muted mb-10",
                         "Generate a new recovery phrase to create your wallet"
                     }
+                    if let Some(err) = error_message.read().as_ref() {
+                        p {
+                            class: "text-error mb-4",
+                            "{err}"
+                        }
+                    }
+
                     button {
                         class: "px-8 py-3 bg-dash hover:bg-dash-hover rounded-lg text-lg font-semibold transition-colors",
                         onclick: generate_mnemonic,

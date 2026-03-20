@@ -1,15 +1,19 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
+use std::path::PathBuf;
+
 use dash_spv::network::manager::PeerNetworkManager;
 use dash_spv::storage::DiskStorageManager;
 use dash_spv::sync::SyncEvent;
 use dash_spv::network::NetworkEvent;
 use dash_spv::{ClientConfig, DashSpvClient};
-use key_wallet::manager::{WalletEvent, WalletManager};
+use key_wallet_manager::{WalletEvent, WalletManager};
+use key_wallet::mnemonic::Language;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+use key_wallet::Mnemonic;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
@@ -53,6 +57,37 @@ impl NativeBackend {
             shutdown_token: tokio::sync::Mutex::new(None),
             client_task: tokio::sync::Mutex::new(None),
             bridge_task: tokio::sync::Mutex::new(None),
+        }
+    }
+}
+
+impl NativeBackend {
+    fn mnemonic_path(&self) -> PathBuf {
+        self.config.wallet_dir().join("wallet.mnemonic")
+    }
+
+    fn save_mnemonic(&self, mnemonic: &str) -> BackendResult<()> {
+        let path = self.mnemonic_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| BackendError::Storage(e.to_string()))?;
+        }
+        std::fs::write(&path, mnemonic)
+            .map_err(|e| BackendError::Storage(e.to_string()))
+    }
+
+    fn read_mnemonic(&self) -> BackendResult<Option<String>> {
+        let path = self.mnemonic_path();
+        if !path.exists() {
+            return Ok(None);
+        }
+        let contents = std::fs::read_to_string(&path)
+            .map_err(|e| BackendError::Storage(e.to_string()))?;
+        let trimmed = contents.trim().to_string();
+        if trimmed.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(trimmed))
         }
     }
 }
@@ -166,6 +201,12 @@ impl SpvBackend for NativeBackend {
             .unwrap_or_default()
     }
 
+    fn generate_mnemonic(&self) -> BackendResult<String> {
+        let mnemonic = Mnemonic::generate(12, Language::English)
+            .map_err(|e| BackendError::Internal(e.to_string()))?;
+        Ok(mnemonic.phrase())
+    }
+
     async fn create_wallet(&self, mnemonic: &str) -> BackendResult<()> {
         let mut wallet = self.wallet.write().await;
         if wallet.wallet_count() > 0 {
@@ -179,19 +220,36 @@ impl SpvBackend for NativeBackend {
                 WalletAccountCreationOptions::default(),
             )
             .map_err(|e| match e {
-                key_wallet::manager::WalletError::InvalidMnemonic(msg) => {
+                key_wallet_manager::WalletError::InvalidMnemonic(msg) => {
                     BackendError::InvalidMnemonic(msg)
                 }
-                key_wallet::manager::WalletError::WalletExists(_) => {
+                key_wallet_manager::WalletError::WalletExists(_) => {
                     BackendError::WalletAlreadyExists
                 }
                 other => BackendError::Internal(other.to_string()),
             })?;
+        self.save_mnemonic(mnemonic)?;
         Ok(())
     }
 
     async fn load_wallet(&self) -> BackendResult<bool> {
-        Ok(false)
+        let mnemonic = match self.read_mnemonic()? {
+            Some(m) => m,
+            None => return Ok(false),
+        };
+        let mut wallet = self.wallet.write().await;
+        if wallet.wallet_count() > 0 {
+            return Ok(true);
+        }
+        wallet
+            .create_wallet_from_mnemonic(
+                &mnemonic,
+                "",
+                0,
+                WalletAccountCreationOptions::default(),
+            )
+            .map_err(|e| BackendError::Internal(e.to_string()))?;
+        Ok(true)
     }
 
     fn get_receive_address(&self) -> BackendResult<String> {

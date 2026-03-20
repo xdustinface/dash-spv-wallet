@@ -898,6 +898,7 @@ dependencies = [
  "hickory-resolver",
  "indexmap",
  "key-wallet",
+ "key-wallet-manager",
  "log",
  "rand 0.8.5",
  "rayon",
@@ -923,6 +924,7 @@ dependencies = [
  "dirs",
  "hex",
  "key-wallet",
+ "key-wallet-manager",
  "serde",
  "tokio",
  "tokio-util",
@@ -2726,6 +2728,8 @@ version = "0.42.0"
 dependencies = [
  "async-trait",
  "base58ck",
+ "bincode",
+ "bincode_derive",
  "bip39",
  "bitflags 2.11.0",
  "dashcore",
@@ -2734,11 +2738,26 @@ dependencies = [
  "getrandom 0.2.17",
  "hex",
  "rand 0.8.5",
+ "secp256k1",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
+name = "key-wallet-manager"
+version = "0.42.0"
+dependencies = [
+ "async-trait",
+ "bincode",
+ "dashcore",
+ "dashcore_hashes",
+ "key-wallet",
  "rayon",
  "secp256k1",
- "sha2",
  "tokio",
- "tracing",
  "zeroize",
 ]
 
