@@ -9,7 +9,7 @@ use super::paths;
 
 /// Application configuration loaded from TOML file and CLI overrides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct AppConfig {
+pub struct AppConfig {
     pub network: Network,
     pub data_dir: PathBuf,
     #[serde(default)]
@@ -26,6 +26,10 @@ pub(crate) struct AppConfig {
     /// Backend selection (CLI-only, not persisted). "native" or "ffi".
     #[serde(skip)]
     pub backend: String,
+    /// Explicit peer addresses to connect to (CLI/test-only, not persisted).
+    /// When non-empty, the SPV client connects exclusively to these peers.
+    #[serde(skip)]
+    pub peers: Vec<String>,
 }
 
 fn default_window_width() -> u32 {
@@ -48,6 +52,7 @@ impl Default for AppConfig {
             window_height: default_window_height(),
             mock_mode: false,
             backend: "native".to_string(),
+            peers: Vec::new(),
         }
     }
 }
@@ -152,7 +157,7 @@ struct Cli {
 
 /// Errors that can occur during configuration loading or saving.
 #[derive(Debug)]
-pub(crate) enum ConfigError {
+pub enum ConfigError {
     Io(io::Error),
     Parse(String),
 }

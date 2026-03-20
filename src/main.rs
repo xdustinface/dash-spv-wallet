@@ -1,6 +1,8 @@
-mod backend;
+// Re-export library modules so binary-only modules can use `crate::backend` and `crate::config`.
+use dash_spv_ui::backend;
+use dash_spv_ui::config;
+
 mod components;
-mod config;
 mod event_bridge;
 mod router;
 mod screens;
@@ -8,12 +10,12 @@ mod state;
 
 use dioxus::prelude::*;
 
-use crate::backend::dispatch::Backend;
+use backend::dispatch::Backend;
 #[cfg(feature = "ffi")]
-use crate::backend::ffi::FfiBackend;
-use crate::backend::mock::MockBackend;
-use crate::backend::native::NativeBackend;
-use crate::config::AppConfig;
+use backend::ffi::FfiBackend;
+use backend::mock::MockBackend;
+use backend::native::NativeBackend;
+use config::AppConfig;
 use crate::router::Route;
 use crate::state::app_state::AppState;
 use crate::state::connection::ConnectionState;
