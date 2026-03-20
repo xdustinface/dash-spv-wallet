@@ -32,6 +32,12 @@ fn main() {
     let mut app_state = AppState::new(config.dev_mode);
     app_state.select_network(config.network);
 
+    // If a wallet mnemonic file exists, skip onboarding screens.
+    let mnemonic_path = config.wallet_dir().join("wallet.mnemonic");
+    if mnemonic_path.exists() {
+        app_state.set_wallet_loaded();
+    }
+
     // Store startup state for the app component to pick up via context.
     APP_STATE.with(|cell| cell.set(app_state).ok());
     CONFIG.with(|cell| cell.set(config).ok());

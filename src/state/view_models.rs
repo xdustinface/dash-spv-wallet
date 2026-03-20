@@ -77,6 +77,10 @@ pub fn format_peer_count(count: u32) -> String {
 
 /// Format a Unix timestamp as a human-readable relative or absolute date.
 pub fn format_timestamp(timestamp: u64) -> String {
+    if timestamp == 0 {
+        return "Pending".to_string();
+    }
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -335,6 +339,11 @@ mod tests {
             .unwrap()
             .as_secs();
         assert_eq!(format_timestamp(now + 1000), "just now");
+    }
+
+    #[test]
+    fn format_timestamp_zero_is_pending() {
+        assert_eq!(format_timestamp(0), "Pending");
     }
 
     // -- format_transaction --

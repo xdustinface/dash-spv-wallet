@@ -44,7 +44,11 @@ impl AppConfig {
         let mut config = match fs::read_to_string(paths::config_file_path()) {
             Ok(contents) => toml::from_str::<AppConfig>(&contents)
                 .map_err(|e| ConfigError::Parse(e.to_string()))?,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Self::default(),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                let default_config = Self::default();
+                let _ = default_config.save();
+                default_config
+            }
             Err(e) => return Err(ConfigError::Io(e)),
         };
 

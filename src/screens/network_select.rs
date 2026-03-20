@@ -1,18 +1,31 @@
 use dioxus::prelude::*;
 
 use crate::backend::types::Network;
+use crate::config::AppConfig;
 use crate::router::Route;
 use crate::state::app_state::AppState;
 
 #[component]
 pub fn NetworkSelect() -> Element {
     let mut app_state = use_context::<Signal<AppState>>();
+    let mut config = use_context::<Signal<AppConfig>>();
     let navigator = use_navigator();
+
+    // If a wallet is already loaded (mnemonic file found at startup), skip
+    // onboarding and go straight to the dashboard.
+    use_effect(move || {
+        if app_state.read().wallet_loaded {
+            navigator.push(Route::Dashboard {});
+        }
+    });
 
     let select_network = move |network: Network| {
         let navigator = navigator;
         move |_| {
             app_state.write().select_network(network);
+            let mut cfg = config.write();
+            cfg.network = network;
+            let _ = cfg.save();
             navigator.push(Route::WalletChoice {});
         }
     };
