@@ -111,15 +111,16 @@ pub fn Dashboard() -> Element {
 
                                         // Left: direction + address + time
                                         div {
-                                            class: "flex items-center gap-3",
+                                            class: "flex items-center gap-3 min-w-0 flex-1",
                                             span {
-                                                class: if is_sent { "text-error text-lg" } else { "text-success text-lg" },
+                                                class: if is_sent { "text-error text-lg shrink-0" } else { "text-success text-lg shrink-0" },
                                                 if is_sent { "▲" } else { "▼" }
                                             }
                                             div {
+                                                class: "min-w-0",
                                                 p {
-                                                    class: "font-mono text-sm",
-                                                    "{view.address_short}"
+                                                    class: "font-mono text-sm truncate",
+                                                    {tx.addresses.first().cloned().unwrap_or_default()}
                                                 }
                                                 p {
                                                     class: "text-disabled text-xs",
