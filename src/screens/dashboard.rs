@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::backend::mock::MockBackend;
+use crate::backend::dispatch::Backend;
 use crate::backend::r#trait::SpvBackend;
 use crate::backend::types::TransactionDirection;
 use crate::event_bridge::use_event_bridge;
@@ -10,7 +10,7 @@ use crate::state::wallet::WalletState;
 
 #[component]
 pub fn Dashboard() -> Element {
-    let backend = use_context::<Signal<MockBackend>>();
+    let backend = use_context::<Signal<Backend>>();
     let wallet = use_context::<Signal<WalletState>>();
     let network_info = use_context::<Signal<NetworkInfo>>();
 

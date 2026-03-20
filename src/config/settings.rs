@@ -16,6 +16,9 @@ pub(crate) struct AppConfig {
     pub wallet_dir: Option<PathBuf>,
     pub dev_mode: bool,
     pub log_level: String,
+    /// Use the in-memory mock backend (CLI-only, not persisted).
+    #[serde(skip)]
+    pub mock_mode: bool,
 }
 
 impl Default for AppConfig {
@@ -26,6 +29,7 @@ impl Default for AppConfig {
             wallet_dir: None,
             dev_mode: false,
             log_level: "info".to_string(),
+            mock_mode: false,
         }
     }
 }
@@ -53,6 +57,9 @@ impl AppConfig {
         }
         if let Some(log_level) = cli.log_level {
             config.log_level = log_level;
+        }
+        if cli.mock {
+            config.mock_mode = true;
         }
 
         // Expand tilde in paths.
@@ -105,6 +112,10 @@ struct Cli {
     #[arg(long)]
     dev: bool,
 
+    /// Use the in-memory mock backend instead of the real SPV client
+    #[arg(long)]
+    mock: bool,
+
     /// Set log level (error, warn, info, debug, trace)
     #[arg(long)]
     log_level: Option<String>,
@@ -150,6 +161,7 @@ mod tests {
             wallet_dir: Some(PathBuf::from("/tmp/dash-wallets")),
             dev_mode: true,
             log_level: "debug".to_string(),
+            ..Default::default()
         };
 
         let toml_str = toml::to_string_pretty(&config).unwrap();
@@ -167,7 +179,7 @@ mod tests {
         let config = AppConfig {
             data_dir: PathBuf::from("/data"),
             wallet_dir: None,
-            ..AppConfig::default()
+            ..Default::default()
         };
         assert_eq!(config.wallet_dir(), PathBuf::from("/data/wallets"));
     }
@@ -176,7 +188,7 @@ mod tests {
     fn custom_wallet_dir_is_respected() {
         let config = AppConfig {
             wallet_dir: Some(PathBuf::from("/custom/wallets")),
-            ..AppConfig::default()
+            ..Default::default()
         };
         assert_eq!(config.wallet_dir(), PathBuf::from("/custom/wallets"));
     }
@@ -185,7 +197,7 @@ mod tests {
     fn network_serializes_as_string() {
         let config = AppConfig {
             network: Network::Regtest,
-            ..AppConfig::default()
+            ..Default::default()
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();
         assert!(toml_str.contains("regtest"), "expected 'regtest' in TOML output: {toml_str}");
@@ -217,6 +229,7 @@ mod tests {
             wallet_dir: Some(PathBuf::from("/tmp/wallets")),
             dev_mode: true,
             log_level: "trace".to_string(),
+            ..Default::default()
         };
 
         let toml_str = toml::to_string_pretty(&config).unwrap();

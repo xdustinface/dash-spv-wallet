@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::backend::mock::MockBackend;
+use crate::backend::dispatch::Backend;
 use crate::backend::r#trait::SpvBackend;
 use crate::state::connection::ConnectionState;
 use crate::state::network::NetworkInfo;
@@ -10,7 +10,7 @@ use crate::state::view_models::format_peer_count;
 pub fn StatusBar() -> Element {
     let connection = use_context::<Signal<ConnectionState>>();
     let network_info = use_context::<Signal<NetworkInfo>>();
-    let backend = use_context::<Signal<MockBackend>>();
+    let backend = use_context::<Signal<Backend>>();
 
     let conn = connection.read();
     let info = network_info.read();

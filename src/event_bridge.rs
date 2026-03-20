@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::backend::mock::MockBackend;
+use crate::backend::dispatch::Backend;
 use crate::backend::r#trait::SpvBackend;
 use crate::state::connection::ConnectionState;
 use crate::state::dev_log::DevLog;
@@ -14,7 +14,7 @@ use crate::state::wallet::WalletState;
 /// and updates `ConnectionState`, `WalletState`, `NetworkInfo`, and `DevLog`
 /// on each received event.
 pub fn use_event_bridge() {
-    let backend = use_context::<Signal<MockBackend>>();
+    let backend = use_context::<Signal<Backend>>();
     let mut connection = use_context::<Signal<ConnectionState>>();
     let mut wallet = use_context::<Signal<WalletState>>();
     let mut network_info = use_context::<Signal<NetworkInfo>>();

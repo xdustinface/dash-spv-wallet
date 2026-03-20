@@ -1,12 +1,12 @@
 use dioxus::prelude::*;
 
-use crate::backend::mock::MockBackend;
+use crate::backend::dispatch::Backend;
 use crate::backend::r#trait::SpvBackend;
 use crate::state::wallet::WalletState;
 
 #[component]
 pub fn Receive() -> Element {
-    let backend = use_context::<Signal<MockBackend>>();
+    let backend = use_context::<Signal<Backend>>();
     let wallet = use_context::<Signal<WalletState>>();
 
     let mut copied = use_signal(|| false);

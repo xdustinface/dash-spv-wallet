@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::backend::mock::MockBackend;
+use crate::backend::dispatch::Backend;
 use crate::backend::r#trait::SpvBackend;
 use crate::router::Route;
 use crate::state::app_state::AppState;
@@ -8,7 +8,7 @@ use crate::state::app_state::AppState;
 #[component]
 pub fn WalletImport() -> Element {
     let mut app_state = use_context::<Signal<AppState>>();
-    let backend = use_context::<Signal<MockBackend>>();
+    let backend = use_context::<Signal<Backend>>();
     let navigator = use_navigator();
 
     let mut mnemonic_input = use_signal(String::new);

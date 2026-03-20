@@ -8,7 +8,9 @@ mod state;
 
 use dioxus::prelude::*;
 
+use crate::backend::dispatch::Backend;
 use crate::backend::mock::MockBackend;
+use crate::backend::native::NativeBackend;
 use crate::config::AppConfig;
 use crate::router::Route;
 use crate::state::app_state::AppState;
@@ -48,14 +50,22 @@ fn app() -> Element {
     let config = CONFIG.with(|cell| cell.get().cloned().unwrap_or_default());
 
     let network = config.network;
+    let mock_mode = config.mock_mode;
 
     // Provide AppState and AppConfig as context for all components.
     let _app_state = use_context_provider(|| Signal::new(initial_state));
-    let _config = use_context_provider(|| Signal::new(config));
 
-    // Create a MockBackend (real backends come later).
-    let _backend =
-        use_context_provider(|| Signal::new(MockBackend::builder(network).build()));
+    // Select backend based on configuration.
+    let _backend = use_context_provider(|| {
+        let backend = if mock_mode {
+            Backend::Mock(MockBackend::builder(network).build())
+        } else {
+            Backend::Native(NativeBackend::new(config.clone()))
+        };
+        Signal::new(backend)
+    });
+
+    let _config = use_context_provider(|| Signal::new(config));
 
     // Provide reactive state signals for the event bridge.
     let _connection = use_context_provider(|| Signal::new(ConnectionState::default()));

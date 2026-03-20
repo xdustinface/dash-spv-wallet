@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::backend::mock::MockBackend;
+use crate::backend::dispatch::Backend;
 use crate::backend::r#trait::SpvBackend;
 use crate::state::view_models::{format_balance, parse_dash_amount};
 use crate::state::wallet::WalletState;
@@ -16,7 +16,7 @@ enum SendStep {
 
 #[component]
 pub fn Send() -> Element {
-    let backend = use_context::<Signal<MockBackend>>();
+    let backend = use_context::<Signal<Backend>>();
     let wallet = use_context::<Signal<WalletState>>();
 
     let mut address = use_signal(String::new);
