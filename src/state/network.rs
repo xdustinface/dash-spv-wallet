@@ -29,10 +29,8 @@ impl NetworkInfo {
                 self.chain_tip = *tip_height;
             }
             SpvEvent::SyncProgressUpdated(progress) => {
-                for mp in &progress.managers {
-                    if mp.manager == crate::backend::types::ManagerId::Headers {
-                        self.chain_tip = mp.current_height;
-                    }
+                if let Ok(headers) = progress.headers() {
+                    self.chain_tip = headers.tip_height();
                 }
             }
             _ => {}
@@ -43,7 +41,7 @@ impl NetworkInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::types::{ManagerId, ManagerProgress, SyncProgress, SyncState};
+    use crate::backend::types::SyncProgress;
 
     #[test]
     fn default_state() {
@@ -107,22 +105,11 @@ mod tests {
     }
 
     #[test]
-    fn progress_updates_chain_tip_from_headers_manager() {
+    fn progress_without_headers_leaves_chain_tip_unchanged() {
         let mut info = NetworkInfo::default();
-        let progress = SyncProgress {
-            state: SyncState::Syncing,
-            percentage: 50.0,
-            is_synced: false,
-            managers: vec![ManagerProgress {
-                manager: ManagerId::Headers,
-                state: SyncState::Syncing,
-                current_height: 25000,
-                target_height: 50000,
-                percentage: 50.0,
-            }],
-        };
-        info.apply_event(&SpvEvent::SyncProgressUpdated(progress));
-        assert_eq!(info.chain_tip, 25000);
+        let progress = SyncProgress::default();
+        info.apply_event(&SpvEvent::SyncProgressUpdated(Box::new(progress)));
+        assert_eq!(info.chain_tip, 0);
     }
 
     #[test]

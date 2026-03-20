@@ -1,11 +1,13 @@
+use dashcore::hashes::Hash;
+
 use crate::backend::events::SpvEvent;
-use crate::backend::types::{Balance, TransactionRecord};
+use crate::backend::types::{TransactionDirection, TransactionInfo, WalletCoreBalance};
 
 /// Wallet state tracked by the UI.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct WalletState {
-    pub balance: Balance,
-    pub transactions: Vec<TransactionRecord>,
+    pub balance: WalletCoreBalance,
+    pub transactions: Vec<TransactionInfo>,
     pub receive_address: Option<String>,
 }
 
@@ -22,20 +24,21 @@ impl WalletState {
                 addresses,
             } => {
                 let direction = if *amount >= 0 {
-                    crate::backend::types::TransactionDirection::Received
+                    TransactionDirection::Received
                 } else {
-                    crate::backend::types::TransactionDirection::Sent
+                    TransactionDirection::Sent
                 };
 
-                let record = TransactionRecord {
-                    txid: *txid,
+                let record = TransactionInfo {
+                    txid: dashcore::Txid::from_byte_array(*txid),
                     amount: *amount,
                     direction,
                     timestamp: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_secs(),
-                    confirmations: 0,
+                    height: None,
+                    fee: None,
                     addresses: addresses.clone(),
                     is_instant_send: false,
                     is_chain_locked: false,
@@ -48,7 +51,7 @@ impl WalletState {
     }
 
     /// Replace the full transaction list (e.g., after initial load).
-    pub fn set_transactions(&mut self, mut transactions: Vec<TransactionRecord>) {
+    pub fn set_transactions(&mut self, mut transactions: Vec<TransactionInfo>) {
         transactions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         self.transactions = transactions;
     }
@@ -57,12 +60,11 @@ impl WalletState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::types::TransactionDirection;
 
     #[test]
     fn default_state() {
         let state = WalletState::default();
-        assert_eq!(state.balance, Balance::default());
+        assert_eq!(state.balance, WalletCoreBalance::default());
         assert!(state.transactions.is_empty());
         assert_eq!(state.receive_address, None);
     }
@@ -70,12 +72,7 @@ mod tests {
     #[test]
     fn balance_updated_event() {
         let mut state = WalletState::default();
-        let balance = Balance {
-            confirmed: 1_000_000,
-            pending: 50_000,
-            immature: 0,
-            locked: 0,
-        };
+        let balance = WalletCoreBalance::new(1_000_000, 50_000, 0, 0);
         state.apply_event(&SpvEvent::BalanceUpdated(balance));
         assert_eq!(state.balance, balance);
     }
@@ -98,7 +95,10 @@ mod tests {
             addresses: vec!["Xaddr2".into()],
         });
         assert_eq!(state.transactions.len(), 2);
-        assert_eq!(state.transactions[0].txid, [2u8; 32]);
+        assert_eq!(
+            state.transactions[0].txid,
+            dashcore::Txid::from_byte_array([2u8; 32])
+        );
         assert_eq!(state.transactions[0].direction, TransactionDirection::Sent);
     }
 
@@ -106,22 +106,24 @@ mod tests {
     fn set_transactions_sorts_newest_first() {
         let mut state = WalletState::default();
         let txs = vec![
-            TransactionRecord {
-                txid: [1u8; 32],
+            TransactionInfo {
+                txid: dashcore::Txid::from_byte_array([1u8; 32]),
                 amount: 100,
                 direction: TransactionDirection::Received,
                 timestamp: 1000,
-                confirmations: 10,
+                height: Some(500),
+                fee: None,
                 addresses: vec![],
                 is_instant_send: false,
                 is_chain_locked: false,
             },
-            TransactionRecord {
-                txid: [2u8; 32],
+            TransactionInfo {
+                txid: dashcore::Txid::from_byte_array([2u8; 32]),
                 amount: 200,
                 direction: TransactionDirection::Received,
                 timestamp: 2000,
-                confirmations: 5,
+                height: Some(600),
+                fee: None,
                 addresses: vec![],
                 is_instant_send: false,
                 is_chain_locked: false,

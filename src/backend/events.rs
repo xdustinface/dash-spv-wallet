@@ -1,15 +1,14 @@
-use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
-use super::types::{Balance, ManagerId, SyncProgress};
+use super::types::{ManagerIdentifier, SyncProgress, WalletCoreBalance};
 
 /// Events emitted by the SPV backend.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SpvEvent {
     // Sync events
-    SyncProgressUpdated(SyncProgress),
+    SyncProgressUpdated(Box<SyncProgress>),
     SyncStarted {
-        manager: ManagerId,
+        manager: ManagerIdentifier,
     },
     HeadersSynced {
         tip_height: u32,
@@ -40,7 +39,7 @@ pub enum SpvEvent {
         amount: i64,
         addresses: Vec<String>,
     },
-    BalanceUpdated(Balance),
+    BalanceUpdated(WalletCoreBalance),
 
     // Validation events
     ChainLockReceived {

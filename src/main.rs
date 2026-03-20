@@ -66,9 +66,10 @@ fn parse_network(s: &str) -> Result<Network, String> {
     match s.to_lowercase().as_str() {
         "mainnet" => Ok(Network::Mainnet),
         "testnet" => Ok(Network::Testnet),
+        "devnet" => Ok(Network::Devnet),
         "regtest" => Ok(Network::Regtest),
         other => Err(format!(
-            "unknown network: {other} (expected `mainnet`, `testnet`, or `regtest`)"
+            "unknown network: {other} (expected `mainnet`, `testnet`, `devnet`, or `regtest`)"
         )),
     }
 }

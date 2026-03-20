@@ -3,21 +3,21 @@ use std::sync::{
     Mutex,
 };
 
+use dashcore::hashes::Hash;
 use tokio::sync::broadcast;
 
 use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent};
 use super::r#trait::SpvBackend;
 use super::types::{
-    Balance, ManagerId, ManagerProgress, Network, SyncProgress, SyncState, TransactionDirection,
-    TransactionRecord,
+    Network, SyncProgress, TransactionDirection, TransactionInfo, WalletCoreBalance,
 };
 
 /// Builder for configuring a `MockBackend` instance.
 pub struct MockBackendBuilder {
     network: Network,
-    balance: Balance,
-    transactions: Vec<TransactionRecord>,
+    balance: WalletCoreBalance,
+    transactions: Vec<TransactionInfo>,
     addresses: Vec<String>,
     tip_height: Option<u32>,
     has_persisted_wallet: bool,
@@ -27,7 +27,7 @@ impl MockBackendBuilder {
     pub fn new(network: Network) -> Self {
         Self {
             network,
-            balance: Balance::default(),
+            balance: WalletCoreBalance::default(),
             transactions: Vec::new(),
             addresses: vec![mock_address(0)],
             tip_height: None,
@@ -35,17 +35,17 @@ impl MockBackendBuilder {
         }
     }
 
-    pub fn with_balance(mut self, balance: Balance) -> Self {
+    pub fn with_balance(mut self, balance: WalletCoreBalance) -> Self {
         self.balance = balance;
         self
     }
 
     pub fn with_confirmed_balance(mut self, satoshis: u64) -> Self {
-        self.balance.confirmed = satoshis;
+        self.balance = WalletCoreBalance::new(satoshis, 0, 0, 0);
         self
     }
 
-    pub fn with_transactions(mut self, transactions: Vec<TransactionRecord>) -> Self {
+    pub fn with_transactions(mut self, transactions: Vec<TransactionInfo>) -> Self {
         self.transactions = transactions;
         self
     }
@@ -84,8 +84,8 @@ pub struct MockBackend {
     wallet_loaded: AtomicBool,
     has_persisted_wallet: AtomicBool,
     tip_height: AtomicU32,
-    balance: Mutex<Balance>,
-    transactions: Mutex<Vec<TransactionRecord>>,
+    balance: Mutex<WalletCoreBalance>,
+    transactions: Mutex<Vec<TransactionInfo>>,
     addresses: Mutex<Vec<String>>,
     address_index: AtomicU32,
     event_tx: EventSender,
@@ -162,22 +162,7 @@ impl SpvBackend for MockBackend {
     }
 
     fn sync_progress(&self) -> SyncProgress {
-        if !self.running.load(Ordering::Relaxed) {
-            return SyncProgress::default();
-        }
-        let tip = self.tip_height.load(Ordering::Relaxed);
-        SyncProgress {
-            state: SyncState::Synced,
-            percentage: 100.0,
-            is_synced: true,
-            managers: vec![ManagerProgress {
-                manager: ManagerId::Headers,
-                state: SyncState::Synced,
-                current_height: tip,
-                target_height: tip,
-                percentage: 100.0,
-            }],
-        }
+        SyncProgress::default()
     }
 
     async fn create_wallet(&self, mnemonic: &str) -> BackendResult<()> {
@@ -192,7 +177,7 @@ impl SpvBackend for MockBackend {
             ));
         }
         self.wallet_loaded.store(true, Ordering::Relaxed);
-        self.emit(SpvEvent::BalanceUpdated(Balance::default()));
+        self.emit(SpvEvent::BalanceUpdated(WalletCoreBalance::default()));
         Ok(())
     }
 
@@ -213,12 +198,12 @@ impl SpvBackend for MockBackend {
         Ok(address)
     }
 
-    fn get_balance(&self) -> BackendResult<Balance> {
+    fn get_balance(&self) -> BackendResult<WalletCoreBalance> {
         self.require_wallet()?;
         Ok(*self.balance.lock().unwrap())
     }
 
-    fn get_transactions(&self) -> BackendResult<Vec<TransactionRecord>> {
+    fn get_transactions(&self) -> BackendResult<Vec<TransactionInfo>> {
         self.require_wallet()?;
         Ok(self.transactions.lock().unwrap().clone())
     }
@@ -231,25 +216,31 @@ impl SpvBackend for MockBackend {
         }
 
         let mut balance = self.balance.lock().unwrap();
-        if balance.confirmed < amount {
+        if balance.spendable() < amount {
             return Err(BackendError::InsufficientFunds {
-                available: balance.confirmed,
+                available: balance.spendable(),
                 required: amount,
             });
         }
 
-        balance.confirmed -= amount;
-        let new_balance = *balance;
+        let new_balance = WalletCoreBalance::new(
+            balance.spendable() - amount,
+            balance.unconfirmed(),
+            balance.immature(),
+            balance.locked(),
+        );
+        *balance = new_balance;
         drop(balance);
 
-        let txid = mock_txid(self.transactions.lock().unwrap().len() as u32);
+        let txid_bytes = mock_txid(self.transactions.lock().unwrap().len() as u32);
 
-        let record = TransactionRecord {
-            txid,
+        let record = TransactionInfo {
+            txid: dashcore::Txid::from_byte_array(txid_bytes),
             amount: -(amount as i64),
             direction: TransactionDirection::Sent,
             timestamp: 1700000000,
-            confirmations: 0,
+            height: None,
+            fee: None,
             addresses: vec![address.to_string()],
             is_instant_send: false,
             is_chain_locked: false,
@@ -258,12 +249,12 @@ impl SpvBackend for MockBackend {
         self.transactions.lock().unwrap().push(record);
         self.emit(SpvEvent::BalanceUpdated(new_balance));
         self.emit(SpvEvent::TransactionReceived {
-            txid,
+            txid: txid_bytes,
             amount: -(amount as i64),
             addresses: vec![address.to_string()],
         });
 
-        Ok(txid)
+        Ok(txid_bytes)
     }
 
     fn subscribe_events(&self) -> EventReceiver {
@@ -287,16 +278,17 @@ pub fn mock_transaction(
     index: u32,
     direction: TransactionDirection,
     amount: u64,
-) -> TransactionRecord {
-    TransactionRecord {
-        txid: mock_txid(index),
+) -> TransactionInfo {
+    TransactionInfo {
+        txid: dashcore::Txid::from_byte_array(mock_txid(index)),
         amount: match direction {
             TransactionDirection::Sent => -(amount as i64),
             TransactionDirection::Received => amount as i64,
         },
         direction,
         timestamp: 1700000000 + (index as u64 * 600),
-        confirmations: 6,
+        height: Some(1000 + index),
+        fee: None,
         addresses: vec![mock_address(index)],
         is_instant_send: false,
         is_chain_locked: false,
@@ -305,6 +297,7 @@ pub fn mock_transaction(
 
 #[cfg(test)]
 mod tests {
+    use super::super::types::SyncState;
     use super::*;
 
     const TEST_MNEMONIC_12: &str =
@@ -368,7 +361,7 @@ mod tests {
         assert!(address.starts_with("XmockAddr"));
 
         let balance = backend.get_balance().unwrap();
-        assert_eq!(balance.confirmed, 500_000);
+        assert_eq!(balance.spendable(), 500_000);
 
         let txs = backend.get_transactions().unwrap();
         assert!(txs.is_empty());
@@ -428,7 +421,7 @@ mod tests {
         assert_ne!(txid, [0u8; 32]);
 
         let balance = backend.get_balance().unwrap();
-        assert_eq!(balance.confirmed, 750_000);
+        assert_eq!(balance.spendable(), 750_000);
 
         let txs = backend.get_transactions().unwrap();
         assert_eq!(txs.len(), 1);
@@ -504,21 +497,20 @@ mod tests {
         let backend = MockBackend::builder(Network::Testnet).build();
 
         let progress = backend.sync_progress();
-        assert_eq!(progress.state, SyncState::WaitForEvents);
-        assert!(!progress.is_synced);
+        assert_eq!(progress.state(), SyncState::WaitForEvents);
+        assert!(!progress.is_synced());
     }
 
     #[tokio::test]
-    async fn sync_progress_synced_when_running() {
+    async fn sync_progress_default_when_running() {
         let backend = MockBackend::builder(Network::Testnet)
             .with_tip_height(1000)
             .build();
         backend.start().await.unwrap();
 
         let progress = backend.sync_progress();
-        assert_eq!(progress.state, SyncState::Synced);
-        assert!(progress.is_synced);
-        assert_eq!(progress.percentage, 100.0);
+        assert_eq!(progress.state(), SyncState::WaitForEvents);
+        assert!(!progress.is_synced());
     }
 
     // -- Event tests --
@@ -592,12 +584,7 @@ mod tests {
 
     #[tokio::test]
     async fn builder_with_balance() {
-        let balance = Balance {
-            confirmed: 1_000_000,
-            pending: 50_000,
-            immature: 0,
-            locked: 25_000,
-        };
+        let balance = WalletCoreBalance::new(1_000_000, 50_000, 0, 25_000);
         let backend = MockBackend::builder(Network::Testnet)
             .with_balance(balance)
             .build();

@@ -1,4 +1,4 @@
-use crate::backend::types::{TransactionDirection, TransactionRecord};
+use crate::backend::types::{TransactionDirection, TransactionInfo};
 
 const SATS_PER_DASH: u64 = 100_000_000;
 
@@ -138,18 +138,19 @@ pub struct TransactionView {
 }
 
 /// Convert a transaction record to a display-ready view.
-pub fn format_transaction(tx: &TransactionRecord) -> TransactionView {
-    let txid_hex = hex::encode(tx.txid);
+pub fn format_transaction(tx: &TransactionInfo, current_height: u32) -> TransactionView {
+    let txid_hex = tx.txid.to_string();
     let direction_label = match tx.direction {
         TransactionDirection::Sent => "Sent",
         TransactionDirection::Received => "Received",
     };
     let amount_display = format_amount(tx.amount);
     let timestamp_display = format_timestamp(tx.timestamp);
-    let confirmations_display = if tx.confirmations == 0 {
+    let confirmations = tx.confirmations(current_height);
+    let confirmations_display = if confirmations == 0 {
         "Unconfirmed".to_string()
     } else {
-        format!("{} confirmations", tx.confirmations)
+        format!("{confirmations} confirmations")
     };
     let address_short = tx
         .addresses
@@ -171,6 +172,8 @@ pub fn format_transaction(tx: &TransactionRecord) -> TransactionView {
 
 #[cfg(test)]
 mod tests {
+    use dashcore::hashes::Hash;
+
     use super::*;
 
     // -- format_balance --
@@ -325,21 +328,22 @@ mod tests {
 
     #[test]
     fn format_transaction_received() {
-        let tx = TransactionRecord {
-            txid: [0xAB; 32],
+        let tx = TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xAB; 32]),
             amount: 100_000_000,
             direction: TransactionDirection::Received,
             timestamp: 1700000000,
-            confirmations: 6,
+            height: Some(994),
+            fee: None,
             addresses: vec!["XqN8a73jYfHtFbEjz2XYBfrCHn6YQwBGsP".into()],
             is_instant_send: true,
             is_chain_locked: false,
         };
 
-        let view = format_transaction(&tx);
+        let view = format_transaction(&tx, 1000);
         assert_eq!(view.direction_label, "Received");
         assert_eq!(view.amount_display, "+1.0 DASH");
-        assert_eq!(view.confirmations_display, "6 confirmations");
+        assert_eq!(view.confirmations_display, "7 confirmations");
         assert_eq!(view.address_short, "XqN8...BGsP");
         assert!(view.is_instant_send);
         assert!(!view.is_chain_locked);
@@ -348,18 +352,19 @@ mod tests {
 
     #[test]
     fn format_transaction_sent_unconfirmed() {
-        let tx = TransactionRecord {
-            txid: [0xCD; 32],
+        let tx = TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xCD; 32]),
             amount: -50_000_000,
             direction: TransactionDirection::Sent,
             timestamp: 1700000000,
-            confirmations: 0,
+            height: None,
+            fee: Some(226),
             addresses: vec!["XrecipientAddr".into()],
             is_instant_send: false,
             is_chain_locked: false,
         };
 
-        let view = format_transaction(&tx);
+        let view = format_transaction(&tx, 1000);
         assert_eq!(view.direction_label, "Sent");
         assert_eq!(view.amount_display, "-0.5 DASH");
         assert_eq!(view.confirmations_display, "Unconfirmed");
@@ -367,18 +372,19 @@ mod tests {
 
     #[test]
     fn format_transaction_no_addresses() {
-        let tx = TransactionRecord {
-            txid: [0; 32],
+        let tx = TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0; 32]),
             amount: 0,
             direction: TransactionDirection::Received,
             timestamp: 0,
-            confirmations: 0,
+            height: None,
+            fee: None,
             addresses: vec![],
             is_instant_send: false,
             is_chain_locked: false,
         };
 
-        let view = format_transaction(&tx);
+        let view = format_transaction(&tx, 0);
         assert_eq!(view.address_short, "");
     }
 

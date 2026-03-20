@@ -4,6 +4,7 @@ use crate::backend::mock::MockBackend;
 use crate::backend::r#trait::SpvBackend;
 use crate::backend::types::TransactionDirection;
 use crate::event_bridge::use_event_bridge;
+use crate::state::network::NetworkInfo;
 use crate::state::view_models::{format_balance, format_transaction};
 use crate::state::wallet::WalletState;
 
@@ -11,6 +12,7 @@ use crate::state::wallet::WalletState;
 pub fn Dashboard() -> Element {
     let backend = use_context::<Signal<MockBackend>>();
     let wallet = use_context::<Signal<WalletState>>();
+    let network_info = use_context::<Signal<NetworkInfo>>();
 
     // Start the event bridge coroutine to pipe backend events into UI state.
     use_event_bridge();
@@ -24,6 +26,7 @@ pub fn Dashboard() -> Element {
 
     let balance = wallet.read().balance;
     let transactions = wallet.read().transactions.clone();
+    let current_height = network_info.read().chain_tip;
 
     rsx! {
         div {
@@ -38,21 +41,21 @@ pub fn Dashboard() -> Element {
                 }
                 p {
                     class: "text-4xl font-bold",
-                    "{format_balance(balance.confirmed)}"
+                    "{format_balance(balance.spendable())}"
                 }
 
                 // Breakdown cards for non-zero secondary balances
                 div {
                     class: "flex gap-4 mt-4",
 
-                    if balance.pending > 0 {
-                        BalanceCard { label: "Pending", amount: balance.pending }
+                    if balance.unconfirmed() > 0 {
+                        BalanceCard { label: "Pending", amount: balance.unconfirmed() }
                     }
-                    if balance.immature > 0 {
-                        BalanceCard { label: "Immature", amount: balance.immature }
+                    if balance.immature() > 0 {
+                        BalanceCard { label: "Immature", amount: balance.immature() }
                     }
-                    if balance.locked > 0 {
-                        BalanceCard { label: "Locked", amount: balance.locked }
+                    if balance.locked() > 0 {
+                        BalanceCard { label: "Locked", amount: balance.locked() }
                     }
                 }
             }
@@ -74,7 +77,7 @@ pub fn Dashboard() -> Element {
                         class: "space-y-1",
                         for (i, tx) in transactions.iter().enumerate() {
                             {
-                                let view = format_transaction(tx);
+                                let view = format_transaction(tx, current_height);
                                 let is_sent = tx.direction == TransactionDirection::Sent;
                                 let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
 

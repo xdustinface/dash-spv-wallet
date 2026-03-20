@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::backend::events::SpvEvent;
+use crate::backend::types::SyncState;
 
 const MAX_ENTRIES: usize = 1000;
 
@@ -73,10 +74,14 @@ impl DevLog {
 
 fn categorize_event(event: &SpvEvent) -> (EventCategory, String) {
     match event {
-        SpvEvent::SyncProgressUpdated(p) => (
-            EventCategory::Sync,
-            format!("Sync progress: {:.1}% ({})", p.percentage, p.state_label()),
-        ),
+        SpvEvent::SyncProgressUpdated(p) => {
+            let state_label = sync_state_label(p.state());
+            let pct = p.percentage() * 100.0;
+            (
+                EventCategory::Sync,
+                format!("Sync progress: {pct:.1}% ({state_label})"),
+            )
+        }
         SpvEvent::SyncStarted { manager } => {
             (EventCategory::Sync, format!("Sync started: {manager}"))
         }
@@ -128,8 +133,9 @@ fn categorize_event(event: &SpvEvent) -> (EventCategory, String) {
         SpvEvent::BalanceUpdated(b) => (
             EventCategory::Wallet,
             format!(
-                "Balance: {} confirmed, {} pending",
-                b.confirmed, b.pending
+                "Balance: {} spendable, {} unconfirmed",
+                b.spendable(),
+                b.unconfirmed()
             ),
         ),
         SpvEvent::ChainLockReceived { height, validated } => (
@@ -147,27 +153,20 @@ fn categorize_event(event: &SpvEvent) -> (EventCategory, String) {
     }
 }
 
-/// Helper to get a display label for sync state.
-trait SyncProgressLabel {
-    fn state_label(&self) -> &'static str;
-}
-
-impl SyncProgressLabel for crate::backend::types::SyncProgress {
-    fn state_label(&self) -> &'static str {
-        match self.state {
-            crate::backend::types::SyncState::WaitForEvents => "waiting",
-            crate::backend::types::SyncState::WaitingForConnections => "connecting",
-            crate::backend::types::SyncState::Syncing => "syncing",
-            crate::backend::types::SyncState::Synced => "synced",
-            crate::backend::types::SyncState::Error => "error",
-        }
+fn sync_state_label(state: SyncState) -> &'static str {
+    match state {
+        SyncState::WaitForEvents => "waiting",
+        SyncState::WaitingForConnections => "connecting",
+        SyncState::Syncing => "syncing",
+        SyncState::Synced => "synced",
+        SyncState::Error => "error",
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::types::Balance;
+    use crate::backend::types::WalletCoreBalance;
 
     #[test]
     fn push_and_retrieve() {
@@ -188,7 +187,7 @@ mod tests {
         let mut log = DevLog::default();
         log.push(&SpvEvent::PeerConnected("1.2.3.4".into()));
         log.push(&SpvEvent::HeadersSynced { tip_height: 1000 });
-        log.push(&SpvEvent::BalanceUpdated(Balance::default()));
+        log.push(&SpvEvent::BalanceUpdated(WalletCoreBalance::default()));
         log.push(&SpvEvent::Error("test error".into()));
 
         assert_eq!(log.entries(Some(EventCategory::Network)).len(), 1);
@@ -267,7 +266,7 @@ mod tests {
                 EventCategory::Sync,
             ),
             (
-                SpvEvent::BalanceUpdated(Balance::default()),
+                SpvEvent::BalanceUpdated(WalletCoreBalance::default()),
                 EventCategory::Wallet,
             ),
             (

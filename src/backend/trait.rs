@@ -1,6 +1,6 @@
 use super::error::BackendResult;
 use super::events::EventReceiver;
-use super::types::{Balance, Network, SyncProgress, TransactionRecord};
+use super::types::{Network, SyncProgress, TransactionInfo, WalletCoreBalance};
 
 /// Abstraction over the SPV client, enabling both native Rust and FFI backends.
 ///
@@ -47,10 +47,10 @@ pub trait SpvBackend: Send + Sync + 'static {
     fn get_receive_address(&self) -> BackendResult<String>;
 
     /// Get the current wallet balance.
-    fn get_balance(&self) -> BackendResult<Balance>;
+    fn get_balance(&self) -> BackendResult<WalletCoreBalance>;
 
     /// Get the wallet's transaction history.
-    fn get_transactions(&self) -> BackendResult<Vec<TransactionRecord>>;
+    fn get_transactions(&self) -> BackendResult<Vec<TransactionInfo>>;
 
     /// Send funds to an address. Returns the transaction ID.
     fn send(&self, address: &str, amount: u64)
