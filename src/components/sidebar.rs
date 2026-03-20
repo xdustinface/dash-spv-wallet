@@ -11,16 +11,16 @@ pub fn Sidebar() -> Element {
             class: "flex flex-col w-56 h-full overflow-y-auto bg-surface text-muted border-r border-edge",
 
             div {
-                class: "flex items-center gap-3 p-4 bg-dash-dark",
+                class: "flex flex-col items-center py-4 px-6 bg-dash-dark",
 
                 div {
-                    class: "w-8 h-8 shrink-0",
+                    class: "w-32 mb-1",
                     dangerous_inner_html: include_str!("../../assets/dash-logo.svg"),
                 }
 
                 span {
-                    class: "text-xl font-bold text-foreground tracking-wide",
-                    "SPV"
+                    class: "text-xs font-semibold text-foreground tracking-wide uppercase",
+                    "SPV Wallet"
                 }
             }
 
