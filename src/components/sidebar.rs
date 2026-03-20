@@ -9,7 +9,7 @@ pub fn Sidebar() -> Element {
             class: "flex flex-col w-56 min-h-screen bg-surface text-muted",
 
             div {
-                class: "p-4 text-xl font-bold text-dash border-b border-edge",
+                class: "p-4 text-xl font-bold text-foreground bg-dash-dark",
                 "Dash SPV"
             }
 
