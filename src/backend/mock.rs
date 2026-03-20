@@ -354,6 +354,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn generate_mnemonic_returns_valid_phrase() {
+        let backend = MockBackend::builder(Network::Testnet).build();
+
+        let phrase = backend.generate_mnemonic().unwrap();
+        let words: Vec<&str> = phrase.split_whitespace().collect();
+        assert_eq!(words.len(), 12);
+
+        // The generated phrase should be accepted by create_wallet
+        backend.create_wallet(&phrase).await.unwrap();
+    }
+
+    #[tokio::test]
     async fn wallet_create_and_query() {
         let backend = MockBackend::builder(Network::Mainnet)
             .with_confirmed_balance(500_000)
