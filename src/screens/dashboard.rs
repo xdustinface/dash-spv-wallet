@@ -162,11 +162,11 @@ pub fn Dashboard() -> Element {
                     }
                     if transactions.len() > DASHBOARD_TX_LIMIT {
                         div {
-                            class: "mt-3 text-center",
+                            class: "mt-4 text-center",
                             Link {
                                 to: Route::Transactions {},
-                                class: "text-dash hover:text-dash-hover text-sm transition-colors",
-                                "View all transactions \u{2192}"
+                                class: "inline-block px-4 py-2 text-sm text-muted bg-card hover:bg-hover rounded-lg transition-colors",
+                                "View all transactions"
                             }
                         }
                     }

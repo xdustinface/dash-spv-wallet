@@ -16,9 +16,21 @@ pub(crate) struct AppConfig {
     pub wallet_dir: Option<PathBuf>,
     pub dev_mode: bool,
     pub log_level: String,
+    #[serde(default = "default_window_width")]
+    pub window_width: u32,
+    #[serde(default = "default_window_height")]
+    pub window_height: u32,
     /// Use the in-memory mock backend (CLI-only, not persisted).
     #[serde(skip)]
     pub mock_mode: bool,
+}
+
+fn default_window_width() -> u32 {
+    1024
+}
+
+fn default_window_height() -> u32 {
+    768
 }
 
 impl Default for AppConfig {
@@ -29,6 +41,8 @@ impl Default for AppConfig {
             wallet_dir: None,
             dev_mode: false,
             log_level: "info".to_string(),
+            window_width: default_window_width(),
+            window_height: default_window_height(),
             mock_mode: false,
         }
     }

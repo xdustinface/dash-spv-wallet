@@ -19,7 +19,7 @@ pub fn AppLayout() -> Element {
                     class: "flex flex-col flex-1 min-h-0",
 
                     div {
-                        class: "flex-1 overflow-y-auto p-6",
+                        class: "flex-1 overflow-y-auto p-6 pt-10",
                         Outlet::<crate::router::Route> {}
                     }
 

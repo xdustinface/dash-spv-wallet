@@ -38,18 +38,31 @@ fn main() {
         app_state.set_wallet_loaded();
     }
 
+    let window_width = config.window_width;
+    let window_height = config.window_height;
+
     // Store startup state for the app component to pick up via context.
     APP_STATE.with(|cell| cell.set(app_state).ok());
     CONFIG.with(|cell| cell.set(config).ok());
 
+    let mut window_builder = dioxus::desktop::WindowBuilder::new()
+        .with_title("Dash SPV Wallet")
+        .with_inner_size(dioxus::desktop::LogicalSize::new(
+            window_width,
+            window_height,
+        ));
+
+    #[cfg(target_os = "macos")]
+    {
+        use dioxus::desktop::tao::platform::macos::WindowBuilderExtMacOS;
+        window_builder = window_builder
+            .with_titlebar_transparent(true)
+            .with_fullsize_content_view(true)
+            .with_title_hidden(true);
+    }
+
     dioxus::LaunchBuilder::desktop()
-        .with_cfg(
-            dioxus::desktop::Config::new()
-                .with_window(
-                    dioxus::desktop::WindowBuilder::new()
-                        .with_title("Dash SPV Wallet"),
-                ),
-        )
+        .with_cfg(dioxus::desktop::Config::new().with_window(window_builder))
         .launch(app);
 }
 

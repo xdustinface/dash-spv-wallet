@@ -11,7 +11,7 @@ pub fn Sidebar() -> Element {
             class: "flex flex-col w-56 h-full overflow-y-auto bg-surface text-muted border-r border-edge",
 
             div {
-                class: "flex flex-col items-center py-4 px-6 bg-dash-dark",
+                class: "flex flex-col items-center pt-10 pb-4 px-6 bg-dash-dark",
 
                 div {
                     class: "w-32 mb-1",
