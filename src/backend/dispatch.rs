@@ -1,15 +1,19 @@
 use super::error::BackendResult;
 use super::events::EventReceiver;
+#[cfg(feature = "ffi")]
+use super::ffi::FfiBackend;
 use super::mock::MockBackend;
 use super::native::NativeBackend;
 use super::r#trait::SpvBackend;
 use super::types::{Network, SyncProgress, TransactionInfo, WalletCoreBalance};
 
 /// Enum dispatch wrapper that delegates all `SpvBackend` calls to either
-/// a real `NativeBackend` or an in-memory `MockBackend`.
+/// a real `NativeBackend`, an in-memory `MockBackend`, or an `FfiBackend`.
 pub(crate) enum Backend {
     Native(NativeBackend),
     Mock(MockBackend),
+    #[cfg(feature = "ffi")]
+    Ffi(FfiBackend),
 }
 
 impl SpvBackend for Backend {
@@ -17,6 +21,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.start().await,
             Self::Mock(b) => b.start().await,
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.start().await,
         }
     }
 
@@ -24,6 +30,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.stop().await,
             Self::Mock(b) => b.stop().await,
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.stop().await,
         }
     }
 
@@ -31,6 +39,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.is_running(),
             Self::Mock(b) => b.is_running(),
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.is_running(),
         }
     }
 
@@ -38,6 +48,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.network(),
             Self::Mock(b) => b.network(),
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.network(),
         }
     }
 
@@ -45,6 +57,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.tip_height(),
             Self::Mock(b) => b.tip_height(),
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.tip_height(),
         }
     }
 
@@ -52,6 +66,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.sync_progress(),
             Self::Mock(b) => b.sync_progress(),
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.sync_progress(),
         }
     }
 
@@ -59,6 +75,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.generate_mnemonic(),
             Self::Mock(b) => b.generate_mnemonic(),
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.generate_mnemonic(),
         }
     }
 
@@ -66,6 +84,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.create_wallet(mnemonic).await,
             Self::Mock(b) => b.create_wallet(mnemonic).await,
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.create_wallet(mnemonic).await,
         }
     }
 
@@ -73,6 +93,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.load_wallet().await,
             Self::Mock(b) => b.load_wallet().await,
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.load_wallet().await,
         }
     }
 
@@ -80,6 +102,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.get_receive_address(),
             Self::Mock(b) => b.get_receive_address(),
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.get_receive_address(),
         }
     }
 
@@ -87,6 +111,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.get_balance(),
             Self::Mock(b) => b.get_balance(),
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.get_balance(),
         }
     }
 
@@ -94,6 +120,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.get_transactions(),
             Self::Mock(b) => b.get_transactions(),
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.get_transactions(),
         }
     }
 
@@ -101,6 +129,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.send(address, amount).await,
             Self::Mock(b) => b.send(address, amount).await,
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.send(address, amount).await,
         }
     }
 
@@ -108,6 +138,8 @@ impl SpvBackend for Backend {
         match self {
             Self::Native(b) => b.subscribe_events(),
             Self::Mock(b) => b.subscribe_events(),
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.subscribe_events(),
         }
     }
 }

@@ -9,6 +9,8 @@ mod state;
 use dioxus::prelude::*;
 
 use crate::backend::dispatch::Backend;
+#[cfg(feature = "ffi")]
+use crate::backend::ffi::FfiBackend;
 use crate::backend::mock::MockBackend;
 use crate::backend::native::NativeBackend;
 use crate::config::AppConfig;
@@ -83,9 +85,21 @@ fn app() -> Element {
     let _app_state = use_context_provider(|| Signal::new(initial_state));
 
     // Select backend based on configuration.
+    let dev_mode = config.dev_mode;
+    let backend_name = config.backend.clone();
     let _backend = use_context_provider(|| {
         let backend = if mock_mode {
             Backend::Mock(MockBackend::builder(network).build())
+        } else if dev_mode && backend_name == "ffi" {
+            #[cfg(feature = "ffi")]
+            {
+                Backend::Ffi(FfiBackend::new(config.clone()))
+            }
+            #[cfg(not(feature = "ffi"))]
+            {
+                eprintln!("FFI backend requested but `ffi` feature not enabled, falling back to native");
+                Backend::Native(NativeBackend::new(config.clone()))
+            }
         } else {
             Backend::Native(NativeBackend::new(config.clone()))
         };

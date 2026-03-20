@@ -23,6 +23,9 @@ pub(crate) struct AppConfig {
     /// Use the in-memory mock backend (CLI-only, not persisted).
     #[serde(skip)]
     pub mock_mode: bool,
+    /// Backend selection (CLI-only, not persisted). "native" or "ffi".
+    #[serde(skip)]
+    pub backend: String,
 }
 
 fn default_window_width() -> u32 {
@@ -44,6 +47,7 @@ impl Default for AppConfig {
             window_width: default_window_width(),
             window_height: default_window_height(),
             mock_mode: false,
+            backend: "native".to_string(),
         }
     }
 }
@@ -78,6 +82,9 @@ impl AppConfig {
         }
         if cli.mock {
             config.mock_mode = true;
+        }
+        if let Some(backend) = cli.backend {
+            config.backend = backend;
         }
 
         // Expand tilde in paths.
@@ -137,6 +144,10 @@ struct Cli {
     /// Set log level (error, warn, info, debug, trace)
     #[arg(long)]
     log_level: Option<String>,
+
+    /// Select backend ("native" or "ffi"). Requires --dev and the ffi feature.
+    #[arg(long)]
+    backend: Option<String>,
 }
 
 /// Errors that can occur during configuration loading or saving.

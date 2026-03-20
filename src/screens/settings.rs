@@ -30,6 +30,13 @@ pub fn Settings() -> Element {
     let mut dev_mode = use_signal(|| config.dev_mode);
     let mut log_level = use_signal(|| config.log_level.clone());
 
+    let backends: &[&str] = if cfg!(feature = "ffi") {
+        &["native", "ffi"]
+    } else {
+        &["native"]
+    };
+    let mut backend = use_signal(|| config.backend.clone());
+
     let on_save = move |_| {
         let mut cfg = config_signal.write();
         cfg.network = network();
@@ -153,6 +160,34 @@ pub fn Settings() -> Element {
                                 onclick: move |_| log_level.set(level.to_string()),
                                 "{level}"
                             }
+                        }
+                    }
+                }
+
+                // Backend selector (dev mode only)
+                if dev_mode() {
+                    div {
+                        label {
+                            class: "block text-muted text-sm uppercase tracking-wide mb-2",
+                            "Backend"
+                        }
+                        div {
+                            class: "flex gap-2",
+                            for &name in backends.iter() {
+                                button {
+                                    class: if backend() == name {
+                                        "px-3 py-1 rounded-lg bg-dash text-foreground text-sm font-medium"
+                                    } else {
+                                        "px-3 py-1 rounded-lg bg-surface-alt text-muted text-sm hover:bg-hover transition-colors"
+                                    },
+                                    onclick: move |_| backend.set(name.to_string()),
+                                    "{name}"
+                                }
+                            }
+                        }
+                        p {
+                            class: "text-muted text-xs mt-1",
+                            "Requires restart. Use --backend flag at launch."
                         }
                     }
                 }

@@ -1,94 +1,947 @@
-// FfiBackend implementation using dash-spv-ffi C functions.
-//
-// This module requires the `ffi` feature and the following dependency:
-//   dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev" }
-//
-// The implementation calls dash-spv-ffi's 39 extern "C" functions and bridges
-// FFI callbacks to the SpvEvent channel. This is the only module where `unsafe`
-// code is permitted.
-//
-// When the dependency is added, uncomment and implement the struct below.
+use std::ffi::{c_void, CStr, CString};
+use std::os::raw::c_char;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, RwLock};
 
-// use std::ffi::{c_char, c_void, CStr, CString};
-// use std::sync::atomic::{AtomicBool, Ordering};
-//
-// use super::error::{BackendError, BackendResult};
-// use super::events::{EventReceiver, EventSender, SpvEvent, event_channel};
-// use super::r#trait::SpvBackend;
-// use super::types::{Balance, Network, SyncProgress, TransactionRecord};
-//
-// pub struct FfiBackend {
-//     network: Network,
-//     running: AtomicBool,
-//     event_tx: EventSender,
-//     // client: *mut FFIDashSpvClient,
-//     // config: *mut FFIClientConfig,
-// }
-//
-// impl Drop for FfiBackend {
-//     fn drop(&mut self) {
-//         // unsafe {
-//         //     if !self.client.is_null() {
-//         //         dash_spv_ffi_client_destroy(self.client);
-//         //     }
-//         //     if !self.config.is_null() {
-//         //         dash_spv_ffi_config_destroy(self.config);
-//         //     }
-//         // }
-//     }
-// }
-//
-// FFI function mappings:
-//
-// Lifecycle:
-//   start():
-//     1. dash_spv_ffi_config_new(network) or _mainnet()/_testnet()
-//     2. dash_spv_ffi_config_set_data_dir(path)
-//     3. dash_spv_ffi_config_set_user_agent("dash-spv-ui/<version>")
-//     4. dash_spv_ffi_client_new(config)
-//     5. dash_spv_ffi_client_run(client, callbacks) with FFIEventCallbacks
-//   stop():    dash_spv_ffi_client_stop(client)
-//   pause():   dash_spv_ffi_client_stop(client) (preserve storage)
-//   resume():  recreate config + client, dash_spv_ffi_client_run()
-//
-// Callbacks (FFIEventCallbacks):
-//   FFISyncEventCallbacks:
-//     on_sync_start(manager_id)           → SpvEvent::SyncStarted
-//     on_block_headers_stored(tip)        → SpvEvent::HeadersSynced
-//     on_filters_sync_complete(tip)       → SpvEvent::FiltersSynced
-//     on_block_processed(height, hash, n) → SpvEvent::BlockProcessed
-//     on_sync_complete(tip, cycle)        → SpvEvent::SyncComplete
-//     on_chainlock_received(h, hash, sig, v) → SpvEvent::ChainLockReceived
-//     on_instantlock_received(txid, data, v) → SpvEvent::InstantLockReceived
-//     on_manager_error(id, msg)           → SpvEvent::Error
-//   FFINetworkEventCallbacks:
-//     on_peer_connected(addr)             → SpvEvent::PeerConnected
-//     on_peer_disconnected(addr)          → SpvEvent::PeerDisconnected
-//     on_peers_updated(count, best_h)     → SpvEvent::PeersUpdated
-//   FFIWalletEventCallbacks:
-//     on_transaction_received(...)        → SpvEvent::TransactionReceived
-//     on_balance_updated(...)             → SpvEvent::BalanceUpdated
-//   FFIProgressCallback:
-//     on_progress(progress)               → SpvEvent::SyncProgressUpdated
-//   FFIClientErrorCallback:
-//     on_error(msg)                       → SpvEvent::Error
-//
-// Wallet (via dash_spv_ffi_client_get_wallet_manager → key-wallet-ffi):
-//   create_wallet(mnemonic) → key-wallet-ffi functions
-//   get_receive_address()   → key-wallet-ffi functions
-//   get_balance()           → key-wallet-ffi functions
-//   send(address, amount)   → build tx via wallet FFI,
-//                              broadcast via dash_spv_ffi_client_broadcast_transaction()
-//
-// Memory management:
-//   Every _new/_create has matching _destroy/_free in Drop
-//   FFISyncProgress → dash_spv_ffi_sync_progress_destroy()
-//   FFIWalletManager → dash_spv_ffi_wallet_manager_free()
-//   FFIClientConfig → dash_spv_ffi_config_destroy()
-//
-// Error handling:
-//   Check return codes (0 = success)
-//   On error: dash_spv_ffi_get_last_error() for detail
-//
-// Callback user_data pattern:
-//   Box<EventSender> as *mut c_void → unbox in extern "C" callback → send event
+use dash_spv::sync::{
+    BlockHeadersProgress, BlocksProgress, ChainLockProgress, FilterHeadersProgress,
+    FiltersProgress, InstantSendProgress, MasternodesProgress, MempoolProgress, SyncState,
+};
+use dash_spv_ffi::callbacks::{
+    FFIClientErrorCallback, FFINetworkEventCallbacks, FFIProgressCallback,
+    FFISyncEventCallbacks, FFIWalletEventCallbacks,
+};
+use dash_spv_ffi::client::{
+    dash_spv_ffi_client_destroy, dash_spv_ffi_client_get_wallet_manager, dash_spv_ffi_client_new,
+    dash_spv_ffi_client_run, dash_spv_ffi_client_set_client_error_callback,
+    dash_spv_ffi_client_set_network_event_callbacks, dash_spv_ffi_client_set_progress_callback,
+    dash_spv_ffi_client_set_sync_event_callbacks,
+    dash_spv_ffi_client_set_wallet_event_callbacks, dash_spv_ffi_client_stop,
+    dash_spv_ffi_wallet_manager_free, FFIDashSpvClient,
+};
+use dash_spv_ffi::config::{
+    dash_spv_ffi_config_destroy, dash_spv_ffi_config_new, dash_spv_ffi_config_set_data_dir,
+    dash_spv_ffi_config_set_user_agent,
+};
+use dash_spv_ffi::error::dash_spv_ffi_get_last_error;
+use dash_spv_ffi::types::{
+    FFIBlockHeadersProgress, FFIBlocksProgress, FFIChainLockProgress, FFIFilterHeadersProgress,
+    FFIFiltersProgress, FFIInstantSendProgress, FFIMasternodesProgress, FFIMempoolProgress,
+    FFISyncProgress,
+};
+use key_wallet_ffi::error::FFIError as WalletFFIError;
+use key_wallet_ffi::mnemonic::{mnemonic_free, mnemonic_generate};
+use key_wallet_ffi::types::FFINetwork;
+use key_wallet_ffi::wallet_manager::{
+    wallet_manager_add_wallet_from_mnemonic, wallet_manager_get_wallet_balance,
+    wallet_manager_get_wallet_ids, wallet_manager_free_wallet_ids,
+};
+
+use super::error::{BackendError, BackendResult};
+use super::events::{event_channel, EventReceiver, EventSender, SpvEvent};
+use super::r#trait::SpvBackend;
+use super::types::{Network, SyncProgress, TransactionInfo, WalletCoreBalance};
+use crate::config::AppConfig;
+
+/// Context passed as `user_data` to all FFI callbacks.
+struct CallbackContext {
+    event_tx: EventSender,
+    progress: std::sync::Arc<RwLock<SyncProgress>>,
+}
+
+pub(crate) struct FfiBackend {
+    config: AppConfig,
+    client_ptr: Mutex<*mut FFIDashSpvClient>,
+    running: AtomicBool,
+    event_tx: EventSender,
+    progress: std::sync::Arc<RwLock<SyncProgress>>,
+    callback_ctx: Mutex<Option<*mut c_void>>,
+}
+
+// Safety: FFI pointers are only accessed behind Mutex, and the FFI client
+// is thread-safe (it uses internal synchronization).
+unsafe impl Send for FfiBackend {}
+unsafe impl Sync for FfiBackend {}
+
+impl FfiBackend {
+    pub(crate) fn new(config: AppConfig) -> Self {
+        let (event_tx, _) = event_channel(256);
+
+        Self {
+            config,
+            client_ptr: Mutex::new(std::ptr::null_mut()),
+            running: AtomicBool::new(false),
+            event_tx,
+            progress: std::sync::Arc::new(RwLock::new(SyncProgress::default())),
+            callback_ctx: Mutex::new(None),
+        }
+    }
+
+    fn mnemonic_path(&self) -> PathBuf {
+        self.config.wallet_dir().join("wallet.mnemonic")
+    }
+
+    fn save_mnemonic(&self, mnemonic: &str) -> BackendResult<()> {
+        let path = self.mnemonic_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| BackendError::Storage(e.to_string()))?;
+        }
+        std::fs::write(&path, mnemonic)
+            .map_err(|e| BackendError::Storage(e.to_string()))
+    }
+
+    fn read_mnemonic(&self) -> BackendResult<Option<String>> {
+        let path = self.mnemonic_path();
+        if !path.exists() {
+            return Ok(None);
+        }
+        let contents = std::fs::read_to_string(&path)
+            .map_err(|e| BackendError::Storage(e.to_string()))?;
+        let trimmed = contents.trim().to_string();
+        if trimmed.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(trimmed))
+        }
+    }
+
+    /// Get the first wallet ID from the wallet manager, if any.
+    fn first_wallet_id(&self) -> BackendResult<[u8; 32]> {
+        let client_ptr = *self.client_ptr.lock().unwrap();
+        if client_ptr.is_null() {
+            return Err(BackendError::NotRunning);
+        }
+
+        // Safety: client_ptr was created by dash_spv_ffi_client_new and is valid
+        // while the client is running.
+        let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
+        if wm.is_null() {
+            return Err(BackendError::NoWallet);
+        }
+
+        let mut wallet_ids_ptr: *mut u8 = std::ptr::null_mut();
+        let mut count: usize = 0;
+        let mut error = WalletFFIError::success();
+
+        // Safety: wm is a valid wallet manager pointer, output pointers are valid stack variables.
+        let ok = unsafe {
+            wallet_manager_get_wallet_ids(
+                wm as *const key_wallet_ffi::FFIWalletManager,
+                &mut wallet_ids_ptr,
+                &mut count,
+                &mut error,
+            )
+        };
+
+        // Safety: wm was obtained from dash_spv_ffi_client_get_wallet_manager
+        unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+
+        if !ok || count == 0 {
+            return Err(BackendError::NoWallet);
+        }
+
+        let mut wallet_id = [0u8; 32];
+        // Safety: wallet_ids_ptr was allocated by wallet_manager_get_wallet_ids with count * 32 bytes.
+        unsafe {
+            std::ptr::copy_nonoverlapping(wallet_ids_ptr, wallet_id.as_mut_ptr(), 32);
+            wallet_manager_free_wallet_ids(wallet_ids_ptr, count);
+        }
+
+        Ok(wallet_id)
+    }
+}
+
+impl SpvBackend for FfiBackend {
+    async fn start(&self) -> BackendResult<()> {
+        if self.running.load(Ordering::Relaxed) {
+            return Err(BackendError::AlreadyRunning);
+        }
+
+        let network = network_to_ffi(self.config.network);
+
+        // Create config
+        let config_ptr = dash_spv_ffi_config_new(network);
+        if config_ptr.is_null() {
+            return Err(BackendError::Internal(get_last_ffi_error()));
+        }
+
+        // Set data directory
+        let data_dir = self.config.data_dir.display().to_string();
+        let c_data_dir = CString::new(data_dir)
+            .map_err(|e| BackendError::Internal(e.to_string()))?;
+        // Safety: config_ptr is valid (just created above), c_data_dir is a valid C string.
+        let result = unsafe { dash_spv_ffi_config_set_data_dir(config_ptr, c_data_dir.as_ptr()) };
+        if result != 0 {
+            // Safety: config_ptr is valid.
+            unsafe { dash_spv_ffi_config_destroy(config_ptr) };
+            return Err(BackendError::Internal(get_last_ffi_error()));
+        }
+
+        // Set user agent
+        let c_user_agent = c"dash-spv-ui-ffi";
+        // Safety: config_ptr is valid, c_user_agent is a static C string literal.
+        let result = unsafe {
+            dash_spv_ffi_config_set_user_agent(config_ptr, c_user_agent.as_ptr())
+        };
+        if result != 0 {
+            // Safety: config_ptr is valid.
+            unsafe { dash_spv_ffi_config_destroy(config_ptr) };
+            return Err(BackendError::Internal(get_last_ffi_error()));
+        }
+
+        // Create client
+        // Safety: config_ptr is a valid FFIClientConfig pointer.
+        let client_ptr = unsafe { dash_spv_ffi_client_new(config_ptr) };
+
+        // Config is consumed by client_new; destroy it regardless.
+        // Safety: config_ptr is valid.
+        unsafe { dash_spv_ffi_config_destroy(config_ptr) };
+
+        if client_ptr.is_null() {
+            return Err(BackendError::Internal(get_last_ffi_error()));
+        }
+
+        // Create callback context and leak it as user_data
+        let ctx = Box::new(CallbackContext {
+            event_tx: self.event_tx.clone(),
+            progress: self.progress.clone(),
+        });
+        let user_data = Box::into_raw(ctx) as *mut c_void;
+
+        // Set up all callbacks
+        // Safety: client_ptr is valid (just created), user_data is a valid CallbackContext pointer.
+        unsafe {
+            let sync_cbs = build_sync_callbacks(user_data);
+            dash_spv_ffi_client_set_sync_event_callbacks(client_ptr, sync_cbs);
+
+            let net_cbs = build_network_callbacks(user_data);
+            dash_spv_ffi_client_set_network_event_callbacks(client_ptr, net_cbs);
+
+            let wallet_cbs = build_wallet_callbacks(user_data);
+            dash_spv_ffi_client_set_wallet_event_callbacks(client_ptr, wallet_cbs);
+
+            let progress_cb = build_progress_callback(user_data);
+            dash_spv_ffi_client_set_progress_callback(client_ptr, progress_cb);
+
+            let error_cb = build_error_callback(user_data);
+            dash_spv_ffi_client_set_client_error_callback(client_ptr, error_cb);
+        }
+
+        // Run client (spawns background tasks, returns immediately)
+        // Safety: client_ptr is valid, callbacks are set.
+        let result = unsafe { dash_spv_ffi_client_run(client_ptr) };
+        if result != 0 {
+            // Reclaim the callback context before returning error
+            // Safety: user_data was created by Box::into_raw above.
+            let _ = unsafe { Box::from_raw(user_data as *mut CallbackContext) };
+            // Safety: client_ptr is valid.
+            unsafe { dash_spv_ffi_client_destroy(client_ptr) };
+            return Err(BackendError::Internal(get_last_ffi_error()));
+        }
+
+        *self.client_ptr.lock().unwrap() = client_ptr;
+        *self.callback_ctx.lock().unwrap() = Some(user_data);
+        self.running.store(true, Ordering::Relaxed);
+
+        Ok(())
+    }
+
+    async fn stop(&self) -> BackendResult<()> {
+        if !self.running.load(Ordering::Relaxed) {
+            return Err(BackendError::NotRunning);
+        }
+
+        let client_ptr = {
+            let mut guard = self.client_ptr.lock().unwrap();
+            let ptr = *guard;
+            *guard = std::ptr::null_mut();
+            ptr
+        };
+
+        if !client_ptr.is_null() {
+            // Safety: client_ptr was created by dash_spv_ffi_client_new.
+            unsafe {
+                dash_spv_ffi_client_stop(client_ptr);
+                dash_spv_ffi_client_destroy(client_ptr);
+            }
+        }
+
+        // Reclaim callback context
+        if let Some(user_data) = self.callback_ctx.lock().unwrap().take() {
+            // Safety: user_data was created by Box::into_raw(Box::new(CallbackContext {...}))
+            // in start(). The FFI client has been stopped and destroyed, so no more callbacks
+            // will reference this pointer.
+            let _ = unsafe { Box::from_raw(user_data as *mut CallbackContext) };
+        }
+
+        self.running.store(false, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn is_running(&self) -> bool {
+        self.running.load(Ordering::Relaxed)
+    }
+
+    fn network(&self) -> Network {
+        self.config.network
+    }
+
+    fn tip_height(&self) -> Option<u32> {
+        let progress = self.progress.read().ok()?;
+        let headers = progress.headers().ok()?;
+        let height = headers.tip_height();
+        if height == 0 { None } else { Some(height) }
+    }
+
+    fn sync_progress(&self) -> SyncProgress {
+        self.progress
+            .read()
+            .map(|p| p.clone())
+            .unwrap_or_default()
+    }
+
+    fn generate_mnemonic(&self) -> BackendResult<String> {
+        let mut error = WalletFFIError::success();
+        let ptr = mnemonic_generate(12, &mut error);
+        if ptr.is_null() {
+            return Err(BackendError::Internal(read_wallet_ffi_error(&error)));
+        }
+        // Safety: ptr was returned by mnemonic_generate and is a valid C string.
+        let phrase = unsafe { CStr::from_ptr(ptr) }
+            .to_string_lossy()
+            .into_owned();
+        // Safety: ptr was allocated by mnemonic_generate (CString::into_raw).
+        unsafe { mnemonic_free(ptr) };
+        Ok(phrase)
+    }
+
+    async fn create_wallet(&self, mnemonic: &str) -> BackendResult<()> {
+        let client_ptr = *self.client_ptr.lock().unwrap();
+        if client_ptr.is_null() {
+            // If the client isn't running yet, just save the mnemonic for later.
+            self.save_mnemonic(mnemonic)?;
+            return Ok(());
+        }
+
+        // Safety: client_ptr is valid (checked above).
+        let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
+        if wm.is_null() {
+            return Err(BackendError::Internal(get_last_ffi_error()));
+        }
+
+        let c_mnemonic = CString::new(mnemonic)
+            .map_err(|e| BackendError::Internal(e.to_string()))?;
+        let mut error = WalletFFIError::success();
+
+        // Safety: wm is valid (just obtained), c_mnemonic is a valid C string,
+        // passphrase is null (empty passphrase), error is a valid stack variable.
+        let ok = unsafe {
+            wallet_manager_add_wallet_from_mnemonic(
+                wm as *mut key_wallet_ffi::FFIWalletManager,
+                c_mnemonic.as_ptr(),
+                std::ptr::null(),
+                &mut error,
+            )
+        };
+
+        // Safety: wm was obtained from dash_spv_ffi_client_get_wallet_manager.
+        unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+
+        if !ok {
+            return Err(BackendError::Internal(read_wallet_ffi_error(&error)));
+        }
+
+        self.save_mnemonic(mnemonic)?;
+        Ok(())
+    }
+
+    async fn load_wallet(&self) -> BackendResult<bool> {
+        let mnemonic = match self.read_mnemonic()? {
+            Some(m) => m,
+            None => return Ok(false),
+        };
+
+        let client_ptr = *self.client_ptr.lock().unwrap();
+        if client_ptr.is_null() {
+            // Client not running yet, mnemonic exists so we signal wallet is loadable
+            return Ok(true);
+        }
+
+        // Safety: client_ptr is valid (checked above).
+        let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
+        if wm.is_null() {
+            return Err(BackendError::Internal(get_last_ffi_error()));
+        }
+
+        let c_mnemonic = CString::new(mnemonic.as_str())
+            .map_err(|e| BackendError::Internal(e.to_string()))?;
+        let mut error = WalletFFIError::success();
+
+        // Safety: wm is valid, c_mnemonic is a valid C string.
+        let ok = unsafe {
+            wallet_manager_add_wallet_from_mnemonic(
+                wm as *mut key_wallet_ffi::FFIWalletManager,
+                c_mnemonic.as_ptr(),
+                std::ptr::null(),
+                &mut error,
+            )
+        };
+
+        // Safety: wm was obtained from dash_spv_ffi_client_get_wallet_manager.
+        unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+
+        if !ok {
+            let msg = read_wallet_ffi_error(&error);
+            if msg.contains("already exists") {
+                return Ok(true);
+            }
+            return Err(BackendError::Internal(msg));
+        }
+
+        Ok(true)
+    }
+
+    fn get_receive_address(&self) -> BackendResult<String> {
+        Err(BackendError::Internal(
+            "receive address not yet implemented via FFI".to_string(),
+        ))
+    }
+
+    fn get_balance(&self) -> BackendResult<WalletCoreBalance> {
+        let wallet_id = self.first_wallet_id()?;
+
+        let client_ptr = *self.client_ptr.lock().unwrap();
+        if client_ptr.is_null() {
+            return Err(BackendError::NotRunning);
+        }
+
+        // Safety: client_ptr is valid (checked above).
+        let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
+        if wm.is_null() {
+            return Err(BackendError::Internal(get_last_ffi_error()));
+        }
+
+        let mut confirmed: u64 = 0;
+        let mut unconfirmed: u64 = 0;
+        let mut error = WalletFFIError::success();
+
+        // Safety: wm is valid, wallet_id is a valid 32-byte array on the stack,
+        // output pointers are valid stack variables.
+        let ok = unsafe {
+            wallet_manager_get_wallet_balance(
+                wm as *const key_wallet_ffi::FFIWalletManager,
+                wallet_id.as_ptr(),
+                &mut confirmed,
+                &mut unconfirmed,
+                &mut error,
+            )
+        };
+
+        // Safety: wm was obtained from dash_spv_ffi_client_get_wallet_manager.
+        unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+
+        if !ok {
+            return Err(BackendError::Internal(read_wallet_ffi_error(&error)));
+        }
+
+        Ok(WalletCoreBalance::new(confirmed, unconfirmed, 0, 0))
+    }
+
+    fn get_transactions(&self) -> BackendResult<Vec<TransactionInfo>> {
+        Err(BackendError::Internal(
+            "transaction history not yet implemented via FFI".to_string(),
+        ))
+    }
+
+    async fn send(&self, _address: &str, _amount: u64) -> BackendResult<[u8; 32]> {
+        Err(BackendError::Internal("not implemented".into()))
+    }
+
+    fn subscribe_events(&self) -> EventReceiver {
+        self.event_tx.subscribe()
+    }
+}
+
+impl Drop for FfiBackend {
+    fn drop(&mut self) {
+        let client_ptr = *self.client_ptr.lock().unwrap();
+        if !client_ptr.is_null() {
+            // Safety: client_ptr was created by dash_spv_ffi_client_new.
+            unsafe { dash_spv_ffi_client_destroy(client_ptr) };
+        }
+
+        // Reclaim any leaked callback context
+        if let Some(user_data) = self.callback_ctx.lock().unwrap().take() {
+            // Safety: user_data was created by Box::into_raw(Box::new(CallbackContext {...})).
+            let _ = unsafe { Box::from_raw(user_data as *mut CallbackContext) };
+        }
+    }
+}
+
+// ============================================================================
+// FFI helpers
+// ============================================================================
+
+fn get_last_ffi_error() -> String {
+    let ptr = dash_spv_ffi_get_last_error();
+    if ptr.is_null() {
+        "unknown FFI error".to_string()
+    } else {
+        // Safety: ptr is returned by dash_spv_ffi_get_last_error and points to
+        // a static mutex-guarded CString that remains valid for the duration of
+        // this read.
+        unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned()
+    }
+}
+
+fn read_wallet_ffi_error(error: &WalletFFIError) -> String {
+    if error.message.is_null() {
+        format!("wallet FFI error code {:?}", error.code)
+    } else {
+        // Safety: error.message was set by key-wallet-ffi and is a valid C string.
+        unsafe { CStr::from_ptr(error.message) }
+            .to_string_lossy()
+            .into_owned()
+    }
+}
+
+fn network_to_ffi(network: Network) -> FFINetwork {
+    FFINetwork::from(network)
+}
+
+fn ffi_sync_state_to_rust(state: dash_spv_ffi::types::FFISyncState) -> SyncState {
+    match state {
+        dash_spv_ffi::types::FFISyncState::WaitForEvents => SyncState::WaitForEvents,
+        dash_spv_ffi::types::FFISyncState::WaitingForConnections => {
+            SyncState::WaitingForConnections
+        }
+        dash_spv_ffi::types::FFISyncState::Syncing => SyncState::Syncing,
+        dash_spv_ffi::types::FFISyncState::Synced => SyncState::Synced,
+        dash_spv_ffi::types::FFISyncState::Error => SyncState::Error,
+    }
+}
+
+/// Convert an `FFISyncProgress` pointer into a Rust `SyncProgress`.
+///
+/// Reads each non-null sub-progress pointer and constructs the corresponding
+/// Rust progress type using its public setter methods.
+///
+/// # Safety
+/// `ffi` must point to a valid `FFISyncProgress` struct. All non-null sub-progress
+/// pointers within must also be valid.
+unsafe fn ffi_progress_to_rust(ffi: *const FFISyncProgress) -> SyncProgress {
+    // Safety: all dereferences below are valid because ffi and its non-null
+    // sub-progress pointers were allocated by the FFI layer and remain valid
+    // for the duration of this callback.
+    unsafe {
+        let ffi = &*ffi;
+        let mut progress = SyncProgress::default();
+
+        if !ffi.headers.is_null() {
+            progress.update_headers(convert_headers_progress(&*ffi.headers));
+        }
+        if !ffi.filter_headers.is_null() {
+            progress
+                .update_filter_headers(convert_filter_headers_progress(&*ffi.filter_headers));
+        }
+        if !ffi.filters.is_null() {
+            progress.update_filters(convert_filters_progress(&*ffi.filters));
+        }
+        if !ffi.blocks.is_null() {
+            progress.update_blocks(convert_blocks_progress(&*ffi.blocks));
+        }
+        if !ffi.masternodes.is_null() {
+            progress.update_masternodes(convert_masternodes_progress(&*ffi.masternodes));
+        }
+        if !ffi.chainlocks.is_null() {
+            progress.update_chainlocks(convert_chainlocks_progress(&*ffi.chainlocks));
+        }
+        if !ffi.instantsend.is_null() {
+            progress.update_instantsend(convert_instantsend_progress(&*ffi.instantsend));
+        }
+        if !ffi.mempool.is_null() {
+            progress.update_mempool(convert_mempool_progress(&*ffi.mempool));
+        }
+
+        progress
+    }
+}
+
+fn convert_headers_progress(ffi: &FFIBlockHeadersProgress) -> BlockHeadersProgress {
+    let mut p = BlockHeadersProgress::default();
+    p.set_state(ffi_sync_state_to_rust(ffi.state));
+    p.update_tip_height(ffi.tip_height);
+    p.update_target_height(ffi.target_height);
+    p.update_buffered(ffi.buffered);
+    p
+}
+
+fn convert_filter_headers_progress(ffi: &FFIFilterHeadersProgress) -> FilterHeadersProgress {
+    let mut p = FilterHeadersProgress::default();
+    p.set_state(ffi_sync_state_to_rust(ffi.state));
+    p.update_current_height(ffi.current_height);
+    p.update_target_height(ffi.target_height);
+    p.update_block_header_tip_height(ffi.block_header_tip_height);
+    p
+}
+
+fn convert_filters_progress(ffi: &FFIFiltersProgress) -> FiltersProgress {
+    let mut p = FiltersProgress::default();
+    p.set_state(ffi_sync_state_to_rust(ffi.state));
+    p.update_committed_height(ffi.committed_height);
+    p.update_stored_height(ffi.stored_height);
+    p.update_target_height(ffi.target_height);
+    p.update_filter_header_tip_height(ffi.filter_header_tip_height);
+    p
+}
+
+fn convert_blocks_progress(ffi: &FFIBlocksProgress) -> BlocksProgress {
+    let mut p = BlocksProgress::default();
+    p.set_state(ffi_sync_state_to_rust(ffi.state));
+    p
+}
+
+fn convert_masternodes_progress(ffi: &FFIMasternodesProgress) -> MasternodesProgress {
+    let mut p = MasternodesProgress::default();
+    p.set_state(ffi_sync_state_to_rust(ffi.state));
+    p
+}
+
+fn convert_chainlocks_progress(ffi: &FFIChainLockProgress) -> ChainLockProgress {
+    let mut p = ChainLockProgress::default();
+    p.set_state(ffi_sync_state_to_rust(ffi.state));
+    p
+}
+
+fn convert_instantsend_progress(ffi: &FFIInstantSendProgress) -> InstantSendProgress {
+    let mut p = InstantSendProgress::default();
+    p.set_state(ffi_sync_state_to_rust(ffi.state));
+    p
+}
+
+fn convert_mempool_progress(_ffi: &FFIMempoolProgress) -> MempoolProgress {
+    // MempoolProgress::set_state is pub(super), so we can only return a default.
+    MempoolProgress::default()
+}
+
+// ============================================================================
+// Callback builders
+// ============================================================================
+
+fn build_sync_callbacks(user_data: *mut c_void) -> FFISyncEventCallbacks {
+    FFISyncEventCallbacks {
+        on_sync_start: Some(on_sync_start),
+        on_block_headers_stored: Some(on_block_headers_stored),
+        on_block_header_sync_complete: Some(on_block_header_sync_complete),
+        on_filter_headers_stored: None,
+        on_filter_headers_sync_complete: None,
+        on_filters_stored: None,
+        on_filters_sync_complete: Some(on_filters_sync_complete),
+        on_blocks_needed: None,
+        on_block_processed: Some(on_block_processed),
+        on_masternode_state_updated: None,
+        on_chainlock_received: Some(on_chainlock_received),
+        on_instantlock_received: Some(on_instantlock_received),
+        on_manager_error: Some(on_manager_error),
+        on_sync_complete: Some(on_sync_complete),
+        user_data,
+    }
+}
+
+fn build_network_callbacks(user_data: *mut c_void) -> FFINetworkEventCallbacks {
+    FFINetworkEventCallbacks {
+        on_peer_connected: Some(on_peer_connected),
+        on_peer_disconnected: Some(on_peer_disconnected),
+        on_peers_updated: Some(on_peers_updated),
+        user_data,
+    }
+}
+
+fn build_wallet_callbacks(user_data: *mut c_void) -> FFIWalletEventCallbacks {
+    FFIWalletEventCallbacks {
+        on_transaction_received: Some(on_transaction_received),
+        on_transaction_status_changed: None,
+        on_balance_updated: Some(on_balance_updated),
+        user_data,
+    }
+}
+
+fn build_progress_callback(user_data: *mut c_void) -> FFIProgressCallback {
+    FFIProgressCallback {
+        on_progress: Some(on_progress_update),
+        user_data,
+    }
+}
+
+fn build_error_callback(user_data: *mut c_void) -> FFIClientErrorCallback {
+    FFIClientErrorCallback {
+        on_error: Some(on_client_error),
+        user_data,
+    }
+}
+
+// ============================================================================
+// Extern "C" callback implementations
+// ============================================================================
+
+extern "C" fn on_sync_start(
+    manager_id: dash_spv_ffi::callbacks::FFIManagerId,
+    user_data: *mut c_void,
+) {
+    // Safety: user_data is a valid CallbackContext pointer created by Box::into_raw
+    // in start(). We only borrow it (no ownership transfer).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let manager = match manager_id {
+        dash_spv_ffi::callbacks::FFIManagerId::Headers => {
+            dash_spv::sync::ManagerIdentifier::BlockHeader
+        }
+        dash_spv_ffi::callbacks::FFIManagerId::FilterHeaders => {
+            dash_spv::sync::ManagerIdentifier::FilterHeader
+        }
+        dash_spv_ffi::callbacks::FFIManagerId::Filters => {
+            dash_spv::sync::ManagerIdentifier::Filter
+        }
+        dash_spv_ffi::callbacks::FFIManagerId::Blocks => {
+            dash_spv::sync::ManagerIdentifier::Block
+        }
+        dash_spv_ffi::callbacks::FFIManagerId::Masternodes => {
+            dash_spv::sync::ManagerIdentifier::Masternode
+        }
+        dash_spv_ffi::callbacks::FFIManagerId::ChainLocks => {
+            dash_spv::sync::ManagerIdentifier::ChainLock
+        }
+        dash_spv_ffi::callbacks::FFIManagerId::InstantSend => {
+            dash_spv::sync::ManagerIdentifier::InstantSend
+        }
+        dash_spv_ffi::callbacks::FFIManagerId::Mempool => {
+            dash_spv::sync::ManagerIdentifier::Mempool
+        }
+    };
+    let _ = ctx.event_tx.send(SpvEvent::SyncStarted { manager });
+}
+
+extern "C" fn on_block_headers_stored(tip_height: u32, user_data: *mut c_void) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let _ = ctx.event_tx.send(SpvEvent::HeadersSynced { tip_height });
+}
+
+extern "C" fn on_block_header_sync_complete(tip_height: u32, user_data: *mut c_void) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let _ = ctx.event_tx.send(SpvEvent::HeadersSynced { tip_height });
+}
+
+extern "C" fn on_filters_sync_complete(tip_height: u32, user_data: *mut c_void) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let _ = ctx.event_tx.send(SpvEvent::FiltersSynced { tip_height });
+}
+
+extern "C" fn on_block_processed(
+    height: u32,
+    _hash: *const [u8; 32],
+    new_address_count: u32,
+    _confirmed_txids: *const [u8; 32],
+    _confirmed_txid_count: u32,
+    user_data: *mut c_void,
+) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let _ = ctx.event_tx.send(SpvEvent::BlockProcessed {
+        height,
+        new_addresses: new_address_count,
+    });
+}
+
+extern "C" fn on_chainlock_received(
+    height: u32,
+    _hash: *const [u8; 32],
+    _signature: *const [u8; 96],
+    validated: bool,
+    user_data: *mut c_void,
+) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let _ = ctx.event_tx.send(SpvEvent::ChainLockReceived { height, validated });
+}
+
+extern "C" fn on_instantlock_received(
+    txid: *const [u8; 32],
+    _instantlock_data: *const u8,
+    _instantlock_len: usize,
+    validated: bool,
+    user_data: *mut c_void,
+) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    // txid is a borrowed pointer valid for the duration of the callback.
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let txid_bytes = if txid.is_null() {
+        [0u8; 32]
+    } else {
+        // Safety: txid is a valid pointer to a 32-byte array (callback contract).
+        unsafe { *txid }
+    };
+    let _ = ctx
+        .event_tx
+        .send(SpvEvent::InstantLockReceived { txid: txid_bytes, validated });
+}
+
+extern "C" fn on_manager_error(
+    _manager_id: dash_spv_ffi::callbacks::FFIManagerId,
+    error: *const c_char,
+    user_data: *mut c_void,
+) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let msg = if error.is_null() {
+        "unknown manager error".to_string()
+    } else {
+        // Safety: error is a borrowed C string valid for the duration of the callback.
+        unsafe { CStr::from_ptr(error) }
+            .to_string_lossy()
+            .into_owned()
+    };
+    let _ = ctx.event_tx.send(SpvEvent::Error(msg));
+}
+
+extern "C" fn on_sync_complete(header_tip: u32, cycle: u32, user_data: *mut c_void) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let _ = ctx.event_tx.send(SpvEvent::SyncComplete {
+        tip_height: header_tip,
+        cycle,
+    });
+}
+
+extern "C" fn on_peer_connected(address: *const c_char, user_data: *mut c_void) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let addr = if address.is_null() {
+        "unknown".to_string()
+    } else {
+        // Safety: address is a borrowed C string valid for the duration of the callback.
+        unsafe { CStr::from_ptr(address) }
+            .to_string_lossy()
+            .into_owned()
+    };
+    let _ = ctx.event_tx.send(SpvEvent::PeerConnected(addr));
+}
+
+extern "C" fn on_peer_disconnected(address: *const c_char, user_data: *mut c_void) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let addr = if address.is_null() {
+        "unknown".to_string()
+    } else {
+        // Safety: address is a borrowed C string valid for the duration of the callback.
+        unsafe { CStr::from_ptr(address) }
+            .to_string_lossy()
+            .into_owned()
+    };
+    let _ = ctx.event_tx.send(SpvEvent::PeerDisconnected(addr));
+}
+
+extern "C" fn on_peers_updated(connected_count: u32, best_height: u32, user_data: *mut c_void) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let _ = ctx.event_tx.send(SpvEvent::PeersUpdated {
+        count: connected_count,
+        best_height,
+    });
+}
+
+extern "C" fn on_transaction_received(
+    _wallet_id: *const c_char,
+    _status: key_wallet_ffi::types::FFITransactionContext,
+    _account_index: u32,
+    txid: *const [u8; 32],
+    amount: i64,
+    addresses: *const c_char,
+    user_data: *mut c_void,
+) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+
+    let txid_bytes = if txid.is_null() {
+        [0u8; 32]
+    } else {
+        // Safety: txid is a valid pointer to a 32-byte array (callback contract).
+        unsafe { *txid }
+    };
+
+    let addr_list = if addresses.is_null() {
+        Vec::new()
+    } else {
+        // Safety: addresses is a borrowed C string valid for the duration of the callback.
+        let addr_str = unsafe { CStr::from_ptr(addresses) }
+            .to_string_lossy()
+            .into_owned();
+        addr_str
+            .split(',')
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect()
+    };
+
+    let _ = ctx.event_tx.send(SpvEvent::TransactionReceived {
+        txid: txid_bytes,
+        amount,
+        addresses: addr_list,
+        height: None,
+        timestamp: None,
+        block_hash: None,
+        is_instant_send: false,
+        is_chain_locked: false,
+    });
+}
+
+extern "C" fn on_balance_updated(
+    _wallet_id: *const c_char,
+    spendable: u64,
+    unconfirmed: u64,
+    immature: u64,
+    locked: u64,
+    user_data: *mut c_void,
+) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let _ = ctx.event_tx.send(SpvEvent::BalanceUpdated(
+        WalletCoreBalance::new(spendable, unconfirmed, immature, locked),
+    ));
+}
+
+extern "C" fn on_progress_update(progress: *const FFISyncProgress, user_data: *mut c_void) {
+    if progress.is_null() {
+        return;
+    }
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    // progress is a valid FFISyncProgress pointer provided by the FFI layer for
+    // the duration of this callback.
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let rust_progress = unsafe { ffi_progress_to_rust(progress) };
+
+    if let Ok(mut guard) = ctx.progress.write() {
+        *guard = rust_progress.clone();
+    }
+
+    let _ = ctx
+        .event_tx
+        .send(SpvEvent::SyncProgressUpdated(Box::new(rust_progress)));
+}
+
+extern "C" fn on_client_error(error: *const c_char, user_data: *mut c_void) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    let msg = if error.is_null() {
+        "unknown client error".to_string()
+    } else {
+        // Safety: error is a borrowed C string valid for the duration of the callback.
+        unsafe { CStr::from_ptr(error) }
+            .to_string_lossy()
+            .into_owned()
+    };
+    let _ = ctx.event_tx.send(SpvEvent::Error(msg));
+}

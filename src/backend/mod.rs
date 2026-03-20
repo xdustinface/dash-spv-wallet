@@ -3,7 +3,8 @@ pub(crate) mod dispatch;
 pub mod error;
 #[allow(dead_code)]
 pub mod events;
-pub mod ffi;
+#[cfg(feature = "ffi")]
+pub(crate) mod ffi;
 #[allow(dead_code)]
 pub mod mock;
 #[allow(dead_code)]

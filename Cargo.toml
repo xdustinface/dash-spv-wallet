@@ -13,6 +13,9 @@ dash-spv = { path = "../rust-dashcore-spv-ui/dash-spv" }
 key-wallet = { path = "../rust-dashcore-spv-ui/key-wallet" }
 key-wallet-manager = { path = "../rust-dashcore-spv-ui/key-wallet-manager" }
 
+dash-spv-ffi = { path = "../rust-dashcore-spv-ui/dash-spv-ffi", optional = true }
+key-wallet-ffi = { path = "../rust-dashcore-spv-ui/key-wallet-ffi", optional = true }
+
 dioxus = { version = "0.7", features = ["desktop", "router"] }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
@@ -22,5 +25,8 @@ dirs = "6"
 hex = "0.4"
 toml = "0.8"
 tracing = "0.1"
+
+[features]
+ffi = ["dep:dash-spv-ffi", "dep:key-wallet-ffi"]
 
 [dev-dependencies]
