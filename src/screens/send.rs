@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 
 use crate::backend::dispatch::Backend;
 use crate::backend::r#trait::SpvBackend;
+use crate::config::AppConfig;
 use crate::state::view_models::{format_balance, parse_dash_amount};
 use crate::state::wallet::WalletState;
 
@@ -18,6 +19,7 @@ enum SendStep {
 pub fn Send() -> Element {
     let backend = use_context::<Signal<Backend>>();
     let wallet = use_context::<Signal<WalletState>>();
+    let config = use_context::<Signal<AppConfig>>();
 
     let mut address = use_signal(String::new);
     let mut amount_str = use_signal(String::new);
@@ -26,6 +28,7 @@ pub fn Send() -> Element {
     let mut amount_error = use_signal(|| None::<String>);
 
     let spendable = wallet.read().balance.spendable();
+    let unit = config.read().network.currency_unit();
 
     let mut validate_form = move || -> bool {
         let mut valid = true;
@@ -102,7 +105,7 @@ pub fn Send() -> Element {
                             class: "mb-4",
                             label {
                                 class: "block text-muted text-sm mb-1",
-                                "Amount (DASH)"
+                                "Amount ({unit})"
                             }
                             div {
                                 class: "flex gap-2",
@@ -135,7 +138,7 @@ pub fn Send() -> Element {
                             }
                             p {
                                 class: "text-disabled text-xs mt-1",
-                                "Available: {format_balance(spendable)}"
+                                "Available: {format_balance(spendable, unit)}"
                             }
                             if let Some(err) = amount_error() {
                                 p {
@@ -195,7 +198,7 @@ pub fn Send() -> Element {
                             }
                             p {
                                 class: "text-xl font-bold",
-                                "{format_balance(amount_sats)}"
+                                "{format_balance(amount_sats, unit)}"
                             }
                         }
 

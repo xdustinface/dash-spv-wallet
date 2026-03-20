@@ -33,22 +33,22 @@ pub fn parse_dash_amount(s: &str) -> Option<u64> {
     whole.checked_mul(SATS_PER_DASH)?.checked_add(frac)
 }
 
-/// Format a satoshi amount as DASH string (e.g., "1.23456789 DASH").
-pub fn format_balance(satoshis: u64) -> String {
+/// Format a satoshi amount as a currency string (e.g., "1.23456789 DASH").
+pub fn format_balance(satoshis: u64, unit: &str) -> String {
     let whole = satoshis / 100_000_000;
     let frac = satoshis % 100_000_000;
     if frac == 0 {
-        format!("{whole}.0 DASH")
+        format!("{whole}.0 {unit}")
     } else {
         let frac_str = format!("{frac:08}").trim_end_matches('0').to_string();
-        format!("{whole}.{frac_str} DASH")
+        format!("{whole}.{frac_str} {unit}")
     }
 }
 
 /// Format a signed satoshi amount (for transactions).
-pub fn format_amount(satoshis: i64) -> String {
+pub fn format_amount(satoshis: i64, unit: &str) -> String {
     let abs = satoshis.unsigned_abs();
-    let formatted = format_balance(abs);
+    let formatted = format_balance(abs, unit);
     if satoshis < 0 {
         format!("-{formatted}")
     } else {
@@ -131,14 +131,16 @@ pub fn format_timestamp(timestamp: u64) -> String {
 /// Check whether a transaction matches a search query.
 ///
 /// Matches against txid, addresses, and formatted amount (case-insensitive).
-pub fn matches_search(tx: &TransactionInfo, query: &str) -> bool {
+pub fn matches_search(tx: &TransactionInfo, query: &str, unit: &str) -> bool {
     if query.is_empty() {
         return true;
     }
     let q = query.to_lowercase();
     tx.txid.to_string().to_lowercase().contains(&q)
         || tx.addresses.iter().any(|a| a.to_lowercase().contains(&q))
-        || format_balance(tx.amount.unsigned_abs()).contains(&q)
+        || format_balance(tx.amount.unsigned_abs(), unit)
+            .to_lowercase()
+            .contains(&q)
 }
 
 /// Display-ready transaction info.
@@ -155,13 +157,13 @@ pub struct TransactionView {
 }
 
 /// Convert a transaction record to a display-ready view.
-pub fn format_transaction(tx: &TransactionInfo, current_height: u32) -> TransactionView {
+pub fn format_transaction(tx: &TransactionInfo, current_height: u32, unit: &str) -> TransactionView {
     let txid_hex = tx.txid.to_string();
     let direction_label = match tx.direction {
         TransactionDirection::Sent => "Sent",
         TransactionDirection::Received => "Received",
     };
-    let amount_display = format_amount(tx.amount);
+    let amount_display = format_amount(tx.amount, unit);
     let timestamp_display = format_timestamp(tx.timestamp);
     let confirmations = tx.confirmations(current_height);
     let confirmations_display = if confirmations == 0 {
@@ -197,49 +199,61 @@ mod tests {
 
     #[test]
     fn format_balance_zero() {
-        assert_eq!(format_balance(0), "0.0 DASH");
+        assert_eq!(format_balance(0, "DASH"), "0.0 DASH");
     }
 
     #[test]
     fn format_balance_one_satoshi() {
-        assert_eq!(format_balance(1), "0.00000001 DASH");
+        assert_eq!(format_balance(1, "DASH"), "0.00000001 DASH");
     }
 
     #[test]
     fn format_balance_one_dash() {
-        assert_eq!(format_balance(100_000_000), "1.0 DASH");
+        assert_eq!(format_balance(100_000_000, "DASH"), "1.0 DASH");
     }
 
     #[test]
     fn format_balance_with_decimals() {
-        assert_eq!(format_balance(123_456_789), "1.23456789 DASH");
+        assert_eq!(format_balance(123_456_789, "DASH"), "1.23456789 DASH");
     }
 
     #[test]
     fn format_balance_trailing_zeros_stripped() {
-        assert_eq!(format_balance(150_000_000), "1.5 DASH");
+        assert_eq!(format_balance(150_000_000, "DASH"), "1.5 DASH");
     }
 
     #[test]
     fn format_balance_large_value() {
-        assert_eq!(format_balance(2_100_000_000_000_000), "21000000.0 DASH");
+        assert_eq!(format_balance(2_100_000_000_000_000, "DASH"), "21000000.0 DASH");
+    }
+
+    #[test]
+    fn format_balance_testnet_unit() {
+        assert_eq!(format_balance(100_000_000, "tDASH"), "1.0 tDASH");
+        assert_eq!(format_balance(50_000_000, "tDASH"), "0.5 tDASH");
     }
 
     // -- format_amount --
 
     #[test]
     fn format_amount_positive() {
-        assert_eq!(format_amount(100_000_000), "+1.0 DASH");
+        assert_eq!(format_amount(100_000_000, "DASH"), "+1.0 DASH");
     }
 
     #[test]
     fn format_amount_negative() {
-        assert_eq!(format_amount(-50_000_000), "-0.5 DASH");
+        assert_eq!(format_amount(-50_000_000, "DASH"), "-0.5 DASH");
     }
 
     #[test]
     fn format_amount_zero() {
-        assert_eq!(format_amount(0), "+0.0 DASH");
+        assert_eq!(format_amount(0, "DASH"), "+0.0 DASH");
+    }
+
+    #[test]
+    fn format_amount_testnet_unit() {
+        assert_eq!(format_amount(100_000_000, "tDASH"), "+1.0 tDASH");
+        assert_eq!(format_amount(-50_000_000, "tDASH"), "-0.5 tDASH");
     }
 
     // -- format_address_short --
@@ -362,7 +376,7 @@ mod tests {
             is_chain_locked: false,
         };
 
-        let view = format_transaction(&tx, 1000);
+        let view = format_transaction(&tx, 1000, "DASH");
         assert_eq!(view.direction_label, "Received");
         assert_eq!(view.amount_display, "+1.0 DASH");
         assert_eq!(view.confirmations_display, "7 confirmations");
@@ -386,10 +400,28 @@ mod tests {
             is_chain_locked: false,
         };
 
-        let view = format_transaction(&tx, 1000);
+        let view = format_transaction(&tx, 1000, "DASH");
         assert_eq!(view.direction_label, "Sent");
         assert_eq!(view.amount_display, "-0.5 DASH");
         assert_eq!(view.confirmations_display, "Unconfirmed");
+    }
+
+    #[test]
+    fn format_transaction_testnet_unit() {
+        let tx = TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xAB; 32]),
+            amount: 100_000_000,
+            direction: TransactionDirection::Received,
+            timestamp: 1700000000,
+            height: Some(994),
+            fee: None,
+            addresses: vec!["yAddr123".into()],
+            is_instant_send: false,
+            is_chain_locked: false,
+        };
+
+        let view = format_transaction(&tx, 1000, "tDASH");
+        assert_eq!(view.amount_display, "+1.0 tDASH");
     }
 
     #[test]
@@ -406,7 +438,7 @@ mod tests {
             is_chain_locked: false,
         };
 
-        let view = format_transaction(&tx, 0);
+        let view = format_transaction(&tx, 0, "DASH");
         assert_eq!(view.address_short, "");
     }
 
@@ -470,28 +502,34 @@ mod tests {
 
     #[test]
     fn matches_search_empty_query() {
-        assert!(matches_search(&sample_tx(), ""));
+        assert!(matches_search(&sample_tx(), "", "DASH"));
     }
 
     #[test]
     fn matches_search_txid_partial() {
         let tx = sample_tx();
         let txid_prefix = &tx.txid.to_string()[..8];
-        assert!(matches_search(&tx, txid_prefix));
+        assert!(matches_search(&tx, txid_prefix, "DASH"));
     }
 
     #[test]
     fn matches_search_address() {
-        assert!(matches_search(&sample_tx(), "XqN8a73j"));
+        assert!(matches_search(&sample_tx(), "XqN8a73j", "DASH"));
     }
 
     #[test]
     fn matches_search_amount() {
-        assert!(matches_search(&sample_tx(), "1.5"));
+        assert!(matches_search(&sample_tx(), "1.5", "DASH"));
     }
 
     #[test]
     fn matches_search_no_match() {
-        assert!(!matches_search(&sample_tx(), "zzz_no_match_zzz"));
+        assert!(!matches_search(&sample_tx(), "zzz_no_match_zzz", "DASH"));
+    }
+
+    #[test]
+    fn matches_search_by_unit() {
+        assert!(matches_search(&sample_tx(), "tDASH", "tDASH"));
+        assert!(!matches_search(&sample_tx(), "tDASH", "DASH"));
     }
 }

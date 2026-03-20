@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::backend::types::{TransactionDirection, TransactionInfo};
+use crate::config::AppConfig;
 use crate::state::network::NetworkInfo;
 use crate::state::view_models::{format_transaction, matches_search};
 use crate::state::wallet::WalletState;
@@ -28,6 +29,7 @@ fn apply_filters<'a>(
     txs: &'a [TransactionInfo],
     filter: TxFilter,
     search: &str,
+    unit: &str,
 ) -> Vec<&'a TransactionInfo> {
     txs.iter()
         .filter(|tx| match filter {
@@ -35,7 +37,7 @@ fn apply_filters<'a>(
             TxFilter::Received => tx.direction == TransactionDirection::Received,
             TxFilter::Sent => tx.direction == TransactionDirection::Sent,
         })
-        .filter(|tx| matches_search(tx, search))
+        .filter(|tx| matches_search(tx, search, unit))
         .collect()
 }
 
@@ -43,6 +45,7 @@ fn apply_filters<'a>(
 pub fn Transactions() -> Element {
     let wallet = use_context::<Signal<WalletState>>();
     let network_info = use_context::<Signal<NetworkInfo>>();
+    let config = use_context::<Signal<AppConfig>>();
 
     let mut search_query = use_signal(String::new);
     let mut active_filter = use_signal(|| TxFilter::All);
@@ -50,8 +53,9 @@ pub fn Transactions() -> Element {
 
     let transactions = wallet.read().transactions.clone();
     let current_height = network_info.read().chain_tip;
+    let unit = config.read().network.currency_unit();
 
-    let filtered = apply_filters(&transactions, *active_filter.read(), &search_query.read());
+    let filtered = apply_filters(&transactions, *active_filter.read(), &search_query.read(), unit);
     let total_filtered = filtered.len();
     let visible = (*visible_count.read()).min(total_filtered);
     let remaining = total_filtered.saturating_sub(visible);
@@ -141,7 +145,7 @@ pub fn Transactions() -> Element {
                     class: "space-y-2",
                     for (i, tx) in filtered.iter().take(visible).enumerate() {
                         {
-                            let view = format_transaction(tx, current_height);
+                            let view = format_transaction(tx, current_height, unit);
                             let is_sent = tx.direction == TransactionDirection::Sent;
                             let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
                             let border = if is_sent { "border-l-4 border-error" } else { "border-l-4 border-success" };

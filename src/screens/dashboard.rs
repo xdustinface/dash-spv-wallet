@@ -3,6 +3,7 @@ use dioxus::prelude::*;
 use crate::backend::dispatch::Backend;
 use crate::backend::r#trait::SpvBackend;
 use crate::backend::types::TransactionDirection;
+use crate::config::AppConfig;
 use crate::event_bridge::use_event_bridge;
 use crate::router::Route;
 use crate::state::network::NetworkInfo;
@@ -16,6 +17,7 @@ pub fn Dashboard() -> Element {
     let backend = use_context::<Signal<Backend>>();
     let wallet = use_context::<Signal<WalletState>>();
     let network_info = use_context::<Signal<NetworkInfo>>();
+    let config = use_context::<Signal<AppConfig>>();
 
     // Start the event bridge coroutine to pipe backend events into UI state.
     use_event_bridge();
@@ -47,6 +49,7 @@ pub fn Dashboard() -> Element {
     let balance = wallet.read().balance;
     let transactions = wallet.read().transactions.clone();
     let current_height = network_info.read().chain_tip;
+    let unit = config.read().network.currency_unit();
 
     rsx! {
         div {
@@ -61,7 +64,7 @@ pub fn Dashboard() -> Element {
                 }
                 p {
                     class: "text-4xl font-bold",
-                    "{format_balance(balance.spendable())}"
+                    "{format_balance(balance.spendable(), unit)}"
                 }
 
                 // Breakdown cards for non-zero secondary balances
@@ -69,13 +72,13 @@ pub fn Dashboard() -> Element {
                     class: "flex gap-4 mt-4",
 
                     if balance.unconfirmed() > 0 {
-                        BalanceCard { label: "Pending", amount: balance.unconfirmed() }
+                        BalanceCard { label: "Pending", amount: balance.unconfirmed(), unit }
                     }
                     if balance.immature() > 0 {
-                        BalanceCard { label: "Immature", amount: balance.immature() }
+                        BalanceCard { label: "Immature", amount: balance.immature(), unit }
                     }
                     if balance.locked() > 0 {
-                        BalanceCard { label: "Locked", amount: balance.locked() }
+                        BalanceCard { label: "Locked", amount: balance.locked(), unit }
                     }
                 }
             }
@@ -97,7 +100,7 @@ pub fn Dashboard() -> Element {
                         class: "space-y-1",
                         for (i, tx) in transactions.iter().take(DASHBOARD_TX_LIMIT).enumerate() {
                             {
-                                let view = format_transaction(tx, current_height);
+                                let view = format_transaction(tx, current_height, unit);
                                 let is_sent = tx.direction == TransactionDirection::Sent;
                                 let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
                                 let border = if is_sent { "border-l-4 border-error" } else { "border-l-4 border-success" };
@@ -174,7 +177,7 @@ pub fn Dashboard() -> Element {
 }
 
 #[component]
-fn BalanceCard(label: &'static str, amount: u64) -> Element {
+fn BalanceCard(label: &'static str, amount: u64, unit: &'static str) -> Element {
     rsx! {
         div {
             class: "bg-card rounded-lg p-4",
@@ -184,7 +187,7 @@ fn BalanceCard(label: &'static str, amount: u64) -> Element {
             }
             p {
                 class: "text-sm font-medium",
-                "{format_balance(amount)}"
+                "{format_balance(amount, unit)}"
             }
         }
     }

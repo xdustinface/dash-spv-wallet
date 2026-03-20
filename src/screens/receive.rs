@@ -2,17 +2,20 @@ use dioxus::prelude::*;
 
 use crate::backend::dispatch::Backend;
 use crate::backend::r#trait::SpvBackend;
+use crate::config::AppConfig;
 use crate::state::wallet::WalletState;
 
 #[component]
 pub fn Receive() -> Element {
     let backend = use_context::<Signal<Backend>>();
     let wallet = use_context::<Signal<WalletState>>();
+    let config = use_context::<Signal<AppConfig>>();
 
     let mut copied = use_signal(|| false);
     let error_msg = use_signal(|| None::<String>);
 
     let address = wallet.read().receive_address.clone();
+    let unit = config.read().network.currency_unit();
 
     let generate_address = move |_| {
         let mut wallet = wallet;
@@ -53,7 +56,7 @@ pub fn Receive() -> Element {
 
                 p {
                     class: "text-muted text-sm mb-4",
-                    "Share this address to receive DASH"
+                    "Share this address to receive {unit}"
                 }
 
                 // Address display
