@@ -6,6 +6,7 @@ use crate::screens::network_select::NetworkSelect;
 use crate::screens::receive::Receive;
 use crate::screens::send::Send;
 use crate::screens::settings::Settings;
+use crate::screens::transactions::Transactions;
 use crate::screens::wallet_create::WalletCreate;
 use crate::screens::wallet_choice::WalletChoice;
 use crate::screens::wallet_import::WalletImport;
@@ -23,6 +24,8 @@ pub enum Route {
     #[layout(AppLayout)]
     #[route("/dashboard")]
     Dashboard {},
+    #[route("/transactions")]
+    Transactions {},
     #[route("/send")]
     Send {},
     #[route("/receive")]

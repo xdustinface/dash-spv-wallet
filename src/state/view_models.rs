@@ -124,6 +124,19 @@ pub fn format_timestamp(timestamp: u64) -> String {
     format!("{year}-{month:02}-{day:02}")
 }
 
+/// Check whether a transaction matches a search query.
+///
+/// Matches against txid, addresses, and formatted amount (case-insensitive).
+pub fn matches_search(tx: &TransactionInfo, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    let q = query.to_lowercase();
+    tx.txid.to_string().to_lowercase().contains(&q)
+        || tx.addresses.iter().any(|a| a.to_lowercase().contains(&q))
+        || format_balance(tx.amount.unsigned_abs()).contains(&q)
+}
+
 /// Display-ready transaction info.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TransactionView {
@@ -428,5 +441,48 @@ mod tests {
     #[test]
     fn parse_dash_amount_too_many_decimals() {
         assert_eq!(parse_dash_amount("1.123456789"), None);
+    }
+
+    // -- matches_search --
+
+    fn sample_tx() -> TransactionInfo {
+        TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xAB; 32]),
+            amount: 150_000_000,
+            direction: TransactionDirection::Received,
+            timestamp: 1700000000,
+            height: Some(1000),
+            fee: None,
+            addresses: vec!["XqN8a73jYfHtFbEjz2XYBfrCHn6YQwBGsP".into()],
+            is_instant_send: false,
+            is_chain_locked: false,
+        }
+    }
+
+    #[test]
+    fn matches_search_empty_query() {
+        assert!(matches_search(&sample_tx(), ""));
+    }
+
+    #[test]
+    fn matches_search_txid_partial() {
+        let tx = sample_tx();
+        let txid_prefix = &tx.txid.to_string()[..8];
+        assert!(matches_search(&tx, txid_prefix));
+    }
+
+    #[test]
+    fn matches_search_address() {
+        assert!(matches_search(&sample_tx(), "XqN8a73j"));
+    }
+
+    #[test]
+    fn matches_search_amount() {
+        assert!(matches_search(&sample_tx(), "1.5"));
+    }
+
+    #[test]
+    fn matches_search_no_match() {
+        assert!(!matches_search(&sample_tx(), "zzz_no_match_zzz"));
     }
 }

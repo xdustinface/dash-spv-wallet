@@ -17,6 +17,7 @@ pub fn Sidebar() -> Element {
                 class: "flex flex-col flex-1 p-2 space-y-1",
 
                 NavLink { to: Route::Dashboard {}, label: "Dashboard" }
+                NavLink { to: Route::Transactions {}, label: "Transactions" }
                 NavLink { to: Route::Send {}, label: "Send" }
                 NavLink { to: Route::Receive {}, label: "Receive" }
             }

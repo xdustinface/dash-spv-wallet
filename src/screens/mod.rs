@@ -3,6 +3,7 @@ pub mod network_select;
 pub mod receive;
 pub mod send;
 pub mod settings;
+pub mod transactions;
 pub mod wallet_choice;
 pub mod wallet_create;
 pub mod wallet_import;

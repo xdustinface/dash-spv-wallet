@@ -4,9 +4,12 @@ use crate::backend::dispatch::Backend;
 use crate::backend::r#trait::SpvBackend;
 use crate::backend::types::TransactionDirection;
 use crate::event_bridge::use_event_bridge;
+use crate::router::Route;
 use crate::state::network::NetworkInfo;
 use crate::state::view_models::{format_balance, format_transaction};
 use crate::state::wallet::WalletState;
+
+const DASHBOARD_TX_LIMIT: usize = 10;
 
 #[component]
 pub fn Dashboard() -> Element {
@@ -88,7 +91,7 @@ pub fn Dashboard() -> Element {
                 } else {
                     div {
                         class: "space-y-1",
-                        for (i, tx) in transactions.iter().enumerate() {
+                        for (i, tx) in transactions.iter().take(DASHBOARD_TX_LIMIT).enumerate() {
                             {
                                 let view = format_transaction(tx, current_height);
                                 let is_sent = tx.direction == TransactionDirection::Sent;
@@ -146,6 +149,16 @@ pub fn Dashboard() -> Element {
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                    if transactions.len() > DASHBOARD_TX_LIMIT {
+                        div {
+                            class: "mt-3 text-center",
+                            Link {
+                                to: Route::Transactions {},
+                                class: "text-dash hover:text-dash-hover text-sm transition-colors",
+                                "View all transactions \u{2192}"
                             }
                         }
                     }

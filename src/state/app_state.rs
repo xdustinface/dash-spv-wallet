@@ -41,6 +41,7 @@ pub enum Screen {
     WalletCreate,
     WalletImport,
     Dashboard,
+    Transactions,
     Send,
     Receive,
     Settings,
