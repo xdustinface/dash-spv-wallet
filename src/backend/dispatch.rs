@@ -9,7 +9,7 @@ use super::types::{Network, SyncProgress, TransactionInfo, WalletCoreBalance};
 
 /// Enum dispatch wrapper that delegates all `SpvBackend` calls to either
 /// a real `NativeBackend`, an in-memory `MockBackend`, or an `FfiBackend`.
-pub(crate) enum Backend {
+pub enum Backend {
     Native(NativeBackend),
     Mock(MockBackend),
     #[cfg(feature = "ffi")]

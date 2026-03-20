@@ -7,6 +7,14 @@ description = "Cross-platform Dash SPV wallet GUI"
 license = "MIT"
 repository = "https://github.com/xdustinface/dash-spv-ui"
 
+[lib]
+name = "dash_spv_ui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dash-spv-ui"
+path = "src/main.rs"
+
 [dependencies]
 dashcore = { path = "../rust-dashcore-spv-ui/dash", features = ["serde"] }
 dash-spv = { path = "../rust-dashcore-spv-ui/dash-spv" }
@@ -30,3 +38,5 @@ tracing = "0.1"
 ffi = ["dep:dash-spv-ffi", "dep:key-wallet-ffi"]
 
 [dev-dependencies]
+dash-spv = { path = "../rust-dashcore-spv-ui/dash-spv", features = ["test-utils"] }
+tempfile = "3"

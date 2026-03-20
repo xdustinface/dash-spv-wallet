@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
@@ -31,7 +32,7 @@ type SpvClient = DashSpvClient<
     DiskStorageManager,
 >;
 
-pub(crate) struct NativeBackend {
+pub struct NativeBackend {
     config: AppConfig,
     wallet: Arc<tokio::sync::RwLock<WalletManager<ManagedWalletInfo>>>,
     running: AtomicBool,
@@ -43,7 +44,7 @@ pub(crate) struct NativeBackend {
 }
 
 impl NativeBackend {
-    pub(crate) fn new(config: AppConfig) -> Self {
+    pub fn new(config: AppConfig) -> Self {
         let wallet_manager = WalletManager::<ManagedWalletInfo>::new(config.network);
         let wallet = Arc::new(tokio::sync::RwLock::new(wallet_manager));
         let (event_tx, _) = event_channel(256);
@@ -98,9 +99,15 @@ impl SpvBackend for NativeBackend {
             return Err(BackendError::AlreadyRunning);
         }
 
-        let client_config = ClientConfig::new(self.config.network)
+        let mut client_config = ClientConfig::new(self.config.network)
             .with_storage_path(self.config.data_dir.clone())
             .with_user_agent("dash-spv-ui");
+
+        for peer in &self.config.peers {
+            if let Ok(addr) = peer.parse::<SocketAddr>() {
+                client_config.add_peer(addr);
+            }
+        }
 
         let network_manager = PeerNetworkManager::new(&client_config)
             .await
