@@ -42,7 +42,15 @@ fn main() {
     APP_STATE.with(|cell| cell.set(app_state).ok());
     CONFIG.with(|cell| cell.set(config).ok());
 
-    dioxus::launch(app);
+    dioxus::LaunchBuilder::desktop()
+        .with_cfg(
+            dioxus::desktop::Config::new()
+                .with_window(
+                    dioxus::desktop::WindowBuilder::new()
+                        .with_title("Dash SPV Wallet"),
+                ),
+        )
+        .launch(app);
 }
 
 thread_local! {
