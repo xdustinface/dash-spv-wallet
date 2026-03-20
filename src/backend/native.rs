@@ -171,14 +171,6 @@ impl SpvBackend for NativeBackend {
         Ok(())
     }
 
-    async fn pause(&self) -> BackendResult<()> {
-        self.stop().await
-    }
-
-    async fn resume(&self) -> BackendResult<()> {
-        self.start().await
-    }
-
     fn is_running(&self) -> bool {
         self.running.load(Ordering::Relaxed)
     }

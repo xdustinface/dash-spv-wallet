@@ -144,12 +144,13 @@ pub fn Transactions() -> Element {
                             let view = format_transaction(tx, current_height);
                             let is_sent = tx.direction == TransactionDirection::Sent;
                             let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
+                            let border = if is_sent { "border-l-4 border-error" } else { "border-l-4 border-success" };
                             let address_full = tx.addresses.first().cloned().unwrap_or_default();
                             let confirmations = tx.confirmations(current_height);
 
                             rsx! {
                                 div {
-                                    class: "flex items-center justify-between {bg} hover:bg-hover rounded-lg p-4 transition-colors",
+                                    class: "flex items-center justify-between {bg} {border} hover:bg-hover rounded-lg p-4 transition-colors",
 
                                     // Left: direction + address + time
                                     div {
@@ -200,7 +201,7 @@ pub fn Transactions() -> Element {
                                         }
                                         if view.is_chain_locked {
                                             span {
-                                                class: "bg-purple-600 text-foreground text-xs rounded-full px-2 py-0.5",
+                                                class: "bg-chainlock text-foreground text-xs rounded-full px-2 py-0.5",
                                                 "CL"
                                             }
                                         }

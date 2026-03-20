@@ -132,22 +132,6 @@ impl SpvBackend for MockBackend {
         Ok(())
     }
 
-    async fn pause(&self) -> BackendResult<()> {
-        if !self.running.load(Ordering::Relaxed) {
-            return Err(BackendError::NotRunning);
-        }
-        self.running.store(false, Ordering::Relaxed);
-        Ok(())
-    }
-
-    async fn resume(&self) -> BackendResult<()> {
-        if self.running.load(Ordering::Relaxed) {
-            return Err(BackendError::AlreadyRunning);
-        }
-        self.running.store(true, Ordering::Relaxed);
-        Ok(())
-    }
-
     fn is_running(&self) -> bool {
         self.running.load(Ordering::Relaxed)
     }
@@ -341,20 +325,6 @@ mod tests {
 
         let err = backend.stop().await.unwrap_err();
         assert_eq!(err, BackendError::NotRunning);
-    }
-
-    #[tokio::test]
-    async fn lifecycle_pause_resume() {
-        let backend = MockBackend::builder(Network::Testnet).build();
-
-        backend.start().await.unwrap();
-        assert!(backend.is_running());
-
-        backend.pause().await.unwrap();
-        assert!(!backend.is_running());
-
-        backend.resume().await.unwrap();
-        assert!(backend.is_running());
     }
 
     #[tokio::test]

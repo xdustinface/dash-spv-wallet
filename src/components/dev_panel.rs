@@ -149,7 +149,7 @@ fn category_badge_class(category: &EventCategory) -> &'static str {
     match category {
         EventCategory::Sync => "bg-dash-dark text-dash",
         EventCategory::Network => "bg-success/20 text-success",
-        EventCategory::Wallet => "bg-purple-900 text-purple-300",
+        EventCategory::Wallet => "bg-chainlock text-foreground",
         EventCategory::Error => "bg-error/20 text-error",
     }
 }

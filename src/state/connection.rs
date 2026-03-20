@@ -8,7 +8,6 @@ pub enum ConnectionState {
     Connecting,
     Syncing(SyncProgressView),
     Synced,
-    Paused,
     Error(String),
 }
 
@@ -29,12 +28,12 @@ impl ConnectionState {
             }
             SpvEvent::PeerDisconnected(_) => {}
             SpvEvent::PeersUpdated { count, .. } => {
-                if *count == 0 && !matches!(self, Self::Paused | Self::Error(_)) {
+                if *count == 0 && !matches!(self, Self::Error(_)) {
                     *self = Self::Disconnected;
                 }
             }
             SpvEvent::SyncProgressUpdated(progress) => {
-                if !matches!(self, Self::Paused | Self::Error(_)) {
+                if !matches!(self, Self::Error(_)) {
                     if progress.is_synced() {
                         *self = Self::Synced;
                     } else {
@@ -43,7 +42,7 @@ impl ConnectionState {
                 }
             }
             SpvEvent::SyncComplete { .. } => {
-                if !matches!(self, Self::Paused | Self::Error(_)) {
+                if !matches!(self, Self::Error(_)) {
                     *self = Self::Synced;
                 }
             }
@@ -54,19 +53,6 @@ impl ConnectionState {
         }
     }
 
-    /// Transition to paused state. Only valid from Syncing or Synced.
-    pub fn pause(&mut self) {
-        if matches!(self, Self::Syncing(_) | Self::Synced | Self::Connecting) {
-            *self = Self::Paused;
-        }
-    }
-
-    /// Transition from paused back to connecting.
-    pub fn resume(&mut self) {
-        if matches!(self, Self::Paused) {
-            *self = Self::Connecting;
-        }
-    }
 }
 
 /// Display-ready sync progress.
@@ -164,63 +150,16 @@ mod tests {
     }
 
     #[test]
-    fn pause_from_syncing() {
-        let mut state = ConnectionState::Syncing(SyncProgressView {
-            percentage: 50.0,
-            stage_label: "Syncing...".into(),
-        });
-        state.pause();
-        assert_eq!(state, ConnectionState::Paused);
-    }
-
-    #[test]
-    fn pause_from_synced() {
-        let mut state = ConnectionState::Synced;
-        state.pause();
-        assert_eq!(state, ConnectionState::Paused);
-    }
-
-    #[test]
-    fn pause_from_disconnected_is_noop() {
-        let mut state = ConnectionState::Disconnected;
-        state.pause();
-        assert_eq!(state, ConnectionState::Disconnected);
-    }
-
-    #[test]
-    fn resume_from_paused() {
-        let mut state = ConnectionState::Paused;
-        state.resume();
-        assert_eq!(state, ConnectionState::Connecting);
-    }
-
-    #[test]
-    fn resume_from_non_paused_is_noop() {
-        let mut state = ConnectionState::Synced;
-        state.resume();
-        assert_eq!(state, ConnectionState::Synced);
-    }
-
-    #[test]
     fn error_from_any_state() {
         for initial in [
             ConnectionState::Disconnected,
             ConnectionState::Connecting,
             ConnectionState::Synced,
-            ConnectionState::Paused,
         ] {
             let mut state = initial;
             state.apply_event(&SpvEvent::Error("connection lost".into()));
             assert!(matches!(state, ConnectionState::Error(_)));
         }
-    }
-
-    #[test]
-    fn events_ignored_during_pause() {
-        let mut state = ConnectionState::Paused;
-        let progress = SyncProgress::default();
-        state.apply_event(&SpvEvent::SyncProgressUpdated(Box::new(progress)));
-        assert_eq!(state, ConnectionState::Paused);
     }
 
     #[test]

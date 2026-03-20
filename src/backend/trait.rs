@@ -15,12 +15,6 @@ pub trait SpvBackend: Send + Sync + 'static {
     /// Stop the SPV client and all sync activity.
     fn stop(&self) -> impl Future<Output = BackendResult<()>> + Send;
 
-    /// Pause syncing but keep the client alive.
-    fn pause(&self) -> impl Future<Output = BackendResult<()>> + Send;
-
-    /// Resume syncing after a pause.
-    fn resume(&self) -> impl Future<Output = BackendResult<()>> + Send;
-
     /// Whether the client is currently running (started and not stopped).
     fn is_running(&self) -> bool;
 

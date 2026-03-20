@@ -27,20 +27,6 @@ impl SpvBackend for Backend {
         }
     }
 
-    async fn pause(&self) -> BackendResult<()> {
-        match self {
-            Self::Native(b) => b.pause().await,
-            Self::Mock(b) => b.pause().await,
-        }
-    }
-
-    async fn resume(&self) -> BackendResult<()> {
-        match self {
-            Self::Native(b) => b.resume().await,
-            Self::Mock(b) => b.resume().await,
-        }
-    }
-
     fn is_running(&self) -> bool {
         match self {
             Self::Native(b) => b.is_running(),

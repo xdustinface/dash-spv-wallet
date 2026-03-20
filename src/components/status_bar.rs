@@ -1,7 +1,5 @@
 use dioxus::prelude::*;
 
-use crate::backend::dispatch::Backend;
-use crate::backend::r#trait::SpvBackend;
 use crate::state::connection::ConnectionState;
 use crate::state::network::NetworkInfo;
 use crate::state::view_models::format_peer_count;
@@ -10,7 +8,6 @@ use crate::state::view_models::format_peer_count;
 pub fn StatusBar() -> Element {
     let connection = use_context::<Signal<ConnectionState>>();
     let network_info = use_context::<Signal<NetworkInfo>>();
-    let backend = use_context::<Signal<Backend>>();
 
     let conn = connection.read();
     let info = network_info.read();
@@ -24,12 +21,8 @@ pub fn StatusBar() -> Element {
             true,
         ),
         ConnectionState::Synced => ("bg-success", "Synced".to_string(), false),
-        ConnectionState::Paused => ("bg-warning", "Paused".to_string(), false),
         ConnectionState::Error(msg) => ("bg-error", msg.clone(), false),
     };
-
-    let can_pause = matches!(&*conn, ConnectionState::Syncing(_) | ConnectionState::Synced | ConnectionState::Connecting);
-    let can_resume = matches!(&*conn, ConnectionState::Paused);
 
     let peer_text = format_peer_count(info.connected_peers);
 
@@ -53,6 +46,9 @@ pub fn StatusBar() -> Element {
             span { class: "{dot_class}" }
             span { class: "mr-4", "{status_text}" }
 
+            // Spacer
+            div { class: "flex-1" }
+
             // Peer count
             if info.connected_peers > 0 {
                 span {
@@ -64,33 +60,8 @@ pub fn StatusBar() -> Element {
             // Chain tip
             if !chain_tip.is_empty() {
                 span {
-                    class: "mr-4 text-disabled",
+                    class: "text-disabled",
                     "{chain_tip}"
-                }
-            }
-
-            // Spacer
-            div { class: "flex-1" }
-
-            // Pause/Resume button
-            if can_pause {
-                button {
-                    class: "px-3 py-1 text-xs rounded bg-hover hover:bg-edge text-muted transition-colors",
-                    onclick: move |_| async move {
-                        let _ = backend.read().pause().await;
-                        use_context::<Signal<ConnectionState>>().write().pause();
-                    },
-                    "Pause"
-                }
-            }
-            if can_resume {
-                button {
-                    class: "px-3 py-1 text-xs rounded bg-hover hover:bg-edge text-muted transition-colors",
-                    onclick: move |_| async move {
-                        let _ = backend.read().resume().await;
-                        use_context::<Signal<ConnectionState>>().write().resume();
-                    },
-                    "Resume"
                 }
             }
         }
