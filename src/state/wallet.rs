@@ -22,26 +22,51 @@ impl WalletState {
                 txid,
                 amount,
                 addresses,
+                height,
+                timestamp,
+                is_instant_send,
+                is_chain_locked,
             } => {
+                let txid_parsed = dashcore::Txid::from_byte_array(*txid);
+
+                // If this txid already exists, update its status fields
+                if let Some(existing) = self.transactions.iter_mut().find(|t| t.txid == txid_parsed)
+                {
+                    existing.height = *height;
+                    if let Some(ts) = timestamp {
+                        existing.timestamp = *ts;
+                    }
+                    existing.is_instant_send = *is_instant_send;
+                    existing.is_chain_locked = *is_chain_locked;
+                    // Update amount/addresses if this is a full event (not a status-only update)
+                    if *amount != 0 {
+                        existing.amount = *amount;
+                        existing.addresses.clone_from(addresses);
+                    }
+                    return;
+                }
+
                 let direction = if *amount >= 0 {
                     TransactionDirection::Received
                 } else {
                     TransactionDirection::Sent
                 };
 
+                let fallback_timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
                 let record = TransactionInfo {
-                    txid: dashcore::Txid::from_byte_array(*txid),
+                    txid: txid_parsed,
                     amount: *amount,
                     direction,
-                    timestamp: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs(),
-                    height: None,
+                    timestamp: timestamp.unwrap_or(fallback_timestamp),
+                    height: *height,
                     fee: None,
                     addresses: addresses.clone(),
-                    is_instant_send: false,
-                    is_chain_locked: false,
+                    is_instant_send: *is_instant_send,
+                    is_chain_locked: *is_chain_locked,
                 };
 
                 self.transactions.insert(0, record);
@@ -85,6 +110,10 @@ mod tests {
             txid: [1u8; 32],
             amount: 100_000,
             addresses: vec!["Xaddr1".into()],
+            height: None,
+            timestamp: None,
+            is_instant_send: false,
+            is_chain_locked: false,
         });
         assert_eq!(state.transactions.len(), 1);
         assert_eq!(state.transactions[0].direction, TransactionDirection::Received);
@@ -93,6 +122,10 @@ mod tests {
             txid: [2u8; 32],
             amount: -50_000,
             addresses: vec!["Xaddr2".into()],
+            height: None,
+            timestamp: None,
+            is_instant_send: false,
+            is_chain_locked: false,
         });
         assert_eq!(state.transactions.len(), 2);
         assert_eq!(
@@ -100,6 +133,88 @@ mod tests {
             dashcore::Txid::from_byte_array([2u8; 32])
         );
         assert_eq!(state.transactions[0].direction, TransactionDirection::Sent);
+    }
+
+    #[test]
+    fn transaction_received_with_confirmation_data() {
+        let mut state = WalletState::default();
+
+        state.apply_event(&SpvEvent::TransactionReceived {
+            txid: [3u8; 32],
+            amount: 200_000,
+            addresses: vec!["Xaddr3".into()],
+            height: Some(1000),
+            timestamp: Some(1700000000),
+            is_instant_send: false,
+            is_chain_locked: true,
+        });
+
+        assert_eq!(state.transactions.len(), 1);
+        let tx = &state.transactions[0];
+        assert_eq!(tx.height, Some(1000));
+        assert_eq!(tx.timestamp, 1700000000);
+        assert!(tx.is_chain_locked);
+        assert!(!tx.is_instant_send);
+    }
+
+    #[test]
+    fn transaction_received_instant_send() {
+        let mut state = WalletState::default();
+
+        state.apply_event(&SpvEvent::TransactionReceived {
+            txid: [4u8; 32],
+            amount: 50_000,
+            addresses: vec!["Xaddr4".into()],
+            height: None,
+            timestamp: None,
+            is_instant_send: true,
+            is_chain_locked: false,
+        });
+
+        assert_eq!(state.transactions.len(), 1);
+        assert!(state.transactions[0].is_instant_send);
+        assert!(!state.transactions[0].is_chain_locked);
+        assert_eq!(state.transactions[0].height, None);
+    }
+
+    #[test]
+    fn duplicate_txid_updates_instead_of_inserting() {
+        let mut state = WalletState::default();
+
+        // First: mempool tx
+        state.apply_event(&SpvEvent::TransactionReceived {
+            txid: [5u8; 32],
+            amount: 100_000,
+            addresses: vec!["Xaddr5".into()],
+            height: None,
+            timestamp: None,
+            is_instant_send: false,
+            is_chain_locked: false,
+        });
+        assert_eq!(state.transactions.len(), 1);
+        assert_eq!(state.transactions[0].height, None);
+        assert!(!state.transactions[0].is_chain_locked);
+
+        // Second: same txid confirmed in chain-locked block (status update)
+        state.apply_event(&SpvEvent::TransactionReceived {
+            txid: [5u8; 32],
+            amount: 0,
+            addresses: Vec::new(),
+            height: Some(2000),
+            timestamp: Some(1700001000),
+            is_instant_send: false,
+            is_chain_locked: true,
+        });
+
+        // Should still be one transaction, not two
+        assert_eq!(state.transactions.len(), 1);
+        let tx = &state.transactions[0];
+        assert_eq!(tx.height, Some(2000));
+        assert_eq!(tx.timestamp, 1700001000);
+        assert!(tx.is_chain_locked);
+        // Original amount/addresses should be preserved (status update had amount=0)
+        assert_eq!(tx.amount, 100_000);
+        assert_eq!(tx.addresses, vec!["Xaddr5".to_string()]);
     }
 
     #[test]

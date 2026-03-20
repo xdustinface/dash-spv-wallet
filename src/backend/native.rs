@@ -470,19 +470,35 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             txid,
             amount,
             addresses,
+            status,
             ..
         } => {
             use dashcore::hashes::Hash;
+            let (height, timestamp, is_instant_send, is_chain_locked) =
+                extract_context_fields(&status);
             SpvEvent::TransactionReceived {
                 txid: txid.to_byte_array(),
                 amount,
                 addresses: addresses.iter().map(|a| a.to_string()).collect(),
+                height,
+                timestamp,
+                is_instant_send,
+                is_chain_locked,
             }
         }
-        WalletEvent::TransactionStatusChanged { .. } => {
-            // Status changes (confirmation, IS-lock) don't have a direct SpvEvent mapping yet.
-            // Skip by returning a no-op error event.
-            SpvEvent::Error("transaction status changed (unmapped)".to_string())
+        WalletEvent::TransactionStatusChanged { txid, status, .. } => {
+            use dashcore::hashes::Hash;
+            let (height, timestamp, is_instant_send, is_chain_locked) =
+                extract_context_fields(&status);
+            SpvEvent::TransactionReceived {
+                txid: txid.to_byte_array(),
+                amount: 0,
+                addresses: Vec::new(),
+                height,
+                timestamp,
+                is_instant_send,
+                is_chain_locked,
+            }
         }
         WalletEvent::BalanceUpdated {
             spendable,
@@ -493,5 +509,22 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
         } => SpvEvent::BalanceUpdated(WalletCoreBalance::new(
             spendable, unconfirmed, immature, locked,
         )),
+    }
+}
+
+/// Extract UI-relevant fields from a `TransactionContext`.
+fn extract_context_fields(
+    ctx: &key_wallet::transaction_checking::TransactionContext,
+) -> (Option<u32>, Option<u64>, bool, bool) {
+    use key_wallet::transaction_checking::TransactionContext;
+    match ctx {
+        TransactionContext::Mempool => (None, None, false, false),
+        TransactionContext::InstantSend => (None, None, true, false),
+        TransactionContext::InBlock {
+            height, timestamp, ..
+        } => (Some(*height), timestamp.map(|t| t as u64), false, false),
+        TransactionContext::InChainLockedBlock {
+            height, timestamp, ..
+        } => (Some(*height), timestamp.map(|t| t as u64), false, true),
     }
 }

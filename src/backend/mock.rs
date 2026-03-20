@@ -256,6 +256,10 @@ impl SpvBackend for MockBackend {
             txid: txid_bytes,
             amount: -(amount as i64),
             addresses: vec![address.to_string()],
+            height: None,
+            timestamp: None,
+            is_instant_send: false,
+            is_chain_locked: false,
         });
 
         Ok(txid_bytes)

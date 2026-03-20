@@ -122,6 +122,7 @@ fn categorize_event(event: &SpvEvent) -> (EventCategory, String) {
             txid,
             amount,
             addresses,
+            ..
         } => {
             let txid_short = hex::encode(&txid[..4]);
             let addr = addresses.first().map(|a| a.as_str()).unwrap_or("unknown");
@@ -274,6 +275,10 @@ mod tests {
                     txid: [0; 32],
                     amount: 0,
                     addresses: vec![],
+                    height: None,
+                    timestamp: None,
+                    is_instant_send: false,
+                    is_chain_locked: false,
                 },
                 EventCategory::Wallet,
             ),

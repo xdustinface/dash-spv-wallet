@@ -24,6 +24,19 @@ pub fn Dashboard() -> Element {
         }
     });
 
+    // Load persisted transactions and balance on initial mount.
+    use_future(move || {
+        let mut wallet_state = wallet;
+        async move {
+            if let Ok(txs) = backend.read().get_transactions() {
+                wallet_state.write().set_transactions(txs);
+            }
+            if let Ok(balance) = backend.read().get_balance() {
+                wallet_state.write().balance = balance;
+            }
+        }
+    });
+
     let balance = wallet.read().balance;
     let transactions = wallet.read().transactions.clone();
     let current_height = network_info.read().chain_tip;

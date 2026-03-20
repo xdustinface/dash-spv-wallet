@@ -38,6 +38,10 @@ pub enum SpvEvent {
         txid: [u8; 32],
         amount: i64,
         addresses: Vec<String>,
+        height: Option<u32>,
+        timestamp: Option<u64>,
+        is_instant_send: bool,
+        is_chain_locked: bool,
     },
     BalanceUpdated(WalletCoreBalance),
 
