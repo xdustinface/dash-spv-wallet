@@ -58,7 +58,8 @@ fn main() {
         window_builder = window_builder
             .with_titlebar_transparent(true)
             .with_fullsize_content_view(true)
-            .with_title_hidden(true);
+            .with_title_hidden(true)
+            .with_movable_by_window_background(true);
     }
 
     dioxus::LaunchBuilder::desktop()
