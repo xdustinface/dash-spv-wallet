@@ -25,6 +25,7 @@ pub struct TransactionInfo {
     pub height: Option<u32>,
     pub fee: Option<u64>,
     pub addresses: Vec<String>,
+    pub block_hash: Option<dashcore::BlockHash>,
     pub is_instant_send: bool,
     pub is_chain_locked: bool,
 }

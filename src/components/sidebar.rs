@@ -49,7 +49,7 @@ fn NavLink(to: Route, label: &'static str, active: bool) -> Element {
     let class = if active {
         "block px-4 py-2 rounded-r bg-dash/10 text-dash border-l-2 border-dash font-medium transition-colors"
     } else {
-        "block px-4 py-2 rounded text-muted hover:bg-hover hover:text-foreground transition-colors"
+        "block px-4 py-2 rounded text-muted hover:bg-hover hover:text-foreground transition-colors border-l-2 border-transparent"
     };
 
     rsx! {

@@ -128,6 +128,64 @@ pub fn format_timestamp(timestamp: u64) -> String {
     format!("{year}-{month:02}-{day:02}")
 }
 
+/// Middle-truncate an address for responsive display.
+pub fn format_address_responsive(address: &str, max_chars: usize) -> String {
+    if address.len() <= max_chars {
+        return address.to_string();
+    }
+    let keep = max_chars.saturating_sub(3) / 2;
+    let prefix = &address[..keep];
+    let suffix = &address[address.len() - keep..];
+    format!("{prefix}...{suffix}")
+}
+
+/// Format a Unix timestamp as an absolute UTC date/time string.
+pub fn format_timestamp_absolute(timestamp: u64) -> String {
+    if timestamp == 0 {
+        return "Pending".to_string();
+    }
+
+    let mut remaining_days = (timestamp / 86400) as i64;
+    let day_seconds = timestamp % 86400;
+    let hours = day_seconds / 3600;
+    let minutes = (day_seconds % 3600) / 60;
+    let seconds = day_seconds % 60;
+
+    // Compute year and day-of-year from days since epoch
+    let mut year: i64 = 1970;
+    loop {
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
+        if remaining_days < days_in_year {
+            break;
+        }
+        remaining_days -= days_in_year;
+        year += 1;
+    }
+
+    // Compute month and day from day-of-year
+    let leap = is_leap_year(year);
+    let month_days: [i64; 12] = [
+        31,
+        if leap { 29 } else { 28 },
+        31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+    ];
+    let mut month = 0;
+    for (i, &days) in month_days.iter().enumerate() {
+        if remaining_days < days {
+            month = i + 1;
+            break;
+        }
+        remaining_days -= days;
+    }
+    let day = remaining_days + 1;
+
+    format!("{year}-{month:02}-{day:02} {hours:02}:{minutes:02}:{seconds:02}")
+}
+
+fn is_leap_year(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
 /// Check whether a transaction matches a search query.
 ///
 /// Matches against txid, addresses, and formatted amount (case-insensitive).
@@ -372,6 +430,7 @@ mod tests {
             height: Some(994),
             fee: None,
             addresses: vec!["XqN8a73jYfHtFbEjz2XYBfrCHn6YQwBGsP".into()],
+            block_hash: None,
             is_instant_send: true,
             is_chain_locked: false,
         };
@@ -396,6 +455,7 @@ mod tests {
             height: None,
             fee: Some(226),
             addresses: vec!["XrecipientAddr".into()],
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         };
@@ -416,6 +476,7 @@ mod tests {
             height: Some(994),
             fee: None,
             addresses: vec!["yAddr123".into()],
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         };
@@ -434,6 +495,7 @@ mod tests {
             height: None,
             fee: None,
             addresses: vec![],
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         };
@@ -495,6 +557,7 @@ mod tests {
             height: Some(1000),
             fee: None,
             addresses: vec!["XqN8a73jYfHtFbEjz2XYBfrCHn6YQwBGsP".into()],
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         }
@@ -531,5 +594,59 @@ mod tests {
     fn matches_search_by_unit() {
         assert!(matches_search(&sample_tx(), "tDASH", "tDASH"));
         assert!(!matches_search(&sample_tx(), "tDASH", "DASH"));
+    }
+
+    // -- format_address_responsive --
+
+    #[test]
+    fn format_address_responsive_fits() {
+        let addr = "yAddr123";
+        assert_eq!(format_address_responsive(addr, 20), "yAddr123");
+    }
+
+    #[test]
+    fn format_address_responsive_truncated() {
+        let addr = "yj12i9j58asdfghjklqwertyuiop";
+        let result = format_address_responsive(addr, 15);
+        assert!(result.contains("..."));
+        assert!(result.len() <= 15);
+        assert!(result.starts_with(&addr[..6]));
+        assert!(result.ends_with(&addr[addr.len() - 6..]));
+    }
+
+    #[test]
+    fn format_address_responsive_exact_length() {
+        let addr = "yAddr1234567890";
+        assert_eq!(format_address_responsive(addr, 15), addr);
+    }
+
+    // -- format_timestamp_absolute --
+
+    #[test]
+    fn format_timestamp_absolute_zero() {
+        assert_eq!(format_timestamp_absolute(0), "Pending");
+    }
+
+    #[test]
+    fn format_timestamp_absolute_known_value() {
+        // 2023-11-14 22:13:20 UTC
+        assert_eq!(
+            format_timestamp_absolute(1700000000),
+            "2023-11-14 22:13:20",
+        );
+    }
+
+    #[test]
+    fn format_timestamp_absolute_epoch() {
+        assert_eq!(format_timestamp_absolute(1), "1970-01-01 00:00:01");
+    }
+
+    #[test]
+    fn format_timestamp_absolute_leap_year() {
+        // 2024-02-29 00:00:00 UTC = 1709164800
+        assert_eq!(
+            format_timestamp_absolute(1709164800),
+            "2024-02-29 00:00:00",
+        );
     }
 }

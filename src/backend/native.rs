@@ -313,6 +313,7 @@ impl SpvBackend for NativeBackend {
                     height: r.height,
                     fee: r.fee,
                     addresses: Vec::new(),
+                    block_hash: r.block_hash,
                     is_instant_send: false,
                     is_chain_locked: false,
                 }
@@ -466,7 +467,7 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             ..
         } => {
             use dashcore::hashes::Hash;
-            let (height, timestamp, is_instant_send, is_chain_locked) =
+            let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
                 extract_context_fields(&status);
             SpvEvent::TransactionReceived {
                 txid: txid.to_byte_array(),
@@ -474,13 +475,14 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
                 addresses: addresses.iter().map(|a| a.to_string()).collect(),
                 height,
                 timestamp,
+                block_hash,
                 is_instant_send,
                 is_chain_locked,
             }
         }
         WalletEvent::TransactionStatusChanged { txid, status, .. } => {
             use dashcore::hashes::Hash;
-            let (height, timestamp, is_instant_send, is_chain_locked) =
+            let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
                 extract_context_fields(&status);
             SpvEvent::TransactionReceived {
                 txid: txid.to_byte_array(),
@@ -488,6 +490,7 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
                 addresses: Vec::new(),
                 height,
                 timestamp,
+                block_hash,
                 is_instant_send,
                 is_chain_locked,
             }
@@ -507,16 +510,33 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
 /// Extract UI-relevant fields from a `TransactionContext`.
 fn extract_context_fields(
     ctx: &key_wallet::transaction_checking::TransactionContext,
-) -> (Option<u32>, Option<u64>, bool, bool) {
+) -> (Option<u32>, Option<u64>, Option<[u8; 32]>, bool, bool) {
+    use dashcore::hashes::Hash;
     use key_wallet::transaction_checking::TransactionContext;
     match ctx {
-        TransactionContext::Mempool => (None, None, false, false),
-        TransactionContext::InstantSend => (None, None, true, false),
+        TransactionContext::Mempool => (None, None, None, false, false),
+        TransactionContext::InstantSend => (None, None, None, true, false),
         TransactionContext::InBlock {
-            height, timestamp, ..
-        } => (Some(*height), timestamp.map(|t| t as u64), false, false),
+            height,
+            timestamp,
+            block_hash,
+        } => (
+            Some(*height),
+            timestamp.map(|t| t as u64),
+            block_hash.map(|h| h.to_byte_array()),
+            false,
+            false,
+        ),
         TransactionContext::InChainLockedBlock {
-            height, timestamp, ..
-        } => (Some(*height), timestamp.map(|t| t as u64), false, true),
+            height,
+            timestamp,
+            block_hash,
+        } => (
+            Some(*height),
+            timestamp.map(|t| t as u64),
+            block_hash.map(|h| h.to_byte_array()),
+            false,
+            true,
+        ),
     }
 }

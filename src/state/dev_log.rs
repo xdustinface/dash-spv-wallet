@@ -277,6 +277,7 @@ mod tests {
                     addresses: vec![],
                     height: None,
                     timestamp: None,
+                    block_hash: None,
                     is_instant_send: false,
                     is_chain_locked: false,
                 },

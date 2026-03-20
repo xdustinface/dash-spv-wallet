@@ -230,6 +230,7 @@ impl SpvBackend for MockBackend {
             height: None,
             fee: None,
             addresses: vec![address.to_string()],
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         };
@@ -242,6 +243,7 @@ impl SpvBackend for MockBackend {
             addresses: vec![address.to_string()],
             height: None,
             timestamp: None,
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         });
@@ -282,6 +284,7 @@ pub fn mock_transaction(
         height: Some(1000 + index),
         fee: None,
         addresses: vec![mock_address(index)],
+        block_hash: None,
         is_instant_send: false,
         is_chain_locked: false,
     }

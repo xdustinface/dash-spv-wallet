@@ -39,6 +39,7 @@ impl WalletState {
                 addresses,
                 height,
                 timestamp,
+                block_hash,
                 is_instant_send,
                 is_chain_locked,
             } => {
@@ -50,6 +51,10 @@ impl WalletState {
                     existing.height = *height;
                     if let Some(ts) = timestamp {
                         existing.timestamp = *ts;
+                    }
+                    if let Some(bh) = block_hash {
+                        existing.block_hash =
+                            Some(dashcore::BlockHash::from_byte_array(*bh));
                     }
                     existing.is_instant_send = *is_instant_send;
                     existing.is_chain_locked = *is_chain_locked;
@@ -81,6 +86,8 @@ impl WalletState {
                     height: *height,
                     fee: None,
                     addresses: addresses.clone(),
+                    block_hash: block_hash
+                        .map(dashcore::BlockHash::from_byte_array),
                     is_instant_send: *is_instant_send,
                     is_chain_locked: *is_chain_locked,
                 };
@@ -129,6 +136,7 @@ mod tests {
             addresses: vec!["Xaddr1".into()],
             height: None,
             timestamp: Some(1000),
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         });
@@ -141,6 +149,7 @@ mod tests {
             addresses: vec!["Xaddr2".into()],
             height: None,
             timestamp: Some(2000),
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         });
@@ -163,6 +172,7 @@ mod tests {
             addresses: vec!["Xaddr3".into()],
             height: Some(1000),
             timestamp: Some(1700000000),
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: true,
         });
@@ -185,6 +195,7 @@ mod tests {
             addresses: vec!["Xaddr4".into()],
             height: None,
             timestamp: None,
+            block_hash: None,
             is_instant_send: true,
             is_chain_locked: false,
         });
@@ -206,6 +217,7 @@ mod tests {
             addresses: vec!["Xaddr5".into()],
             height: None,
             timestamp: None,
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         });
@@ -220,6 +232,7 @@ mod tests {
             addresses: Vec::new(),
             height: Some(2000),
             timestamp: Some(1700001000),
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: true,
         });
@@ -247,6 +260,7 @@ mod tests {
                 height: Some(500),
                 fee: None,
                 addresses: vec![],
+                block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
             },
@@ -258,6 +272,7 @@ mod tests {
                 height: Some(600),
                 fee: None,
                 addresses: vec![],
+                block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
             },
@@ -287,6 +302,7 @@ mod tests {
                 height: Some(500),
                 fee: None,
                 addresses: vec![],
+                block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
             },
@@ -298,6 +314,7 @@ mod tests {
                 height: None,
                 fee: None,
                 addresses: vec![],
+                block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
             },
@@ -319,6 +336,7 @@ mod tests {
             addresses: vec!["Xaddr1".into()],
             height: Some(1000),
             timestamp: Some(5000),
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         });
@@ -330,6 +348,7 @@ mod tests {
             addresses: vec!["Xaddr2".into()],
             height: None,
             timestamp: Some(1000),
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         });
@@ -354,6 +373,7 @@ mod tests {
                 height: Some(300),
                 fee: None,
                 addresses: vec![],
+                block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
             },
@@ -365,6 +385,7 @@ mod tests {
                 height: Some(400),
                 fee: None,
                 addresses: vec![],
+                block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
             },
@@ -380,6 +401,7 @@ mod tests {
             addresses: vec!["Xaddr3".into()],
             height: None,
             timestamp: Some(2000),
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         });
@@ -403,6 +425,7 @@ mod tests {
             addresses: vec!["Xaddr1".into()],
             height: Some(500),
             timestamp: Some(3000),
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         });
@@ -414,6 +437,7 @@ mod tests {
             addresses: vec!["Xaddr2".into()],
             height: None,
             timestamp: Some(4000),
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
         });
@@ -426,6 +450,7 @@ mod tests {
             addresses: Vec::new(),
             height: Some(600),
             timestamp: Some(4000),
+            block_hash: None,
             is_instant_send: false,
             is_chain_locked: true,
         });

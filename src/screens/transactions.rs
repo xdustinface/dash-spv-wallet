@@ -3,7 +3,10 @@ use dioxus::prelude::*;
 use crate::backend::types::{TransactionDirection, TransactionInfo};
 use crate::config::AppConfig;
 use crate::state::network::NetworkInfo;
-use crate::state::view_models::{format_transaction, matches_search};
+use crate::state::view_models::{
+    format_address_responsive, format_balance, format_timestamp_absolute, format_transaction,
+    matches_search,
+};
 use crate::state::wallet::WalletState;
 
 const PAGE_SIZE: usize = 50;
@@ -50,6 +53,7 @@ pub fn Transactions() -> Element {
     let mut search_query = use_signal(String::new);
     let mut active_filter = use_signal(|| TxFilter::All);
     let mut visible_count = use_signal(|| PAGE_SIZE);
+    let mut expanded_txid = use_signal(|| None::<dashcore::Txid>);
 
     let transactions = wallet.read().transactions.clone();
     let current_height = network_info.read().chain_tip;
@@ -148,65 +152,126 @@ pub fn Transactions() -> Element {
                             let view = format_transaction(tx, current_height, unit);
                             let is_sent = tx.direction == TransactionDirection::Sent;
                             let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
-                            let border = if is_sent { "border-l-4 border-error" } else { "border-l-4 border-success" };
-                            let address_full = tx.addresses.first().cloned().unwrap_or_default();
+                            let border = if is_sent { "border-error" } else { "border-success" };
+                            let address_short = format_address_responsive(&tx.addresses.first().cloned().unwrap_or_default(), 30);
                             let confirmations = tx.confirmations(current_height);
+                            let is_expanded = *expanded_txid.read() == Some(tx.txid);
+                            let txid = tx.txid;
+                            let tx = (*tx).clone();
 
                             rsx! {
                                 div {
-                                    class: "flex items-center justify-between {bg} {border} hover:bg-hover rounded-lg p-4 transition-colors",
-
-                                    // Left: direction + address + time
                                     div {
-                                        class: "flex items-center gap-3 min-w-0",
-                                        span {
-                                            class: if is_sent { "text-error text-lg flex-shrink-0" } else { "text-success text-lg flex-shrink-0" },
-                                            if is_sent { "▲" } else { "▼" }
-                                        }
-                                        div {
-                                            class: "min-w-0",
-                                            p {
-                                                class: "font-mono text-sm truncate",
-                                                "{address_full}"
+                                        class: "flex items-center justify-between {bg} border-l-4 {border} hover:bg-hover rounded-lg p-3 transition-colors cursor-pointer",
+                                        onclick: move |_| {
+                                            if *expanded_txid.read() == Some(txid) {
+                                                expanded_txid.set(None);
+                                            } else {
+                                                expanded_txid.set(Some(txid));
                                             }
-                                            p {
-                                                class: "text-disabled text-xs",
-                                                "{view.timestamp_display}"
+                                        },
+
+                                        // Left: direction + address + time
+                                        div {
+                                            class: "flex items-center gap-3 min-w-0",
+                                            span {
+                                                class: if is_sent { "text-error text-lg flex-shrink-0" } else { "text-success text-lg flex-shrink-0" },
+                                                if is_sent { "▲" } else { "▼" }
+                                            }
+                                            div {
+                                                class: "min-w-0",
+                                                p {
+                                                    class: "font-mono text-sm truncate",
+                                                    "{address_short}"
+                                                }
+                                                p {
+                                                    class: "text-disabled text-xs",
+                                                    "{view.timestamp_display}"
+                                                }
+                                            }
+                                        }
+
+                                        // Right: amount + confirmations + height + badges
+                                        div {
+                                            class: "text-right flex items-center gap-2 flex-shrink-0",
+                                            div {
+                                                p {
+                                                    class: if is_sent { "text-error font-medium" } else { "text-success font-medium" },
+                                                    "{view.amount_display}"
+                                                }
+                                                p {
+                                                    class: "text-disabled text-xs",
+                                                    if confirmations > 0 {
+                                                        if let Some(h) = tx.height {
+                                                            "{confirmations} confirmations (block {h})"
+                                                        } else {
+                                                            "{view.confirmations_display}"
+                                                        }
+                                                    } else {
+                                                        "Unconfirmed"
+                                                    }
+                                                }
+                                            }
+                                            if view.is_instant_send {
+                                                span {
+                                                    class: "bg-dash text-foreground text-xs rounded-full px-2 py-0.5",
+                                                    "IS"
+                                                }
+                                            }
+                                            if view.is_chain_locked {
+                                                span {
+                                                    class: "bg-chainlock text-foreground text-xs rounded-full px-2 py-0.5",
+                                                    "CL"
+                                                }
                                             }
                                         }
                                     }
 
-                                    // Right: amount + confirmations + height + badges
-                                    div {
-                                        class: "text-right flex items-center gap-2 flex-shrink-0",
+                                    if is_expanded {
                                         div {
-                                            p {
-                                                class: if is_sent { "text-error font-medium" } else { "text-success font-medium" },
-                                                "{view.amount_display}"
+                                            class: "bg-surface-alt rounded-b-lg px-4 py-3 -mt-1 mb-1 border-l-4 {border} text-sm space-y-2",
+
+                                            div {
+                                                class: "flex justify-between",
+                                                span { class: "text-muted", "Transaction ID" }
+                                                span { class: "font-mono text-xs select-all", "{tx.txid}" }
                                             }
-                                            p {
-                                                class: "text-disabled text-xs",
-                                                if confirmations > 0 {
-                                                    if let Some(h) = tx.height {
-                                                        "{confirmations} confirmations (block {h})"
-                                                    } else {
-                                                        "{view.confirmations_display}"
-                                                    }
-                                                } else {
-                                                    "Unconfirmed"
+
+                                            if let Some(hash) = &tx.block_hash {
+                                                div {
+                                                    class: "flex justify-between",
+                                                    span { class: "text-muted", "Block Hash" }
+                                                    span { class: "font-mono text-xs select-all", "{hash}" }
                                                 }
                                             }
-                                        }
-                                        if view.is_instant_send {
-                                            span {
-                                                class: "bg-dash text-foreground text-xs rounded-full px-2 py-0.5",
-                                                "IS"
+
+                                            if let Some(h) = tx.height {
+                                                div {
+                                                    class: "flex justify-between",
+                                                    span { class: "text-muted", "Block Height" }
+                                                    span { "{h}" }
+                                                }
                                             }
-                                        }
-                                        if view.is_chain_locked {
-                                            span {
-                                                class: "bg-chainlock text-foreground text-xs rounded-full px-2 py-0.5",
-                                                "CL"
+
+                                            div {
+                                                class: "flex justify-between",
+                                                span { class: "text-muted", "Date" }
+                                                span { "{format_timestamp_absolute(tx.timestamp)}" }
+                                            }
+
+                                            if let Some(fee) = tx.fee {
+                                                div {
+                                                    class: "flex justify-between",
+                                                    span { class: "text-muted", "Fee" }
+                                                    span { "{format_balance(fee, unit)}" }
+                                                }
+                                            }
+
+                                            div {
+                                                span { class: "text-muted block mb-1", "Addresses" }
+                                                for addr in &tx.addresses {
+                                                    p { class: "font-mono text-xs select-all", "{addr}" }
+                                                }
                                             }
                                         }
                                     }

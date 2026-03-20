@@ -40,6 +40,7 @@ pub enum SpvEvent {
         addresses: Vec<String>,
         height: Option<u32>,
         timestamp: Option<u64>,
+        block_hash: Option<[u8; 32]>,
         is_instant_send: bool,
         is_chain_locked: bool,
     },
