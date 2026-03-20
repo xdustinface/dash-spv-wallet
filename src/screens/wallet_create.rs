@@ -69,7 +69,7 @@ pub fn WalletCreate() -> Element {
 
     rsx! {
         div {
-            class: "flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white",
+            class: "flex flex-col items-center justify-center min-h-screen bg-surface text-foreground",
 
             match *step.read() {
                 Step::Generate => rsx! {
@@ -78,11 +78,11 @@ pub fn WalletCreate() -> Element {
                         "Create New Wallet"
                     }
                     p {
-                        class: "text-gray-400 mb-10",
+                        class: "text-muted mb-10",
                         "Generate a new recovery phrase to create your wallet"
                     }
                     button {
-                        class: "px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-lg font-semibold transition-colors",
+                        class: "px-8 py-3 bg-dash hover:bg-dash-hover rounded-lg text-lg font-semibold transition-colors",
                         onclick: generate_mnemonic,
                         "Generate New Wallet"
                     }
@@ -93,7 +93,7 @@ pub fn WalletCreate() -> Element {
                         "Recovery Phrase"
                     }
                     p {
-                        class: "text-yellow-400 mb-8 max-w-md text-center",
+                        class: "text-warning mb-8 max-w-md text-center",
                         "Write down these words in order. You will need them to recover your wallet."
                     }
 
@@ -101,13 +101,13 @@ pub fn WalletCreate() -> Element {
                         class: "grid grid-cols-3 gap-3 mb-8",
                         for (i, word) in mnemonic_words.read().iter().enumerate() {
                             div {
-                                class: "flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2",
+                                class: "flex items-center gap-2 bg-card border border-edge rounded-lg px-4 py-2",
                                 span {
-                                    class: "text-gray-500 text-sm w-6 text-right",
+                                    class: "text-disabled text-sm w-6 text-right",
                                     "{i + 1}."
                                 }
                                 span {
-                                    class: "text-white font-mono",
+                                    class: "text-foreground font-mono",
                                     "{word}"
                                 }
                             }
@@ -116,13 +116,13 @@ pub fn WalletCreate() -> Element {
 
                     if let Some(err) = error_message.read().as_ref() {
                         p {
-                            class: "text-red-400 mb-4",
+                            class: "text-error mb-4",
                             "{err}"
                         }
                     }
 
                     button {
-                        class: "px-8 py-3 bg-green-600 hover:bg-green-700 rounded-lg text-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                        class: "px-8 py-3 bg-success hover:bg-success/80 rounded-lg text-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                         disabled: *is_creating.read(),
                         onclick: save_and_create,
                         if *is_creating.read() {

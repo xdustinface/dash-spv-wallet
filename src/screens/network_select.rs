@@ -19,14 +19,14 @@ pub fn NetworkSelect() -> Element {
 
     rsx! {
         div {
-            class: "flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white",
+            class: "flex flex-col items-center justify-center min-h-screen bg-surface text-foreground",
 
             h1 {
                 class: "text-3xl font-bold mb-2",
                 "Dash SPV Wallet"
             }
             p {
-                class: "text-gray-400 mb-10",
+                class: "text-muted mb-10",
                 "Select a network to get started"
             }
 
@@ -64,22 +64,22 @@ fn NetworkCard(
     onclick: EventHandler<MouseEvent>,
 ) -> Element {
     let border_class = match color {
-        "blue" => "border-blue-500 hover:bg-blue-500/10",
-        "green" => "border-green-500 hover:bg-green-500/10",
-        "orange" => "border-orange-500 hover:bg-orange-500/10",
-        _ => "border-gray-500 hover:bg-gray-500/10",
+        "blue" => "border-dash hover:bg-dash/10",
+        "green" => "border-success hover:bg-success/10",
+        "orange" => "border-warning hover:bg-warning/10",
+        _ => "border-edge hover:bg-hover",
     };
 
     let dot_class = match color {
-        "blue" => "bg-blue-500",
-        "green" => "bg-green-500",
-        "orange" => "bg-orange-500",
-        _ => "bg-gray-500",
+        "blue" => "bg-dash",
+        "green" => "bg-success",
+        "orange" => "bg-warning",
+        _ => "bg-muted",
     };
 
     rsx! {
         div {
-            class: "flex flex-col items-center p-8 bg-gray-800 border-2 rounded-xl cursor-pointer transition-colors {border_class}",
+            class: "flex flex-col items-center p-8 bg-card border-2 rounded-xl cursor-pointer transition-colors {border_class}",
             onclick: move |evt| onclick.call(evt),
 
             div {
@@ -90,7 +90,7 @@ fn NetworkCard(
                 "{name}"
             }
             p {
-                class: "text-sm text-gray-400",
+                class: "text-sm text-muted",
                 "{description}"
             }
         }

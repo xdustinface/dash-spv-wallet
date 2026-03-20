@@ -16,16 +16,16 @@ pub fn StatusBar() -> Element {
     let info = network_info.read();
 
     let (dot_color, status_text, animate) = match &*conn {
-        ConnectionState::Disconnected => ("bg-gray-500", "Disconnected".to_string(), false),
-        ConnectionState::Connecting => ("bg-yellow-400", "Connecting...".to_string(), true),
+        ConnectionState::Disconnected => ("bg-muted", "Disconnected".to_string(), false),
+        ConnectionState::Connecting => ("bg-warning", "Connecting...".to_string(), true),
         ConnectionState::Syncing(progress) => (
-            "bg-blue-500",
+            "bg-dash",
             format!("Syncing {:.0}%", progress.percentage),
             true,
         ),
-        ConnectionState::Synced => ("bg-green-500", "Synced".to_string(), false),
-        ConnectionState::Paused => ("bg-yellow-400", "Paused".to_string(), false),
-        ConnectionState::Error(msg) => ("bg-red-500", msg.clone(), false),
+        ConnectionState::Synced => ("bg-success", "Synced".to_string(), false),
+        ConnectionState::Paused => ("bg-warning", "Paused".to_string(), false),
+        ConnectionState::Error(msg) => ("bg-error", msg.clone(), false),
     };
 
     let can_pause = matches!(&*conn, ConnectionState::Syncing(_) | ConnectionState::Synced | ConnectionState::Connecting);
@@ -47,7 +47,7 @@ pub fn StatusBar() -> Element {
 
     rsx! {
         div {
-            class: "flex items-center px-4 py-2 bg-gray-800 border-t border-gray-700 text-sm text-gray-400",
+            class: "flex items-center px-4 py-2 bg-surface-alt border-t border-edge text-sm text-muted",
 
             // Status indicator
             span { class: "{dot_class}" }
@@ -56,7 +56,7 @@ pub fn StatusBar() -> Element {
             // Peer count
             if info.connected_peers > 0 {
                 span {
-                    class: "mr-4 text-gray-500",
+                    class: "mr-4 text-disabled",
                     "{peer_text}"
                 }
             }
@@ -64,7 +64,7 @@ pub fn StatusBar() -> Element {
             // Chain tip
             if !chain_tip.is_empty() {
                 span {
-                    class: "mr-4 text-gray-500",
+                    class: "mr-4 text-disabled",
                     "{chain_tip}"
                 }
             }
@@ -75,7 +75,7 @@ pub fn StatusBar() -> Element {
             // Pause/Resume button
             if can_pause {
                 button {
-                    class: "px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors",
+                    class: "px-3 py-1 text-xs rounded bg-hover hover:bg-edge text-muted transition-colors",
                     onclick: move |_| async move {
                         let _ = backend.read().pause().await;
                         use_context::<Signal<ConnectionState>>().write().pause();
@@ -85,7 +85,7 @@ pub fn StatusBar() -> Element {
             }
             if can_resume {
                 button {
-                    class: "px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors",
+                    class: "px-3 py-1 text-xs rounded bg-hover hover:bg-edge text-muted transition-colors",
                     onclick: move |_| async move {
                         let _ = backend.read().resume().await;
                         use_context::<Signal<ConnectionState>>().write().resume();

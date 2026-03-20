@@ -41,7 +41,7 @@ pub fn Receive() -> Element {
 
     rsx! {
         div {
-            class: "text-white p-6",
+            class: "text-foreground p-6",
 
             h1 {
                 class: "text-2xl font-bold mb-6",
@@ -49,10 +49,10 @@ pub fn Receive() -> Element {
             }
 
             div {
-                class: "bg-gray-800 rounded-lg p-6 max-w-lg",
+                class: "bg-card rounded-lg p-6 max-w-lg",
 
                 p {
-                    class: "text-gray-400 text-sm mb-4",
+                    class: "text-muted text-sm mb-4",
                     "Share this address to receive DASH"
                 }
 
@@ -60,7 +60,7 @@ pub fn Receive() -> Element {
                 match &address {
                     Some(addr) => rsx! {
                         div {
-                            class: "bg-gray-900 rounded-lg p-4 mb-4",
+                            class: "bg-surface-alt rounded-lg p-4 mb-4",
                             p {
                                 class: "font-mono text-sm break-all text-center select-all",
                                 "{addr}"
@@ -68,16 +68,16 @@ pub fn Receive() -> Element {
                         }
 
                         button {
-                            class: "w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors mb-3",
+                            class: "w-full bg-hover hover:bg-edge text-foreground font-medium py-2 px-4 rounded-lg transition-colors mb-3",
                             onclick: copy_address,
                             if copied() { "Copied!" } else { "Copy Address" }
                         }
                     },
                     None => rsx! {
                         div {
-                            class: "bg-gray-900 rounded-lg p-4 mb-4 text-center",
+                            class: "bg-surface-alt rounded-lg p-4 mb-4 text-center",
                             p {
-                                class: "text-gray-500",
+                                class: "text-disabled",
                                 "No address generated yet"
                             }
                         }
@@ -85,14 +85,14 @@ pub fn Receive() -> Element {
                 }
 
                 button {
-                    class: "w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-4 rounded-lg transition-colors",
+                    class: "w-full bg-dash hover:bg-dash-hover text-foreground font-medium py-2 px-4 rounded-lg transition-colors",
                     onclick: generate_address,
                     "Generate New Address"
                 }
 
                 if let Some(err) = error_msg() {
                     p {
-                        class: "text-red-400 text-sm mt-3",
+                        class: "text-error text-sm mt-3",
                         "{err}"
                     }
                 }

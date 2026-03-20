@@ -27,11 +27,11 @@ pub fn DevPanel() -> Element {
 
     rsx! {
         div {
-            class: "border-t border-gray-700 bg-gray-850",
+            class: "border-t border-edge bg-surface-alt",
 
             // Toggle bar
             button {
-                class: "flex items-center justify-between w-full px-4 py-1 text-xs text-gray-400 hover:bg-gray-700 transition-colors",
+                class: "flex items-center justify-between w-full px-4 py-1 text-xs text-muted hover:bg-hover transition-colors",
                 onclick: move |_| {
                     let current = *is_open.read();
                     is_open.set(!current);
@@ -46,7 +46,7 @@ pub fn DevPanel() -> Element {
                 }
 
                 span {
-                    class: "text-gray-500",
+                    class: "text-disabled",
                     if *is_open.read() { "Collapse" } else { "Expand" }
                 }
             }
@@ -72,7 +72,7 @@ pub fn DevPanel() -> Element {
 
                         // Clear button
                         button {
-                            class: "px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-400 transition-colors",
+                            class: "px-2 py-1 text-xs rounded bg-hover hover:bg-edge text-muted transition-colors",
                             onclick: move |_| dev_log.write().clear(),
                             "Clear"
                         }
@@ -84,7 +84,7 @@ pub fn DevPanel() -> Element {
 
                         if entries.is_empty() {
                             p {
-                                class: "text-gray-600 py-2",
+                                class: "text-disabled py-2",
                                 "No events yet."
                             }
                         }
@@ -95,7 +95,7 @@ pub fn DevPanel() -> Element {
 
                                 // Timestamp
                                 span {
-                                    class: "text-gray-600 shrink-0",
+                                    class: "text-disabled shrink-0",
                                     "{format_time(*timestamp)}"
                                 }
 
@@ -107,7 +107,7 @@ pub fn DevPanel() -> Element {
 
                                 // Message
                                 span {
-                                    class: "text-gray-300",
+                                    class: "text-foreground",
                                     "{message}"
                                 }
                             }
@@ -122,9 +122,9 @@ pub fn DevPanel() -> Element {
 #[component]
 fn FilterButton(label: &'static str, active: bool, onclick: EventHandler<MouseEvent>) -> Element {
     let class = if active {
-        "px-2 py-1 text-xs rounded bg-blue-600 text-white"
+        "px-2 py-1 text-xs rounded bg-dash text-foreground"
     } else {
-        "px-2 py-1 text-xs rounded bg-gray-700 text-gray-400 hover:bg-gray-600 transition-colors"
+        "px-2 py-1 text-xs rounded bg-hover text-muted hover:bg-edge transition-colors"
     };
 
     rsx! {
@@ -147,10 +147,10 @@ fn category_label(category: &EventCategory) -> &'static str {
 
 fn category_badge_class(category: &EventCategory) -> &'static str {
     match category {
-        EventCategory::Sync => "bg-blue-900 text-blue-300",
-        EventCategory::Network => "bg-green-900 text-green-300",
+        EventCategory::Sync => "bg-dash-dark text-dash",
+        EventCategory::Network => "bg-success/20 text-success",
         EventCategory::Wallet => "bg-purple-900 text-purple-300",
-        EventCategory::Error => "bg-red-900 text-red-300",
+        EventCategory::Error => "bg-error/20 text-error",
     }
 }
 

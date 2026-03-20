@@ -27,13 +27,13 @@ pub fn Dashboard() -> Element {
 
     rsx! {
         div {
-            class: "text-white p-6",
+            class: "text-foreground p-6",
 
             // Balance section
             div {
                 class: "mb-8",
                 h2 {
-                    class: "text-gray-400 text-sm uppercase tracking-wide mb-2",
+                    class: "text-muted text-sm uppercase tracking-wide mb-2",
                     "Available Balance"
                 }
                 p {
@@ -66,7 +66,7 @@ pub fn Dashboard() -> Element {
 
                 if transactions.is_empty() {
                     div {
-                        class: "text-gray-500 text-center py-12",
+                        class: "text-disabled text-center py-12",
                         p { class: "text-lg", "No transactions yet" }
                     }
                 } else {
@@ -76,17 +76,17 @@ pub fn Dashboard() -> Element {
                             {
                                 let view = format_transaction(tx);
                                 let is_sent = tx.direction == TransactionDirection::Sent;
-                                let bg = if i % 2 == 0 { "bg-gray-800" } else { "bg-gray-850" };
+                                let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
 
                                 rsx! {
                                     div {
-                                        class: "flex items-center justify-between {bg} hover:bg-gray-750 rounded-lg p-4 transition-colors",
+                                        class: "flex items-center justify-between {bg} hover:bg-hover rounded-lg p-4 transition-colors",
 
                                         // Left: direction + address + time
                                         div {
                                             class: "flex items-center gap-3",
                                             span {
-                                                class: if is_sent { "text-red-400 text-lg" } else { "text-green-400 text-lg" },
+                                                class: if is_sent { "text-error text-lg" } else { "text-success text-lg" },
                                                 if is_sent { "▲" } else { "▼" }
                                             }
                                             div {
@@ -95,7 +95,7 @@ pub fn Dashboard() -> Element {
                                                     "{view.address_short}"
                                                 }
                                                 p {
-                                                    class: "text-gray-500 text-xs",
+                                                    class: "text-disabled text-xs",
                                                     "{view.timestamp_display}"
                                                 }
                                             }
@@ -106,18 +106,18 @@ pub fn Dashboard() -> Element {
                                             class: "text-right flex items-center gap-2",
                                             div {
                                                 p {
-                                                    class: if is_sent { "text-red-400 font-medium" } else { "text-green-400 font-medium" },
+                                                    class: if is_sent { "text-error font-medium" } else { "text-success font-medium" },
                                                     "{view.amount_display}"
                                                 }
                                                 p {
-                                                    class: "text-gray-500 text-xs",
+                                                    class: "text-disabled text-xs",
                                                     "{view.confirmations_display}"
                                                 }
                                             }
                                             // Badges
                                             if view.is_instant_send {
                                                 span {
-                                                    class: "bg-blue-600 text-xs rounded-full px-2 py-0.5",
+                                                    class: "bg-dash text-xs rounded-full px-2 py-0.5",
                                                     "IS"
                                                 }
                                             }
@@ -143,9 +143,9 @@ pub fn Dashboard() -> Element {
 fn BalanceCard(label: &'static str, amount: u64) -> Element {
     rsx! {
         div {
-            class: "bg-gray-800 rounded-lg p-4",
+            class: "bg-card rounded-lg p-4",
             p {
-                class: "text-gray-400 text-xs uppercase tracking-wide mb-1",
+                class: "text-muted text-xs uppercase tracking-wide mb-1",
                 "{label}"
             }
             p {

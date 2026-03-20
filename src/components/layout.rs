@@ -16,7 +16,7 @@ pub fn AppLayout() -> Element {
 
     rsx! {
         div {
-            class: "flex min-h-screen bg-gray-900 text-white",
+            class: "flex min-h-screen bg-surface text-foreground",
 
             Sidebar {}
 
@@ -24,7 +24,7 @@ pub fn AppLayout() -> Element {
                 class: "flex flex-col flex-1",
 
                 header {
-                    class: "flex items-center justify-end px-4 py-2 bg-gray-850 border-b border-gray-700",
+                    class: "flex items-center justify-end px-4 py-2 bg-surface-alt border-b border-edge",
                     NetworkBadge { label: network_label }
                 }
 
@@ -44,7 +44,7 @@ pub fn AppLayout() -> Element {
 fn NetworkBadge(label: String) -> Element {
     rsx! {
         span {
-            class: "px-3 py-1 text-xs font-medium rounded-full bg-gray-700 text-gray-300",
+            class: "px-3 py-1 text-xs font-medium rounded-full bg-hover text-muted",
             "{label}"
         }
     }

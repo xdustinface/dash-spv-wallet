@@ -62,7 +62,7 @@ pub fn Send() -> Element {
         SendStep::Form => {
             rsx! {
                 div {
-                    class: "text-white p-6",
+                    class: "text-foreground p-6",
 
                     h1 {
                         class: "text-2xl font-bold mb-6",
@@ -70,17 +70,17 @@ pub fn Send() -> Element {
                     }
 
                     div {
-                        class: "bg-gray-800 rounded-lg p-6 max-w-lg",
+                        class: "bg-card rounded-lg p-6 max-w-lg",
 
                         // Address input
                         div {
                             class: "mb-4",
                             label {
-                                class: "block text-gray-400 text-sm mb-1",
+                                class: "block text-muted text-sm mb-1",
                                 "Destination Address"
                             }
                             input {
-                                class: "w-full bg-gray-900 text-white rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500",
+                                class: "w-full bg-surface-alt text-foreground rounded-lg p-3 outline-none focus:ring-2 focus:ring-dash",
                                 r#type: "text",
                                 placeholder: "Dash address",
                                 value: "{address}",
@@ -91,7 +91,7 @@ pub fn Send() -> Element {
                             }
                             if address_error() {
                                 p {
-                                    class: "text-red-400 text-sm mt-1",
+                                    class: "text-error text-sm mt-1",
                                     "Address is required"
                                 }
                             }
@@ -101,13 +101,13 @@ pub fn Send() -> Element {
                         div {
                             class: "mb-4",
                             label {
-                                class: "block text-gray-400 text-sm mb-1",
+                                class: "block text-muted text-sm mb-1",
                                 "Amount (DASH)"
                             }
                             div {
                                 class: "flex gap-2",
                                 input {
-                                    class: "flex-1 bg-gray-900 text-white rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500",
+                                    class: "flex-1 bg-surface-alt text-foreground rounded-lg p-3 outline-none focus:ring-2 focus:ring-dash",
                                     r#type: "text",
                                     placeholder: "0.0",
                                     value: "{amount_str}",
@@ -117,7 +117,7 @@ pub fn Send() -> Element {
                                     },
                                 }
                                 button {
-                                    class: "bg-gray-700 hover:bg-gray-600 text-white px-4 rounded-lg transition-colors",
+                                    class: "bg-hover hover:bg-edge text-foreground px-4 rounded-lg transition-colors",
                                     onclick: move |_| {
                                         let whole = spendable / 100_000_000;
                                         let frac = spendable % 100_000_000;
@@ -134,12 +134,12 @@ pub fn Send() -> Element {
                                 }
                             }
                             p {
-                                class: "text-gray-500 text-xs mt-1",
+                                class: "text-disabled text-xs mt-1",
                                 "Available: {format_balance(spendable)}"
                             }
                             if let Some(err) = amount_error() {
                                 p {
-                                    class: "text-red-400 text-sm mt-1",
+                                    class: "text-error text-sm mt-1",
                                     "{err}"
                                 }
                             }
@@ -147,7 +147,7 @@ pub fn Send() -> Element {
 
                         // Review button
                         button {
-                            class: "w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 px-4 rounded-lg transition-colors",
+                            class: "w-full bg-dash hover:bg-dash-hover text-foreground font-medium py-3 px-4 rounded-lg transition-colors",
                             onclick: move |_| {
                                 if validate_form() {
                                     step.set(SendStep::Review);
@@ -165,7 +165,7 @@ pub fn Send() -> Element {
 
             rsx! {
                 div {
-                    class: "text-white p-6",
+                    class: "text-foreground p-6",
 
                     h1 {
                         class: "text-2xl font-bold mb-6",
@@ -173,12 +173,12 @@ pub fn Send() -> Element {
                     }
 
                     div {
-                        class: "bg-gray-800 rounded-lg p-6 max-w-lg",
+                        class: "bg-card rounded-lg p-6 max-w-lg",
 
                         div {
                             class: "mb-4",
                             p {
-                                class: "text-gray-400 text-sm",
+                                class: "text-muted text-sm",
                                 "To"
                             }
                             p {
@@ -190,7 +190,7 @@ pub fn Send() -> Element {
                         div {
                             class: "mb-6",
                             p {
-                                class: "text-gray-400 text-sm",
+                                class: "text-muted text-sm",
                                 "Amount"
                             }
                             p {
@@ -203,7 +203,7 @@ pub fn Send() -> Element {
                             class: "flex gap-3",
 
                             button {
-                                class: "flex-1 bg-gray-700 hover:bg-gray-600 text-white font-medium py-3 px-4 rounded-lg transition-colors",
+                                class: "flex-1 bg-hover hover:bg-edge text-foreground font-medium py-3 px-4 rounded-lg transition-colors",
                                 onclick: move |_| {
                                     step.set(SendStep::Form);
                                 },
@@ -211,7 +211,7 @@ pub fn Send() -> Element {
                             }
 
                             button {
-                                class: "flex-1 bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 px-4 rounded-lg transition-colors",
+                                class: "flex-1 bg-dash hover:bg-dash-hover text-foreground font-medium py-3 px-4 rounded-lg transition-colors",
                                 onclick: move |_| {
                                     step.set(SendStep::Sending);
                                     let addr = address.read().clone();
@@ -237,9 +237,9 @@ pub fn Send() -> Element {
         SendStep::Sending => {
             rsx! {
                 div {
-                    class: "text-white p-6 flex flex-col items-center justify-center min-h-[300px]",
+                    class: "text-foreground p-6 flex flex-col items-center justify-center min-h-[300px]",
                     div {
-                        class: "animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4",
+                        class: "animate-spin rounded-full h-12 w-12 border-b-2 border-dash mb-4",
                     }
                     p {
                         class: "text-lg",
@@ -258,13 +258,13 @@ pub fn Send() -> Element {
 
             rsx! {
                 div {
-                    class: "text-white p-6",
+                    class: "text-foreground p-6",
 
                     div {
-                        class: "bg-gray-800 rounded-lg p-6 max-w-lg text-center",
+                        class: "bg-card rounded-lg p-6 max-w-lg text-center",
 
                         p {
-                            class: "text-green-400 text-4xl mb-4",
+                            class: "text-success text-4xl mb-4",
                             "✓"
                         }
                         h2 {
@@ -272,14 +272,14 @@ pub fn Send() -> Element {
                             "Transaction sent!"
                         }
                         p {
-                            class: "font-mono text-sm text-gray-400 mb-6",
+                            class: "font-mono text-sm text-muted mb-6",
                             title: "{txid_hex}",
                             "{short_txid}"
                         }
 
                         Link {
                             to: crate::router::Route::Dashboard {},
-                            class: "inline-block bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 px-6 rounded-lg transition-colors",
+                            class: "inline-block bg-dash hover:bg-dash-hover text-foreground font-medium py-3 px-6 rounded-lg transition-colors",
                             "Back to Dashboard"
                         }
                     }
@@ -290,22 +290,22 @@ pub fn Send() -> Element {
         SendStep::Error(msg) => {
             rsx! {
                 div {
-                    class: "text-white p-6",
+                    class: "text-foreground p-6",
 
                     div {
-                        class: "bg-gray-800 rounded-lg p-6 max-w-lg",
+                        class: "bg-card rounded-lg p-6 max-w-lg",
 
                         h2 {
-                            class: "text-xl font-bold mb-4 text-red-400",
+                            class: "text-xl font-bold mb-4 text-error",
                             "Send Failed"
                         }
                         p {
-                            class: "text-gray-300 mb-6",
+                            class: "text-foreground mb-6",
                             "{msg}"
                         }
 
                         button {
-                            class: "w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 px-4 rounded-lg transition-colors",
+                            class: "w-full bg-dash hover:bg-dash-hover text-foreground font-medium py-3 px-4 rounded-lg transition-colors",
                             onclick: move |_| {
                                 step.set(SendStep::Form);
                             },

@@ -6,10 +6,10 @@ use crate::router::Route;
 pub fn Sidebar() -> Element {
     rsx! {
         nav {
-            class: "flex flex-col w-56 min-h-screen bg-gray-800 text-gray-300",
+            class: "flex flex-col w-56 min-h-screen bg-surface text-muted",
 
             div {
-                class: "p-4 text-xl font-bold text-blue-500 border-b border-gray-700",
+                class: "p-4 text-xl font-bold text-dash border-b border-edge",
                 "Dash SPV"
             }
 
@@ -29,7 +29,7 @@ fn NavLink(to: Route, label: &'static str) -> Element {
     rsx! {
         Link {
             to,
-            class: "block px-4 py-2 rounded hover:bg-gray-700 hover:text-white transition-colors",
+            class: "block px-4 py-2 rounded hover:bg-hover hover:text-foreground transition-colors",
             "{label}"
         }
     }
