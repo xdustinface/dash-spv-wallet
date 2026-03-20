@@ -113,6 +113,7 @@ fn app() -> Element {
     let _dev_log = use_context_provider(|| Signal::new(DevLog::default()));
 
     rsx! {
+        style { {include_str!("../assets/tailwind.css")} }
         Router::<Route> {}
     }
 }
