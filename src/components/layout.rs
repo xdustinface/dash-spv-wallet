@@ -16,12 +16,12 @@ pub fn AppLayout() -> Element {
 
     rsx! {
         div {
-            class: "flex min-h-screen bg-surface text-foreground",
+            class: "flex h-screen bg-surface text-foreground",
 
             Sidebar {}
 
             div {
-                class: "flex flex-col flex-1",
+                class: "flex flex-col flex-1 min-h-0",
 
                 header {
                     class: "flex items-center justify-end px-4 py-2 bg-surface-alt border-b border-edge",
@@ -29,7 +29,7 @@ pub fn AppLayout() -> Element {
                 }
 
                 main {
-                    class: "flex-1 p-6",
+                    class: "flex-1 overflow-y-auto p-6",
                     Outlet::<crate::router::Route> {}
                 }
 

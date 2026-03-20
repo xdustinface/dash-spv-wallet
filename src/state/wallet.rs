@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use dashcore::hashes::Hash;
 
 use crate::backend::events::SpvEvent;
@@ -9,6 +11,19 @@ pub struct WalletState {
     pub balance: WalletCoreBalance,
     pub transactions: Vec<TransactionInfo>,
     pub receive_address: Option<String>,
+}
+
+/// Sort transactions: unconfirmed first, then by timestamp descending.
+fn sort_transactions(transactions: &mut [TransactionInfo]) {
+    transactions.sort_by(|a, b| {
+        let a_confirmed = a.height.is_some();
+        let b_confirmed = b.height.is_some();
+        match (a_confirmed, b_confirmed) {
+            (false, true) => Ordering::Less,
+            (true, false) => Ordering::Greater,
+            _ => b.timestamp.cmp(&a.timestamp),
+        }
+    });
 }
 
 impl WalletState {
@@ -43,6 +58,7 @@ impl WalletState {
                         existing.amount = *amount;
                         existing.addresses.clone_from(addresses);
                     }
+                    sort_transactions(&mut self.transactions);
                     return;
                 }
 
@@ -69,7 +85,8 @@ impl WalletState {
                     is_chain_locked: *is_chain_locked,
                 };
 
-                self.transactions.insert(0, record);
+                self.transactions.push(record);
+                sort_transactions(&mut self.transactions);
             }
             _ => {}
         }
@@ -77,7 +94,7 @@ impl WalletState {
 
     /// Replace the full transaction list (e.g., after initial load).
     pub fn set_transactions(&mut self, mut transactions: Vec<TransactionInfo>) {
-        transactions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        sort_transactions(&mut transactions);
         self.transactions = transactions;
     }
 }
@@ -103,7 +120,7 @@ mod tests {
     }
 
     #[test]
-    fn transaction_received_event_adds_to_front() {
+    fn transaction_received_events_sorted_by_timestamp() {
         let mut state = WalletState::default();
 
         state.apply_event(&SpvEvent::TransactionReceived {
@@ -111,7 +128,7 @@ mod tests {
             amount: 100_000,
             addresses: vec!["Xaddr1".into()],
             height: None,
-            timestamp: None,
+            timestamp: Some(1000),
             is_instant_send: false,
             is_chain_locked: false,
         });
@@ -123,11 +140,12 @@ mod tests {
             amount: -50_000,
             addresses: vec!["Xaddr2".into()],
             height: None,
-            timestamp: None,
+            timestamp: Some(2000),
             is_instant_send: false,
             is_chain_locked: false,
         });
         assert_eq!(state.transactions.len(), 2);
+        // Newer unconfirmed tx sorts first
         assert_eq!(
             state.transactions[0].txid,
             dashcore::Txid::from_byte_array([2u8; 32])
@@ -255,5 +273,167 @@ mod tests {
         state.apply_event(&SpvEvent::PeerConnected("1.2.3.4".into()));
         state.apply_event(&SpvEvent::HeadersSynced { tip_height: 1000 });
         assert_eq!(state, WalletState::default());
+    }
+
+    #[test]
+    fn unconfirmed_sorts_before_confirmed() {
+        let mut state = WalletState::default();
+        let txs = vec![
+            TransactionInfo {
+                txid: dashcore::Txid::from_byte_array([1u8; 32]),
+                amount: 100,
+                direction: TransactionDirection::Received,
+                timestamp: 5000,
+                height: Some(500),
+                fee: None,
+                addresses: vec![],
+                is_instant_send: false,
+                is_chain_locked: false,
+            },
+            TransactionInfo {
+                txid: dashcore::Txid::from_byte_array([2u8; 32]),
+                amount: 200,
+                direction: TransactionDirection::Received,
+                timestamp: 1000,
+                height: None,
+                fee: None,
+                addresses: vec![],
+                is_instant_send: false,
+                is_chain_locked: false,
+            },
+        ];
+        state.set_transactions(txs);
+        // Unconfirmed tx sorts first despite having an older timestamp
+        assert_eq!(state.transactions[0].height, None);
+        assert_eq!(state.transactions[1].height, Some(500));
+    }
+
+    #[test]
+    fn apply_event_maintains_sort_order() {
+        let mut state = WalletState::default();
+
+        // Add a confirmed tx with a recent timestamp
+        state.apply_event(&SpvEvent::TransactionReceived {
+            txid: [1u8; 32],
+            amount: 100_000,
+            addresses: vec!["Xaddr1".into()],
+            height: Some(1000),
+            timestamp: Some(5000),
+            is_instant_send: false,
+            is_chain_locked: false,
+        });
+
+        // Add an unconfirmed tx with an older timestamp
+        state.apply_event(&SpvEvent::TransactionReceived {
+            txid: [2u8; 32],
+            amount: 50_000,
+            addresses: vec!["Xaddr2".into()],
+            height: None,
+            timestamp: Some(1000),
+            is_instant_send: false,
+            is_chain_locked: false,
+        });
+
+        assert_eq!(state.transactions.len(), 2);
+        // Unconfirmed sorts first
+        assert_eq!(state.transactions[0].height, None);
+        assert_eq!(state.transactions[1].height, Some(1000));
+    }
+
+    #[test]
+    fn set_transactions_and_apply_event_consistent_order() {
+        let mut state = WalletState::default();
+
+        // Load initial confirmed transactions via set_transactions
+        let txs = vec![
+            TransactionInfo {
+                txid: dashcore::Txid::from_byte_array([1u8; 32]),
+                amount: 100,
+                direction: TransactionDirection::Received,
+                timestamp: 3000,
+                height: Some(300),
+                fee: None,
+                addresses: vec![],
+                is_instant_send: false,
+                is_chain_locked: false,
+            },
+            TransactionInfo {
+                txid: dashcore::Txid::from_byte_array([2u8; 32]),
+                amount: 200,
+                direction: TransactionDirection::Received,
+                timestamp: 4000,
+                height: Some(400),
+                fee: None,
+                addresses: vec![],
+                is_instant_send: false,
+                is_chain_locked: false,
+            },
+        ];
+        state.set_transactions(txs);
+        assert_eq!(state.transactions[0].timestamp, 4000);
+        assert_eq!(state.transactions[1].timestamp, 3000);
+
+        // New unconfirmed tx arrives via event
+        state.apply_event(&SpvEvent::TransactionReceived {
+            txid: [3u8; 32],
+            amount: 50_000,
+            addresses: vec!["Xaddr3".into()],
+            height: None,
+            timestamp: Some(2000),
+            is_instant_send: false,
+            is_chain_locked: false,
+        });
+
+        // Unconfirmed tx sorts to front despite older timestamp
+        assert_eq!(state.transactions.len(), 3);
+        assert_eq!(state.transactions[0].height, None);
+        assert_eq!(state.transactions[0].timestamp, 2000);
+        assert_eq!(state.transactions[1].timestamp, 4000);
+        assert_eq!(state.transactions[2].timestamp, 3000);
+    }
+
+    #[test]
+    fn confirmation_update_re_sorts_transaction() {
+        let mut state = WalletState::default();
+
+        // Confirmed tx
+        state.apply_event(&SpvEvent::TransactionReceived {
+            txid: [1u8; 32],
+            amount: 100_000,
+            addresses: vec!["Xaddr1".into()],
+            height: Some(500),
+            timestamp: Some(3000),
+            is_instant_send: false,
+            is_chain_locked: false,
+        });
+
+        // Unconfirmed tx (sorts first)
+        state.apply_event(&SpvEvent::TransactionReceived {
+            txid: [2u8; 32],
+            amount: 50_000,
+            addresses: vec!["Xaddr2".into()],
+            height: None,
+            timestamp: Some(4000),
+            is_instant_send: false,
+            is_chain_locked: false,
+        });
+        assert_eq!(state.transactions[0].height, None);
+
+        // The unconfirmed tx gets confirmed
+        state.apply_event(&SpvEvent::TransactionReceived {
+            txid: [2u8; 32],
+            amount: 0,
+            addresses: Vec::new(),
+            height: Some(600),
+            timestamp: Some(4000),
+            is_instant_send: false,
+            is_chain_locked: true,
+        });
+
+        // Both confirmed now, sorted by timestamp descending
+        assert_eq!(state.transactions[0].timestamp, 4000);
+        assert_eq!(state.transactions[0].height, Some(600));
+        assert_eq!(state.transactions[1].timestamp, 3000);
+        assert_eq!(state.transactions[1].height, Some(500));
     }
 }

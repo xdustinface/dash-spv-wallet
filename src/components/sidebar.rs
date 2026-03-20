@@ -6,7 +6,7 @@ use crate::router::Route;
 pub fn Sidebar() -> Element {
     rsx! {
         nav {
-            class: "flex flex-col w-56 min-h-screen bg-surface text-muted",
+            class: "flex flex-col w-56 h-screen overflow-y-auto bg-surface text-muted",
 
             div {
                 class: "p-4 text-xl font-bold text-foreground bg-dash-dark",
