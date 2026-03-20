@@ -48,8 +48,10 @@ pub fn AppLayout() -> Element {
 
                     // Drag region for frameless window (macOS)
                     div {
-                        class: "h-8 shrink-0",
-                        style: "-webkit-app-region: drag",
+                        class: "h-8 shrink-0 cursor-default",
+                        onmousedown: move |_| {
+                            dioxus::desktop::window().drag();
+                        },
                     }
 
                     div {
