@@ -1,3 +1,6 @@
+[![CI](https://github.com/xdustinface/dash-spv-ui/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/xdustinface/dash-spv-ui/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/xdustinface/dash-spv-ui/branch/dev/graph/badge.svg)](https://codecov.io/gh/xdustinface/dash-spv-ui)
+
 # dash-spv-ui
 
 Cross-platform Dash SPV wallet GUI built with [Dioxus](https://dioxuslabs.com/) and Tailwind CSS.
