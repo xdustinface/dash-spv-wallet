@@ -107,50 +107,6 @@ impl FfiBackend {
         }
     }
 
-    /// Get the first wallet ID from the wallet manager, if any.
-    fn first_wallet_id(&self) -> BackendResult<[u8; 32]> {
-        let client_ptr = *self.client_ptr.lock().unwrap();
-        if client_ptr.is_null() {
-            return Err(BackendError::NotRunning);
-        }
-
-        // Safety: client_ptr was created by dash_spv_ffi_client_new and is valid
-        // while the client is running.
-        let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
-        if wm.is_null() {
-            return Err(BackendError::NoWallet);
-        }
-
-        let mut wallet_ids_ptr: *mut u8 = std::ptr::null_mut();
-        let mut count: usize = 0;
-        let mut error = WalletFFIError::success();
-
-        // Safety: wm is a valid wallet manager pointer, output pointers are valid stack variables.
-        let ok = unsafe {
-            wallet_manager_get_wallet_ids(
-                wm as *const key_wallet_ffi::FFIWalletManager,
-                &mut wallet_ids_ptr,
-                &mut count,
-                &mut error,
-            )
-        };
-
-        // Safety: wm was obtained from dash_spv_ffi_client_get_wallet_manager
-        unsafe { dash_spv_ffi_wallet_manager_free(wm) };
-
-        if !ok || count == 0 {
-            return Err(BackendError::NoWallet);
-        }
-
-        let mut wallet_id = [0u8; 32];
-        // Safety: wallet_ids_ptr was allocated by wallet_manager_get_wallet_ids with count * 32 bytes.
-        unsafe {
-            std::ptr::copy_nonoverlapping(wallet_ids_ptr, wallet_id.as_mut_ptr(), 32);
-            wallet_manager_free_wallet_ids(wallet_ids_ptr, count);
-        }
-
-        Ok(wallet_id)
-    }
 }
 
 impl SpvBackend for FfiBackend {
@@ -445,43 +401,71 @@ impl SpvBackend for FfiBackend {
     }
 
     fn get_balance(&self) -> BackendResult<WalletCoreBalance> {
-        let wallet_id = self.first_wallet_id()?;
-
-        let client_ptr = *self.client_ptr.lock().unwrap();
-        if client_ptr.is_null() {
+        let client_usize = *self.client_ptr.lock().unwrap() as usize;
+        if client_usize == 0 {
             return Err(BackendError::NotRunning);
         }
 
-        // Safety: client_ptr is valid (checked above).
-        let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
-        if wm.is_null() {
-            return Err(BackendError::Internal(get_last_ffi_error()));
-        }
+        // Run all FFI calls on a separate OS thread to avoid Tokio runtime
+        // nesting — wallet manager functions internally call `block_on`.
+        std::thread::spawn(move || {
+            let client_ptr = client_usize as *mut FFIDashSpvClient;
 
-        let mut confirmed: u64 = 0;
-        let mut unconfirmed: u64 = 0;
-        let mut error = WalletFFIError::success();
+            // First, get the wallet ID
+            let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
+            if wm.is_null() {
+                return Err(BackendError::Internal(get_last_ffi_error()));
+            }
 
-        // Safety: wm is valid, wallet_id is a valid 32-byte array on the stack,
-        // output pointers are valid stack variables.
-        let ok = unsafe {
-            wallet_manager_get_wallet_balance(
-                wm as *const key_wallet_ffi::FFIWalletManager,
-                wallet_id.as_ptr(),
-                &mut confirmed,
-                &mut unconfirmed,
-                &mut error,
-            )
-        };
+            let mut wallet_ids_ptr: *mut u8 = std::ptr::null_mut();
+            let mut count: usize = 0;
+            let mut error = WalletFFIError::success();
 
-        // Safety: wm was obtained from dash_spv_ffi_client_get_wallet_manager.
-        unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+            let ok = unsafe {
+                wallet_manager_get_wallet_ids(
+                    wm as *const key_wallet_ffi::FFIWalletManager,
+                    &mut wallet_ids_ptr,
+                    &mut count,
+                    &mut error,
+                )
+            };
 
-        if !ok {
-            return Err(BackendError::Internal(read_wallet_ffi_error(&error)));
-        }
+            if !ok || count == 0 {
+                unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+                return Err(BackendError::NoWallet);
+            }
 
-        Ok(WalletCoreBalance::new(confirmed, unconfirmed, 0, 0))
+            let mut wallet_id = [0u8; 32];
+            unsafe {
+                std::ptr::copy_nonoverlapping(wallet_ids_ptr, wallet_id.as_mut_ptr(), 32);
+                wallet_manager_free_wallet_ids(wallet_ids_ptr, count);
+            }
+
+            // Now get the balance
+            let mut confirmed: u64 = 0;
+            let mut unconfirmed: u64 = 0;
+            error = WalletFFIError::success();
+
+            let ok = unsafe {
+                wallet_manager_get_wallet_balance(
+                    wm as *const key_wallet_ffi::FFIWalletManager,
+                    wallet_id.as_ptr(),
+                    &mut confirmed,
+                    &mut unconfirmed,
+                    &mut error,
+                )
+            };
+
+            unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+
+            if !ok {
+                return Err(BackendError::Internal(read_wallet_ffi_error(&error)));
+            }
+
+            Ok(WalletCoreBalance::new(confirmed, unconfirmed, 0, 0))
+        })
+        .join()
+        .map_err(|_| BackendError::Internal("FFI thread panicked".into()))?
     }
 
     fn get_transactions(&self) -> BackendResult<Vec<TransactionInfo>> {
