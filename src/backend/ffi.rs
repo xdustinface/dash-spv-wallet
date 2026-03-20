@@ -160,86 +160,94 @@ impl SpvBackend for FfiBackend {
         }
 
         let network = network_to_ffi(self.config.network);
-
-        // Create config
-        let config_ptr = dash_spv_ffi_config_new(network);
-        if config_ptr.is_null() {
-            return Err(BackendError::Internal(get_last_ffi_error()));
-        }
-
-        // Set data directory
         let data_dir = self.config.data_dir.display().to_string();
-        let c_data_dir = CString::new(data_dir)
-            .map_err(|e| BackendError::Internal(e.to_string()))?;
-        // Safety: config_ptr is valid (just created above), c_data_dir is a valid C string.
-        let result = unsafe { dash_spv_ffi_config_set_data_dir(config_ptr, c_data_dir.as_ptr()) };
-        if result != 0 {
+        let event_tx = self.event_tx.clone();
+        let progress = self.progress.clone();
+
+        // Run all FFI calls on a blocking thread to avoid Tokio runtime nesting.
+        // Raw pointers are not Send, so we transmit them as usize.
+        let (client_usize, user_data_usize) = tokio::task::spawn_blocking(move || {
+            let config_ptr = dash_spv_ffi_config_new(network);
+            if config_ptr.is_null() {
+                return Err(BackendError::Internal(get_last_ffi_error()));
+            }
+
+            let c_data_dir = CString::new(data_dir)
+                .map_err(|e| BackendError::Internal(e.to_string()))?;
+            // Safety: config_ptr is valid (just created above), c_data_dir is a valid C string.
+            let result =
+                unsafe { dash_spv_ffi_config_set_data_dir(config_ptr, c_data_dir.as_ptr()) };
+            if result != 0 {
+                // Safety: config_ptr is valid.
+                unsafe { dash_spv_ffi_config_destroy(config_ptr) };
+                return Err(BackendError::Internal(get_last_ffi_error()));
+            }
+
+            let c_user_agent = c"dash-spv-ui-ffi";
+            // Safety: config_ptr is valid, c_user_agent is a static C string literal.
+            let result = unsafe {
+                dash_spv_ffi_config_set_user_agent(config_ptr, c_user_agent.as_ptr())
+            };
+            if result != 0 {
+                // Safety: config_ptr is valid.
+                unsafe { dash_spv_ffi_config_destroy(config_ptr) };
+                return Err(BackendError::Internal(get_last_ffi_error()));
+            }
+
+            // Safety: config_ptr is a valid FFIClientConfig pointer.
+            let client_ptr = unsafe { dash_spv_ffi_client_new(config_ptr) };
+
+            // Config is consumed by client_new; destroy it regardless.
             // Safety: config_ptr is valid.
             unsafe { dash_spv_ffi_config_destroy(config_ptr) };
-            return Err(BackendError::Internal(get_last_ffi_error()));
-        }
 
-        // Set user agent
-        let c_user_agent = c"dash-spv-ui-ffi";
-        // Safety: config_ptr is valid, c_user_agent is a static C string literal.
-        let result = unsafe {
-            dash_spv_ffi_config_set_user_agent(config_ptr, c_user_agent.as_ptr())
-        };
-        if result != 0 {
-            // Safety: config_ptr is valid.
-            unsafe { dash_spv_ffi_config_destroy(config_ptr) };
-            return Err(BackendError::Internal(get_last_ffi_error()));
-        }
+            if client_ptr.is_null() {
+                return Err(BackendError::Internal(get_last_ffi_error()));
+            }
 
-        // Create client
-        // Safety: config_ptr is a valid FFIClientConfig pointer.
-        let client_ptr = unsafe { dash_spv_ffi_client_new(config_ptr) };
+            let ctx = Box::new(CallbackContext {
+                event_tx,
+                progress,
+            });
+            let user_data = Box::into_raw(ctx) as *mut c_void;
 
-        // Config is consumed by client_new; destroy it regardless.
-        // Safety: config_ptr is valid.
-        unsafe { dash_spv_ffi_config_destroy(config_ptr) };
+            // Safety: client_ptr is valid (just created), user_data is a valid
+            // CallbackContext pointer.
+            unsafe {
+                let sync_cbs = build_sync_callbacks(user_data);
+                dash_spv_ffi_client_set_sync_event_callbacks(client_ptr, sync_cbs);
 
-        if client_ptr.is_null() {
-            return Err(BackendError::Internal(get_last_ffi_error()));
-        }
+                let net_cbs = build_network_callbacks(user_data);
+                dash_spv_ffi_client_set_network_event_callbacks(client_ptr, net_cbs);
 
-        // Create callback context and leak it as user_data
-        let ctx = Box::new(CallbackContext {
-            event_tx: self.event_tx.clone(),
-            progress: self.progress.clone(),
-        });
-        let user_data = Box::into_raw(ctx) as *mut c_void;
+                let wallet_cbs = build_wallet_callbacks(user_data);
+                dash_spv_ffi_client_set_wallet_event_callbacks(client_ptr, wallet_cbs);
 
-        // Set up all callbacks
-        // Safety: client_ptr is valid (just created), user_data is a valid CallbackContext pointer.
-        unsafe {
-            let sync_cbs = build_sync_callbacks(user_data);
-            dash_spv_ffi_client_set_sync_event_callbacks(client_ptr, sync_cbs);
+                let progress_cb = build_progress_callback(user_data);
+                dash_spv_ffi_client_set_progress_callback(client_ptr, progress_cb);
 
-            let net_cbs = build_network_callbacks(user_data);
-            dash_spv_ffi_client_set_network_event_callbacks(client_ptr, net_cbs);
+                let error_cb = build_error_callback(user_data);
+                dash_spv_ffi_client_set_client_error_callback(client_ptr, error_cb);
+            }
 
-            let wallet_cbs = build_wallet_callbacks(user_data);
-            dash_spv_ffi_client_set_wallet_event_callbacks(client_ptr, wallet_cbs);
+            // Safety: client_ptr is valid, callbacks are set.
+            let result = unsafe { dash_spv_ffi_client_run(client_ptr) };
+            if result != 0 {
+                // Safety: user_data was created by Box::into_raw above.
+                let _ = unsafe { Box::from_raw(user_data as *mut CallbackContext) };
+                // Safety: client_ptr is valid.
+                unsafe { dash_spv_ffi_client_destroy(client_ptr) };
+                return Err(BackendError::Internal(get_last_ffi_error()));
+            }
 
-            let progress_cb = build_progress_callback(user_data);
-            dash_spv_ffi_client_set_progress_callback(client_ptr, progress_cb);
+            Ok((client_ptr as usize, user_data as usize))
+        })
+        .await
+        .map_err(|e| BackendError::Internal(e.to_string()))??;
 
-            let error_cb = build_error_callback(user_data);
-            dash_spv_ffi_client_set_client_error_callback(client_ptr, error_cb);
-        }
-
-        // Run client (spawns background tasks, returns immediately)
-        // Safety: client_ptr is valid, callbacks are set.
-        let result = unsafe { dash_spv_ffi_client_run(client_ptr) };
-        if result != 0 {
-            // Reclaim the callback context before returning error
-            // Safety: user_data was created by Box::into_raw above.
-            let _ = unsafe { Box::from_raw(user_data as *mut CallbackContext) };
-            // Safety: client_ptr is valid.
-            unsafe { dash_spv_ffi_client_destroy(client_ptr) };
-            return Err(BackendError::Internal(get_last_ffi_error()));
-        }
+        // Safety: usize values were cast from valid pointers inside spawn_blocking.
+        let client_ptr = client_usize as *mut FFIDashSpvClient;
+        let user_data = user_data_usize as *mut c_void;
 
         *self.client_ptr.lock().unwrap() = client_ptr;
         *self.callback_ctx.lock().unwrap() = Some(user_data);
@@ -253,28 +261,39 @@ impl SpvBackend for FfiBackend {
             return Err(BackendError::NotRunning);
         }
 
-        let client_ptr = {
+        let client_usize = {
             let mut guard = self.client_ptr.lock().unwrap();
             let ptr = *guard;
             *guard = std::ptr::null_mut();
-            ptr
+            ptr as usize
         };
 
-        if !client_ptr.is_null() {
-            // Safety: client_ptr was created by dash_spv_ffi_client_new.
-            unsafe {
-                dash_spv_ffi_client_stop(client_ptr);
-                dash_spv_ffi_client_destroy(client_ptr);
-            }
-        }
+        let user_data_usize = self
+            .callback_ctx
+            .lock()
+            .unwrap()
+            .take()
+            .map(|p| p as usize);
 
-        // Reclaim callback context
-        if let Some(user_data) = self.callback_ctx.lock().unwrap().take() {
-            // Safety: user_data was created by Box::into_raw(Box::new(CallbackContext {...}))
-            // in start(). The FFI client has been stopped and destroyed, so no more callbacks
-            // will reference this pointer.
-            let _ = unsafe { Box::from_raw(user_data as *mut CallbackContext) };
-        }
+        // Run FFI teardown on a blocking thread to avoid Tokio runtime nesting.
+        tokio::task::spawn_blocking(move || {
+            if client_usize != 0 {
+                // Safety: client_usize was cast from a valid FFIDashSpvClient pointer.
+                let client_ptr = client_usize as *mut FFIDashSpvClient;
+                unsafe {
+                    dash_spv_ffi_client_stop(client_ptr);
+                    dash_spv_ffi_client_destroy(client_ptr);
+                }
+            }
+
+            // Reclaim callback context after the client is fully stopped
+            if let Some(ud) = user_data_usize {
+                // Safety: ud was cast from a pointer created by Box::into_raw in start().
+                let _ = unsafe { Box::from_raw(ud as *mut CallbackContext) };
+            }
+        })
+        .await
+        .map_err(|e| BackendError::Internal(e.to_string()))?;
 
         self.running.store(false, Ordering::Relaxed);
         Ok(())
@@ -318,40 +337,49 @@ impl SpvBackend for FfiBackend {
     }
 
     async fn create_wallet(&self, mnemonic: &str) -> BackendResult<()> {
-        let client_ptr = *self.client_ptr.lock().unwrap();
-        if client_ptr.is_null() {
+        let client_usize = *self.client_ptr.lock().unwrap() as usize;
+        if client_usize == 0 {
             // If the client isn't running yet, just save the mnemonic for later.
             self.save_mnemonic(mnemonic)?;
             return Ok(());
         }
 
-        // Safety: client_ptr is valid (checked above).
-        let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
-        if wm.is_null() {
-            return Err(BackendError::Internal(get_last_ffi_error()));
-        }
-
         let c_mnemonic = CString::new(mnemonic)
             .map_err(|e| BackendError::Internal(e.to_string()))?;
-        let mut error = WalletFFIError::success();
 
-        // Safety: wm is valid (just obtained), c_mnemonic is a valid C string,
-        // passphrase is null (empty passphrase), error is a valid stack variable.
-        let ok = unsafe {
-            wallet_manager_add_wallet_from_mnemonic(
-                wm as *mut key_wallet_ffi::FFIWalletManager,
-                c_mnemonic.as_ptr(),
-                std::ptr::null(),
-                &mut error,
-            )
-        };
+        // Run FFI calls on a blocking thread to avoid Tokio runtime nesting.
+        tokio::task::spawn_blocking(move || {
+            // Safety: client_usize was cast from a valid FFIDashSpvClient pointer.
+            let client_ptr = client_usize as *mut FFIDashSpvClient;
+            let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
+            if wm.is_null() {
+                return Err(BackendError::Internal(get_last_ffi_error()));
+            }
 
-        // Safety: wm was obtained from dash_spv_ffi_client_get_wallet_manager.
-        unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+            let mut error = WalletFFIError::success();
 
-        if !ok {
-            return Err(BackendError::Internal(read_wallet_ffi_error(&error)));
-        }
+            // Safety: wm is valid (just obtained), c_mnemonic is a valid C string,
+            // passphrase is null (empty passphrase), error is a valid stack variable.
+            let ok = unsafe {
+                wallet_manager_add_wallet_from_mnemonic(
+                    wm as *mut key_wallet_ffi::FFIWalletManager,
+                    c_mnemonic.as_ptr(),
+                    std::ptr::null(),
+                    &mut error,
+                )
+            };
+
+            // Safety: wm was obtained from dash_spv_ffi_client_get_wallet_manager.
+            unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+
+            if !ok {
+                return Err(BackendError::Internal(read_wallet_ffi_error(&error)));
+            }
+
+            Ok(())
+        })
+        .await
+        .map_err(|e| BackendError::Internal(e.to_string()))??;
 
         self.save_mnemonic(mnemonic)?;
         Ok(())
@@ -363,44 +391,51 @@ impl SpvBackend for FfiBackend {
             None => return Ok(false),
         };
 
-        let client_ptr = *self.client_ptr.lock().unwrap();
-        if client_ptr.is_null() {
+        let client_usize = *self.client_ptr.lock().unwrap() as usize;
+        if client_usize == 0 {
             // Client not running yet, mnemonic exists so we signal wallet is loadable
             return Ok(true);
         }
 
-        // Safety: client_ptr is valid (checked above).
-        let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
-        if wm.is_null() {
-            return Err(BackendError::Internal(get_last_ffi_error()));
-        }
-
         let c_mnemonic = CString::new(mnemonic.as_str())
             .map_err(|e| BackendError::Internal(e.to_string()))?;
-        let mut error = WalletFFIError::success();
 
-        // Safety: wm is valid, c_mnemonic is a valid C string.
-        let ok = unsafe {
-            wallet_manager_add_wallet_from_mnemonic(
-                wm as *mut key_wallet_ffi::FFIWalletManager,
-                c_mnemonic.as_ptr(),
-                std::ptr::null(),
-                &mut error,
-            )
-        };
-
-        // Safety: wm was obtained from dash_spv_ffi_client_get_wallet_manager.
-        unsafe { dash_spv_ffi_wallet_manager_free(wm) };
-
-        if !ok {
-            let msg = read_wallet_ffi_error(&error);
-            if msg.contains("already exists") {
-                return Ok(true);
+        // Run FFI calls on a blocking thread to avoid Tokio runtime nesting.
+        tokio::task::spawn_blocking(move || {
+            // Safety: client_usize was cast from a valid FFIDashSpvClient pointer.
+            let client_ptr = client_usize as *mut FFIDashSpvClient;
+            let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
+            if wm.is_null() {
+                return Err(BackendError::Internal(get_last_ffi_error()));
             }
-            return Err(BackendError::Internal(msg));
-        }
 
-        Ok(true)
+            let mut error = WalletFFIError::success();
+
+            // Safety: wm is valid, c_mnemonic is a valid C string.
+            let ok = unsafe {
+                wallet_manager_add_wallet_from_mnemonic(
+                    wm as *mut key_wallet_ffi::FFIWalletManager,
+                    c_mnemonic.as_ptr(),
+                    std::ptr::null(),
+                    &mut error,
+                )
+            };
+
+            // Safety: wm was obtained from dash_spv_ffi_client_get_wallet_manager.
+            unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+
+            if !ok {
+                let msg = read_wallet_ffi_error(&error);
+                if msg.contains("already exists") {
+                    return Ok(true);
+                }
+                return Err(BackendError::Internal(msg));
+            }
+
+            Ok(true)
+        })
+        .await
+        .map_err(|e| BackendError::Internal(e.to_string()))?
     }
 
     fn get_receive_address(&self) -> BackendResult<String> {
