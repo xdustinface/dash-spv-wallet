@@ -12,6 +12,7 @@ pub fn Sidebar() -> Element {
 
             div {
                 class: "flex flex-col items-center pt-10 pb-4 px-6 bg-dash-dark",
+                style: "-webkit-app-region: drag",
 
                 div {
                     class: "w-32 mb-1",
