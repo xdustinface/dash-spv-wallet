@@ -11,11 +11,11 @@ repository = "https://github.com/xdustinface/dash-spv-ui"
 dashcore = { path = "../rust-dashcore/dash", features = ["serde"] }
 dash-spv = { path = "../rust-dashcore/dash-spv" }
 key-wallet = { path = "../rust-dashcore/key-wallet" }
-key-wallet-manager = { path = "../rust-dashcore/key-wallet-manager" }
 
 dioxus = { version = "0.7", features = ["desktop", "router"] }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 serde = { version = "1", features = ["derive"] }
 dirs = "6"
 hex = "0.4"
