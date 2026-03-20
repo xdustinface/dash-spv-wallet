@@ -9,7 +9,7 @@ use crate::state::network::NetworkInfo;
 use crate::state::view_models::{format_balance, format_transaction};
 use crate::state::wallet::WalletState;
 
-const DASHBOARD_TX_LIMIT: usize = 10;
+const DASHBOARD_TX_LIMIT: usize = 5;
 
 #[component]
 pub fn Dashboard() -> Element {
