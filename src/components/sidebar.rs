@@ -11,9 +11,17 @@ pub fn Sidebar() -> Element {
             class: "flex flex-col w-56 h-full overflow-y-auto bg-surface text-muted border-r border-edge",
 
             div {
-                class: "px-4 py-3 text-lg font-bold text-foreground tracking-wide bg-dash-dark",
-                span { class: "text-dash", "Dash" }
-                span { class: "ml-1 text-muted font-normal text-sm", "SPV" }
+                class: "flex items-center gap-3 p-4 bg-dash-dark",
+
+                div {
+                    class: "w-8 h-8 shrink-0",
+                    dangerous_inner_html: include_str!("../../assets/dash-logo.svg"),
+                }
+
+                span {
+                    class: "text-xl font-bold text-foreground tracking-wide",
+                    "SPV"
+                }
             }
 
             div {
