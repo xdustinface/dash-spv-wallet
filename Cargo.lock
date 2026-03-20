@@ -921,11 +921,13 @@ dependencies = [
  "dash-spv",
  "dashcore",
  "dioxus",
+ "dirs",
  "hex",
  "key-wallet",
  "key-wallet-manager",
  "serde",
  "tokio",
+ "toml",
  "tracing",
 ]
 

@@ -20,6 +20,11 @@ pub fn Sidebar() -> Element {
                 NavLink { to: Route::Send {}, label: "Send" }
                 NavLink { to: Route::Receive {}, label: "Receive" }
             }
+
+            div {
+                class: "p-2 mt-auto",
+                NavLink { to: Route::Settings {}, label: "Settings" }
+            }
         }
     }
 }

@@ -1,0 +1,232 @@
+use std::path::PathBuf;
+use std::{fmt, fs, io};
+
+use clap::Parser;
+use dashcore::Network;
+use serde::{Deserialize, Serialize};
+
+use super::paths;
+
+/// Application configuration loaded from TOML file and CLI overrides.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct AppConfig {
+    pub network: Network,
+    pub data_dir: PathBuf,
+    #[serde(default)]
+    pub wallet_dir: Option<PathBuf>,
+    pub dev_mode: bool,
+    pub log_level: String,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            network: Network::Testnet,
+            data_dir: paths::default_data_dir(),
+            wallet_dir: None,
+            dev_mode: false,
+            log_level: "info".to_string(),
+        }
+    }
+}
+
+impl AppConfig {
+    /// Load configuration by merging TOML file with CLI overrides.
+    ///
+    /// Priority: CLI args > TOML file > defaults.
+    pub fn load() -> Result<Self, ConfigError> {
+        let cli = Cli::parse();
+
+        let mut config = match fs::read_to_string(paths::config_file_path()) {
+            Ok(contents) => toml::from_str::<AppConfig>(&contents)
+                .map_err(|e| ConfigError::Parse(e.to_string()))?,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Self::default(),
+            Err(e) => return Err(ConfigError::Io(e)),
+        };
+
+        // Apply CLI overrides.
+        if let Some(network) = cli.network {
+            config.network = network;
+        }
+        if cli.dev {
+            config.dev_mode = true;
+        }
+        if let Some(log_level) = cli.log_level {
+            config.log_level = log_level;
+        }
+
+        // Expand tilde in paths.
+        config.data_dir = paths::expand_tilde(&config.data_dir);
+        if let Some(ref dir) = config.wallet_dir {
+            config.wallet_dir = Some(paths::expand_tilde(dir));
+        }
+
+        Ok(config)
+    }
+
+    /// Save the current configuration to the TOML file.
+    pub fn save(&self) -> Result<(), ConfigError> {
+        let path = paths::config_file_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(ConfigError::Io)?;
+        }
+        let contents = toml::to_string_pretty(self)
+            .map_err(|e| ConfigError::Parse(e.to_string()))?;
+        fs::write(&path, contents).map_err(ConfigError::Io)
+    }
+
+    /// Returns the resolved wallet directory.
+    /// Defaults to `<data_dir>/wallets/` when `wallet_dir` is `None`.
+    pub fn wallet_dir(&self) -> PathBuf {
+        self.wallet_dir
+            .clone()
+            .unwrap_or_else(|| self.data_dir.join("wallets"))
+    }
+
+    /// Create all required directories (data, wallet, config).
+    pub fn ensure_dirs(&self) -> Result<(), ConfigError> {
+        fs::create_dir_all(&self.data_dir).map_err(ConfigError::Io)?;
+        fs::create_dir_all(self.wallet_dir()).map_err(ConfigError::Io)?;
+        fs::create_dir_all(paths::config_dir()).map_err(ConfigError::Io)?;
+        Ok(())
+    }
+}
+
+/// CLI argument parser. Fields are all optional so they only override
+/// when explicitly provided.
+#[derive(Parser)]
+#[command(name = "dash-spv-ui", about = "Dash SPV Wallet")]
+struct Cli {
+    /// Select network
+    #[arg(long)]
+    network: Option<Network>,
+
+    /// Enable developer mode
+    #[arg(long)]
+    dev: bool,
+
+    /// Set log level (error, warn, info, debug, trace)
+    #[arg(long)]
+    log_level: Option<String>,
+}
+
+/// Errors that can occur during configuration loading or saving.
+#[derive(Debug)]
+pub(crate) enum ConfigError {
+    Io(io::Error),
+    Parse(String),
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "config I/O error: {e}"),
+            Self::Parse(msg) => write!(f, "config parse error: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_is_sensible() {
+        let config = AppConfig::default();
+        assert_eq!(config.network, Network::Testnet);
+        assert!(!config.dev_mode);
+        assert_eq!(config.log_level, "info");
+        assert!(config.wallet_dir.is_none());
+        assert!(config.data_dir.components().count() > 0);
+    }
+
+    #[test]
+    fn serialize_deserialize_roundtrip() {
+        let config = AppConfig {
+            network: Network::Mainnet,
+            data_dir: PathBuf::from("/tmp/dash-test"),
+            wallet_dir: Some(PathBuf::from("/tmp/dash-wallets")),
+            dev_mode: true,
+            log_level: "debug".to_string(),
+        };
+
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let restored: AppConfig = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(restored.network, config.network);
+        assert_eq!(restored.data_dir, config.data_dir);
+        assert_eq!(restored.wallet_dir, config.wallet_dir);
+        assert_eq!(restored.dev_mode, config.dev_mode);
+        assert_eq!(restored.log_level, config.log_level);
+    }
+
+    #[test]
+    fn wallet_dir_defaults_to_data_dir_wallets() {
+        let config = AppConfig {
+            data_dir: PathBuf::from("/data"),
+            wallet_dir: None,
+            ..AppConfig::default()
+        };
+        assert_eq!(config.wallet_dir(), PathBuf::from("/data/wallets"));
+    }
+
+    #[test]
+    fn custom_wallet_dir_is_respected() {
+        let config = AppConfig {
+            wallet_dir: Some(PathBuf::from("/custom/wallets")),
+            ..AppConfig::default()
+        };
+        assert_eq!(config.wallet_dir(), PathBuf::from("/custom/wallets"));
+    }
+
+    #[test]
+    fn network_serializes_as_string() {
+        let config = AppConfig {
+            network: Network::Regtest,
+            ..AppConfig::default()
+        };
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        assert!(toml_str.contains("regtest"), "expected 'regtest' in TOML output: {toml_str}");
+    }
+
+    #[test]
+    fn all_networks_roundtrip() {
+        for network in [Network::Mainnet, Network::Testnet, Network::Devnet, Network::Regtest] {
+            let config = AppConfig {
+                network,
+                ..AppConfig::default()
+            };
+            let toml_str = toml::to_string_pretty(&config).unwrap();
+            let restored: AppConfig = toml::from_str(&toml_str).unwrap();
+            assert_eq!(restored.network, network);
+        }
+    }
+
+    #[test]
+    fn save_and_load_from_temp_dir() {
+        let tmp = std::env::temp_dir().join("dash-spv-ui-test-config");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let config_path = tmp.join("config.toml");
+        let config = AppConfig {
+            network: Network::Regtest,
+            data_dir: PathBuf::from("/tmp/data"),
+            wallet_dir: Some(PathBuf::from("/tmp/wallets")),
+            dev_mode: true,
+            log_level: "trace".to_string(),
+        };
+
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        std::fs::write(&config_path, &toml_str).unwrap();
+
+        let restored: AppConfig = toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert_eq!(restored.network, Network::Regtest);
+        assert!(restored.dev_mode);
+        assert_eq!(restored.log_level, "trace");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}

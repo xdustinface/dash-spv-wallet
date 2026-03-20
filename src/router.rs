@@ -5,6 +5,7 @@ use crate::screens::dashboard::Dashboard;
 use crate::screens::network_select::NetworkSelect;
 use crate::screens::receive::Receive;
 use crate::screens::send::Send;
+use crate::screens::settings::Settings;
 use crate::screens::wallet_create::WalletCreate;
 use crate::screens::wallet_choice::WalletChoice;
 use crate::screens::wallet_import::WalletImport;
@@ -26,4 +27,6 @@ pub enum Route {
     Send {},
     #[route("/receive")]
     Receive {},
+    #[route("/settings")]
+    Settings {},
 }

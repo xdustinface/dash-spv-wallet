@@ -43,6 +43,7 @@ pub enum Screen {
     Dashboard,
     Send,
     Receive,
+    Settings,
 }
 
 #[cfg(test)]
