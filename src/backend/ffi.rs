@@ -21,8 +21,10 @@ use dash_spv_ffi::client::{
     dash_spv_ffi_wallet_manager_free, FFIDashSpvClient,
 };
 use dash_spv_ffi::config::{
-    dash_spv_ffi_config_add_peer, dash_spv_ffi_config_destroy, dash_spv_ffi_config_new,
-    dash_spv_ffi_config_set_data_dir, dash_spv_ffi_config_set_user_agent,
+    dash_spv_ffi_config_add_peer, dash_spv_ffi_config_clear_peers, dash_spv_ffi_config_destroy,
+    dash_spv_ffi_config_new, dash_spv_ffi_config_set_data_dir,
+    dash_spv_ffi_config_set_masternode_sync_enabled,
+    dash_spv_ffi_config_set_restrict_to_configured_peers, dash_spv_ffi_config_set_user_agent,
 };
 use dash_spv_ffi::error::dash_spv_ffi_get_last_error;
 use dash_spv_ffi::types::{
@@ -115,7 +117,8 @@ impl SpvBackend for FfiBackend {
             return Err(BackendError::AlreadyRunning);
         }
 
-        let network = network_to_ffi(self.config.network);
+        let app_network = self.config.network;
+        let network = network_to_ffi(app_network);
         let data_dir = self.config.data_dir.display().to_string();
         let peers = self.config.peers.clone();
         let event_tx = self.event_tx.clone();
@@ -151,15 +154,33 @@ impl SpvBackend for FfiBackend {
                 return Err(BackendError::Internal(get_last_ffi_error()));
             }
 
-            for peer in &peers {
-                let c_peer = CString::new(peer.as_str())
-                    .map_err(|e| BackendError::Internal(e.to_string()))?;
-                // Safety: config_ptr is valid, c_peer is a valid C string.
-                let result = unsafe { dash_spv_ffi_config_add_peer(config_ptr, c_peer.as_ptr()) };
-                if result != 0 {
-                    unsafe { dash_spv_ffi_config_destroy(config_ptr) };
-                    return Err(BackendError::Internal(get_last_ffi_error()));
+            if app_network == Network::Regtest {
+                // Safety: config_ptr is valid.
+                unsafe {
+                    dash_spv_ffi_config_set_masternode_sync_enabled(config_ptr, false);
+                };
+            }
+
+            if !peers.is_empty() {
+                // Safety: config_ptr is valid.
+                unsafe { dash_spv_ffi_config_clear_peers(config_ptr) };
+
+                for peer in &peers {
+                    let c_peer = CString::new(peer.as_str())
+                        .map_err(|e| BackendError::Internal(e.to_string()))?;
+                    // Safety: config_ptr is valid, c_peer is a valid C string.
+                    let result =
+                        unsafe { dash_spv_ffi_config_add_peer(config_ptr, c_peer.as_ptr()) };
+                    if result != 0 {
+                        unsafe { dash_spv_ffi_config_destroy(config_ptr) };
+                        return Err(BackendError::Internal(get_last_ffi_error()));
+                    }
                 }
+
+                // Safety: config_ptr is valid.
+                unsafe {
+                    dash_spv_ffi_config_set_restrict_to_configured_peers(config_ptr, true);
+                };
             }
 
             // Safety: config_ptr is a valid FFIClientConfig pointer.
@@ -220,6 +241,9 @@ impl SpvBackend for FfiBackend {
         *self.client_ptr.lock().unwrap() = client_ptr;
         *self.callback_ctx.lock().unwrap() = Some(user_data);
         self.running.store(true, Ordering::Relaxed);
+
+        // Load any previously saved wallet into the running client.
+        let _ = self.load_wallet().await;
 
         Ok(())
     }
