@@ -103,10 +103,18 @@ impl SpvBackend for NativeBackend {
             .with_storage_path(self.config.data_dir.clone())
             .with_user_agent("dash-spv-ui");
 
-        for peer in &self.config.peers {
-            if let Ok(addr) = peer.parse::<SocketAddr>() {
-                client_config.add_peer(addr);
+        if self.config.network == Network::Regtest {
+            client_config = client_config.without_masternodes();
+        }
+
+        if !self.config.peers.is_empty() {
+            client_config.peers.clear();
+            for peer in &self.config.peers {
+                if let Ok(addr) = peer.parse::<SocketAddr>() {
+                    client_config.add_peer(addr);
+                }
             }
+            client_config = client_config.with_restrict_to_configured_peers(true);
         }
 
         let network_manager = PeerNetworkManager::new(&client_config)
