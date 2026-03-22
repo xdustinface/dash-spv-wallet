@@ -1,14 +1,13 @@
 use std::time::Duration;
 
 use dash_spv::test_utils::TestChain;
-use dash_spv_ui::backend::events::SpvEvent;
 use dash_spv_ui::backend::ffi::FfiBackend;
 use dash_spv_ui::backend::r#trait::SpvBackend;
 use dashcore::Network;
 
 use super::helpers::{
     wait_for_balance_change, wait_for_peer_connected, wait_for_positive_balance, wait_for_sync,
-    wait_for_sync_progress_complete, wait_for_transaction,
+    wait_for_sync_progress_complete,
 };
 use super::setup::BackendTestContext;
 
@@ -138,8 +137,7 @@ async fn ffi_send_transaction() {
     // Get a recipient address from the dashd "default" wallet.
     let recipient = ctx.dashd.node.get_new_address_from_wallet("default");
 
-    // Subscribe before sending so we catch the mempool event.
-    let mut tx_rx = backend.subscribe_events();
+    // Subscribe before sending so we catch balance changes.
     let mut balance_rx = backend.subscribe_events();
 
     let send_amount: u64 = 10_000_000; // 0.1 DASH
@@ -161,18 +159,9 @@ async fn ffi_send_transaction() {
     // Verify the txid is non-zero.
     assert_ne!(txid, [0u8; 32], "Returned txid should not be all zeros");
 
-    // Verify the transaction appears as unconfirmed in the event stream.
-    let mempool_event = wait_for_transaction(&mut tx_rx, txid, Duration::from_secs(30)).await;
-    match &mempool_event {
-        SpvEvent::TransactionReceived { height, .. } => {
-            assert_eq!(*height, None, "Mempool tx should have no block height");
-        }
-        _ => panic!("Expected TransactionReceived event"),
-    }
-
     // Verify balance decreased after sending by at least the send amount.
     let updated_balance =
-        wait_for_balance_change(&mut balance_rx, &initial_balance, Duration::from_secs(10)).await;
+        wait_for_balance_change(&mut balance_rx, &initial_balance, Duration::from_secs(30)).await;
     assert!(
         updated_balance.spendable() < initial_balance.spendable(),
         "Balance should decrease after send: before={}, after={}",

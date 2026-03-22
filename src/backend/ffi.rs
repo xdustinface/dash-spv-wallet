@@ -872,15 +872,34 @@ impl SpvBackend for FfiBackend {
 impl Drop for FfiBackend {
     fn drop(&mut self) {
         let client_ptr = *self.client_ptr.lock().unwrap();
-        if !client_ptr.is_null() {
-            // Safety: client_ptr was created by dash_spv_ffi_client_new.
-            unsafe { dash_spv_ffi_client_destroy(client_ptr) };
-        }
+        let user_data = self.callback_ctx.lock().unwrap().take();
 
-        // Reclaim any leaked callback context
-        if let Some(user_data) = self.callback_ctx.lock().unwrap().take() {
-            // Safety: user_data was created by Box::into_raw(Box::new(CallbackContext {...})).
-            let _ = unsafe { Box::from_raw(user_data as *mut CallbackContext) };
+        if !client_ptr.is_null() {
+            // Cast to usize so the closure is Send (raw pointers are not Send).
+            let client_usize = client_ptr as usize;
+            let user_data_usize = user_data.map(|p| p as usize);
+
+            // Run on a separate OS thread to avoid Tokio runtime nesting, since
+            // `dash_spv_ffi_client_destroy` internally calls `block_on`.
+            let _ = std::thread::spawn(move || {
+                // Safety: client_usize was cast from a valid FFIDashSpvClient pointer.
+                let ptr = client_usize as *mut FFIDashSpvClient;
+                unsafe {
+                    dash_spv_ffi_client_stop(ptr);
+                    dash_spv_ffi_client_destroy(ptr);
+                }
+
+                // Reclaim callback context after the client is fully destroyed
+                if let Some(ud) = user_data_usize {
+                    // Safety: ud was cast from a pointer created by Box::into_raw.
+                    let _ = unsafe { Box::from_raw(ud as *mut CallbackContext) };
+                }
+            })
+            .join();
+        } else if let Some(ud) = user_data {
+            // No client to destroy, just reclaim the callback context
+            // Safety: ud was created by Box::into_raw(Box::new(CallbackContext {...})).
+            let _ = unsafe { Box::from_raw(ud as *mut CallbackContext) };
         }
     }
 }
