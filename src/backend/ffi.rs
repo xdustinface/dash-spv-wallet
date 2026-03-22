@@ -869,18 +869,28 @@ impl SpvBackend for FfiBackend {
     }
 }
 
+/// `stop()` should be called before the backend is dropped. The FFI client's
+/// `destroy` function internally calls `block_on()`, which panics if called
+/// from within a tokio runtime (e.g., in tests or Dioxus). By requiring an
+/// explicit `stop()` — which runs the teardown on `spawn_blocking` — we
+/// avoid this runtime nesting issue entirely.
+///
+/// If `stop()` was not called (e.g., due to a panic), Drop performs
+/// best-effort cleanup: it reclaims the callback context to avoid leaking
+/// memory, but the FFI client itself is leaked to avoid a `block_on` panic.
 impl Drop for FfiBackend {
     fn drop(&mut self) {
         let client_ptr = *self.client_ptr.lock().unwrap();
         if !client_ptr.is_null() {
-            // Safety: client_ptr was created by dash_spv_ffi_client_new.
-            unsafe { dash_spv_ffi_client_destroy(client_ptr) };
+            tracing::error!(
+                "FfiBackend dropped without calling stop() first — FFI client resources leaked"
+            );
         }
 
-        // Reclaim any leaked callback context
-        if let Some(user_data) = self.callback_ctx.lock().unwrap().take() {
-            // Safety: user_data was created by Box::into_raw(Box::new(CallbackContext {...})).
-            let _ = unsafe { Box::from_raw(user_data as *mut CallbackContext) };
+        // Reclaim callback context if still held (shouldn't happen after stop()).
+        if let Some(ud) = self.callback_ctx.lock().unwrap().take() {
+            // Safety: ud was created by Box::into_raw(Box::new(CallbackContext {...})).
+            let _ = unsafe { Box::from_raw(ud as *mut CallbackContext) };
         }
     }
 }

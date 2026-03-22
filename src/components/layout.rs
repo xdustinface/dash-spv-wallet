@@ -2,6 +2,8 @@ use dioxus::desktop::tao::event::{Event, WindowEvent};
 use dioxus::desktop::{use_window, use_wry_event_handler};
 use dioxus::prelude::*;
 
+use crate::backend::dispatch::Backend;
+use crate::backend::r#trait::SpvBackend;
 use crate::components::dev_panel::DevPanel;
 use crate::components::sidebar::Sidebar;
 use crate::components::status_bar::StatusBar;
@@ -24,9 +26,15 @@ pub fn AppLayout() -> Element {
         }
     });
 
-    // Persist window size to disk when the component unmounts (app close).
+    // Stop the backend and persist window size when the component unmounts (app close).
     let window = use_window();
+    let backend = use_context::<Signal<Backend>>();
     use_drop(move || {
+        if backend.read().is_running() {
+            let rt = tokio::runtime::Runtime::new().expect("failed to create shutdown runtime");
+            let _ = rt.block_on(backend.read().stop());
+        }
+
         let size = window.inner_size();
         let mut cfg = config.write();
         cfg.window_width = size.width;
