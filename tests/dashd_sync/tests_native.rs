@@ -97,14 +97,13 @@ async fn native_full_sync_with_wallet() {
     // may not detect every transaction the dashd wallet knows about (e.g.,
     // self-sends that only touch change addresses outside the bloom filter).
     let txs = backend.get_transactions().unwrap();
-    let baseline = ctx.dashd.wallet.transaction_count;
-    let min_expected = baseline * 9 / 10; // allow up to 10% fewer
-    assert!(
-        txs.len() >= min_expected && txs.len() <= baseline,
-        "Transaction count {} outside expected range [{}, {}]",
+    let expected_tx_count = ctx.dashd.wallet.unique_txid_count();
+    assert_eq!(
         txs.len(),
-        min_expected,
-        baseline,
+        expected_tx_count,
+        "Transaction count mismatch: expected {}, got {}",
+        expected_tx_count,
+        txs.len(),
     );
 
     // Verify chain tip height matches dashd height.
@@ -539,7 +538,7 @@ async fn native_transaction_count_increases_during_sync() {
     // Allow time for final wallet events.
     wait_for_positive_balance(&mut backend.subscribe_events(), Duration::from_secs(10)).await;
     let txs = backend.get_transactions().unwrap();
-    let baseline = ctx.dashd.wallet.transaction_count;
+    let baseline = ctx.dashd.wallet.unique_txid_count();
     let min_expected = baseline * 9 / 10;
     assert!(
         txs.len() >= min_expected && txs.len() <= baseline,
