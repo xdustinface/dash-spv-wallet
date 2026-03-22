@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -239,7 +240,14 @@ impl SpvBackend for NativeBackend {
                 mnemonic,
                 "",
                 0,
-                WalletAccountCreationOptions::default(),
+                WalletAccountCreationOptions::SpecificAccounts(
+                    BTreeSet::from([0]),
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    None,
+                ),
             )
             .map_err(|e| match e {
                 key_wallet_manager::WalletError::InvalidMnemonic(msg) => {
@@ -268,7 +276,14 @@ impl SpvBackend for NativeBackend {
                 &mnemonic,
                 "",
                 0,
-                WalletAccountCreationOptions::default(),
+                WalletAccountCreationOptions::SpecificAccounts(
+                    BTreeSet::from([0]),
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    None,
+                ),
             )
             .map_err(|e| BackendError::Internal(e.to_string()))?;
         Ok(true)
@@ -327,7 +342,7 @@ impl SpvBackend for NativeBackend {
             .wallet_transaction_history(wallet_id)
             .map_err(|e| BackendError::Internal(e.to_string()))?;
 
-        let transactions = records
+        let mut transactions: Vec<TransactionInfo> = records
             .into_iter()
             .map(|r| {
                 let direction = if r.net_amount >= 0 {
@@ -349,6 +364,15 @@ impl SpvBackend for NativeBackend {
                 }
             })
             .collect();
+
+        // Sort: unconfirmed first, then by timestamp descending
+        transactions.sort_by(|a, b| {
+            match (a.height.is_some(), b.height.is_some()) {
+                (false, true) => std::cmp::Ordering::Less,
+                (true, false) => std::cmp::Ordering::Greater,
+                _ => b.timestamp.cmp(&a.timestamp),
+            }
+        });
 
         Ok(transactions)
     }

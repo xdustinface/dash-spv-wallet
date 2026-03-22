@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
 use std::path::PathBuf;
@@ -555,7 +556,14 @@ impl SpvBackend for FfiBackend {
                 &mnemonic_str,
                 "",
                 0,
-                WalletAccountCreationOptions::default(),
+                WalletAccountCreationOptions::SpecificAccounts(
+                    BTreeSet::from([0]),
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    None,
+                ),
             )
             .map_err(|e| BackendError::Internal(e.to_string()))?;
 
