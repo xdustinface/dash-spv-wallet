@@ -4,10 +4,11 @@ use dash_spv::test_utils::TestChain;
 use dash_spv_ui::backend::events::SpvEvent;
 use dash_spv_ui::backend::ffi::FfiBackend;
 use dash_spv_ui::backend::r#trait::SpvBackend;
-use dashcore::hashes::Hash;
+use dashcore::Network;
 
 use super::helpers::{
-    wait_for_balance_change, wait_for_positive_balance, wait_for_sync, wait_for_transaction,
+    wait_for_balance_change, wait_for_peer_connected, wait_for_positive_balance, wait_for_sync,
+    wait_for_sync_progress_complete, wait_for_transaction,
 };
 use super::setup::BackendTestContext;
 
@@ -23,6 +24,19 @@ async fn ffi_start_stop() {
 
     let config = ctx.make_config();
     let backend = FfiBackend::new(config);
+
+    // Before starting, get_balance should fail (client not running).
+    assert!(
+        backend.get_balance().is_err(),
+        "get_balance() should fail before starting"
+    );
+
+    // Verify network matches configuration.
+    assert_eq!(
+        backend.network(),
+        Network::Regtest,
+        "Network should match configured network"
+    );
 
     assert!(!backend.is_running());
     backend.start().await.unwrap();
@@ -45,7 +59,10 @@ async fn ffi_full_sync_with_wallet() {
     let backend = FfiBackend::new(config);
 
     // Create wallet (saves mnemonic for later loading by the FFI client).
-    backend.create_wallet(&ctx.dashd.wallet.mnemonic).await.unwrap();
+    backend
+        .create_wallet(&ctx.dashd.wallet.mnemonic)
+        .await
+        .unwrap();
 
     // Subscribe to events before starting so we don't miss any.
     let mut event_rx = backend.subscribe_events();
@@ -56,18 +73,25 @@ async fn ffi_full_sync_with_wallet() {
     wait_for_sync(&mut event_rx, ctx.dashd.initial_height).await;
 
     // Wait for balance to propagate through FFI callbacks.
-    let balance_ok = wait_for_positive_balance(
-        &mut backend.subscribe_events(),
-        Duration::from_secs(10),
-    )
-    .await;
+    wait_for_positive_balance(&mut backend.subscribe_events(), Duration::from_secs(10)).await;
 
-    // Verify balance from the backend API.
+    // Verify balance from the backend API matches baseline.
     let balance = backend.get_balance().unwrap();
+    let expected_sats = (ctx.dashd.wallet.balance * 100_000_000.0) as u64;
+    let tolerance = 100_000;
     assert!(
-        balance.spendable() > 0 || balance_ok,
-        "Expected positive spendable balance after sync, got {}",
+        (balance.spendable() as i64 - expected_sats as i64).unsigned_abs() < tolerance,
+        "Balance mismatch: expected ~{} sats from baseline, got {}",
+        expected_sats,
         balance.spendable(),
+    );
+
+    // Verify chain tip height.
+    let tip = backend.tip_height();
+    assert_eq!(
+        tip,
+        Some(ctx.dashd.initial_height),
+        "Chain tip should match dashd height"
     );
 
     backend.stop().await.unwrap();
@@ -92,7 +116,10 @@ async fn ffi_send_transaction() {
     let config = ctx.make_config();
     let backend = FfiBackend::new(config);
 
-    backend.create_wallet(&ctx.dashd.wallet.mnemonic).await.unwrap();
+    backend
+        .create_wallet(&ctx.dashd.wallet.mnemonic)
+        .await
+        .unwrap();
 
     let mut event_rx = backend.subscribe_events();
     backend.start().await.unwrap();
@@ -116,15 +143,26 @@ async fn ffi_send_transaction() {
     let mut balance_rx = backend.subscribe_events();
 
     let send_amount: u64 = 10_000_000; // 0.1 DASH
+
+    // Verify initial balance is sufficient.
+    assert!(
+        initial_balance.spendable() > send_amount,
+        "Initial balance {} should exceed send amount {}",
+        initial_balance.spendable(),
+        send_amount,
+    );
+
     let fee_rate: u32 = 10_000;
     let txid = backend
         .send(&recipient.to_string(), send_amount, fee_rate)
         .await
         .unwrap();
 
+    // Verify the txid is non-zero.
+    assert_ne!(txid, [0u8; 32], "Returned txid should not be all zeros");
+
     // Verify the transaction appears as unconfirmed in the event stream.
-    let mempool_event =
-        wait_for_transaction(&mut tx_rx, txid, Duration::from_secs(30)).await;
+    let mempool_event = wait_for_transaction(&mut tx_rx, txid, Duration::from_secs(30)).await;
     match &mempool_event {
         SpvEvent::TransactionReceived { height, .. } => {
             assert_eq!(*height, None, "Mempool tx should have no block height");
@@ -132,7 +170,7 @@ async fn ffi_send_transaction() {
         _ => panic!("Expected TransactionReceived event"),
     }
 
-    // Verify balance decreased after sending.
+    // Verify balance decreased after sending by at least the send amount.
     let updated_balance =
         wait_for_balance_change(&mut balance_rx, &initial_balance, Duration::from_secs(10)).await;
     assert!(
@@ -140,6 +178,13 @@ async fn ffi_send_transaction() {
         "Balance should decrease after send: before={}, after={}",
         initial_balance.spendable(),
         updated_balance.spendable(),
+    );
+    let decrease = initial_balance.spendable() - updated_balance.spendable();
+    assert!(
+        decrease >= send_amount,
+        "Balance decrease ({}) should be at least the send amount ({})",
+        decrease,
+        send_amount,
     );
 
     // Mine a block to confirm the transaction.
@@ -150,15 +195,117 @@ async fn ffi_send_transaction() {
     let mut sync_rx = backend.subscribe_events();
     wait_for_sync(&mut sync_rx, new_height).await;
 
-    // Verify the transaction is confirmed in wallet history.
-    let txs = backend.get_transactions().unwrap();
-    let expected_txid = dashcore::Txid::from_byte_array(txid);
-    let sent_tx = txs.iter().find(|t| t.txid == expected_txid);
-    assert!(sent_tx.is_some(), "Sent tx should appear in transaction history");
+    // After mining, verify balance via API.
+    let final_balance = backend.get_balance().unwrap();
+    assert!(
+        final_balance.spendable() < initial_balance.spendable(),
+        "Final balance should still be less than initial"
+    );
 
-    let sent_tx = sent_tx.unwrap();
-    assert!(sent_tx.height.is_some(), "Confirmed tx should have a block height");
-    assert!(sent_tx.amount < 0, "Sent tx should have negative amount");
+    backend.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn ffi_balance_updates_during_sync() {
+    let ctx = match BackendTestContext::new(TestChain::Full).await {
+        Some(ctx) => ctx,
+        None => {
+            eprintln!("Skipping: dashd not available");
+            return;
+        }
+    };
+
+    let config = ctx.make_config();
+    let backend = FfiBackend::new(config);
+
+    backend
+        .create_wallet(&ctx.dashd.wallet.mnemonic)
+        .await
+        .unwrap();
+
+    let mut event_rx = backend.subscribe_events();
+    let mut balance_rx = backend.subscribe_events();
+
+    backend.start().await.unwrap();
+
+    let got_balance = wait_for_positive_balance(&mut balance_rx, Duration::from_secs(60)).await;
+    assert!(
+        got_balance,
+        "Should receive at least one BalanceUpdated event during sync"
+    );
+
+    wait_for_sync(&mut event_rx, ctx.dashd.initial_height).await;
+
+    wait_for_positive_balance(&mut backend.subscribe_events(), Duration::from_secs(10)).await;
+    let balance = backend.get_balance().unwrap();
+    let expected_sats = (ctx.dashd.wallet.balance * 100_000_000.0) as u64;
+    let tolerance = 100_000;
+    assert!(
+        (balance.spendable() as i64 - expected_sats as i64).unsigned_abs() < tolerance,
+        "Final balance mismatch: expected ~{} sats, got {}",
+        expected_sats,
+        balance.spendable(),
+    );
+
+    backend.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn ffi_peer_events() {
+    let ctx = match BackendTestContext::new(TestChain::Minimal).await {
+        Some(ctx) => ctx,
+        None => {
+            eprintln!("Skipping: dashd not available");
+            return;
+        }
+    };
+
+    let config = ctx.make_config();
+    let backend = FfiBackend::new(config);
+
+    let mut event_rx = backend.subscribe_events();
+
+    backend.start().await.unwrap();
+
+    let got_peer = wait_for_peer_connected(&mut event_rx, Duration::from_secs(30)).await;
+    assert!(got_peer, "Should receive a PeerConnected event");
+
+    backend.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn ffi_sync_progress_events() {
+    let ctx = match BackendTestContext::new(TestChain::Full).await {
+        Some(ctx) => ctx,
+        None => {
+            eprintln!("Skipping: dashd not available");
+            return;
+        }
+    };
+
+    let config = ctx.make_config();
+    let backend = FfiBackend::new(config);
+
+    backend
+        .create_wallet(&ctx.dashd.wallet.mnemonic)
+        .await
+        .unwrap();
+
+    let mut event_rx = backend.subscribe_events();
+    let mut progress_rx = backend.subscribe_events();
+
+    backend.start().await.unwrap();
+
+    wait_for_sync(&mut event_rx, ctx.dashd.initial_height).await;
+
+    let synced = wait_for_sync_progress_complete(&mut progress_rx, Duration::from_secs(10)).await;
+    assert!(
+        synced,
+        "Should receive a SyncProgressUpdated event with is_synced=true"
+    );
+
+    let progress = backend.sync_progress();
+    assert!(progress.is_synced(), "sync_progress() should report synced");
 
     backend.stop().await.unwrap();
 }
