@@ -9,6 +9,7 @@ use super::types::{Network, SyncProgress, TransactionInfo, WalletCoreBalance};
 
 /// Enum dispatch wrapper that delegates all `SpvBackend` calls to either
 /// a real `NativeBackend`, an in-memory `MockBackend`, or an `FfiBackend`.
+#[allow(clippy::large_enum_variant)]
 pub enum Backend {
     Native(NativeBackend),
     Mock(MockBackend),
@@ -125,12 +126,21 @@ impl SpvBackend for Backend {
         }
     }
 
-    async fn send(&self, address: &str, amount: u64) -> BackendResult<[u8; 32]> {
+    fn estimate_fee(&self, address: &str, amount: u64, fee_rate: u32) -> BackendResult<u64> {
         match self {
-            Self::Native(b) => b.send(address, amount).await,
-            Self::Mock(b) => b.send(address, amount).await,
+            Self::Native(b) => b.estimate_fee(address, amount, fee_rate),
+            Self::Mock(b) => b.estimate_fee(address, amount, fee_rate),
             #[cfg(feature = "ffi")]
-            Self::Ffi(b) => b.send(address, amount).await,
+            Self::Ffi(b) => b.estimate_fee(address, amount, fee_rate),
+        }
+    }
+
+    async fn send(&self, address: &str, amount: u64, fee_rate: u32) -> BackendResult<[u8; 32]> {
+        match self {
+            Self::Native(b) => b.send(address, amount, fee_rate).await,
+            Self::Mock(b) => b.send(address, amount, fee_rate).await,
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.send(address, amount, fee_rate).await,
         }
     }
 

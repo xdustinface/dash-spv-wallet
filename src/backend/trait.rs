@@ -49,8 +49,11 @@ pub trait SpvBackend: Send + Sync + 'static {
     /// Get the wallet's transaction history.
     fn get_transactions(&self) -> BackendResult<Vec<TransactionInfo>>;
 
+    /// Estimate the fee for a transaction to the given address and amount.
+    fn estimate_fee(&self, address: &str, amount: u64, fee_rate: u32) -> BackendResult<u64>;
+
     /// Send funds to an address. Returns the transaction ID.
-    fn send(&self, address: &str, amount: u64)
+    fn send(&self, address: &str, amount: u64, fee_rate: u32)
         -> impl Future<Output = BackendResult<[u8; 32]>> + Send;
 
     // -- Events --

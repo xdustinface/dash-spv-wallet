@@ -1,6 +1,7 @@
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, RwLock};
 
@@ -13,8 +14,9 @@ use dash_spv_ffi::callbacks::{
     FFISyncEventCallbacks, FFIWalletEventCallbacks,
 };
 use dash_spv_ffi::client::{
-    dash_spv_ffi_client_destroy, dash_spv_ffi_client_get_wallet_manager, dash_spv_ffi_client_new,
-    dash_spv_ffi_client_run, dash_spv_ffi_client_set_client_error_callback,
+    dash_spv_ffi_client_broadcast_transaction, dash_spv_ffi_client_destroy,
+    dash_spv_ffi_client_get_wallet_manager, dash_spv_ffi_client_new, dash_spv_ffi_client_run,
+    dash_spv_ffi_client_set_client_error_callback,
     dash_spv_ffi_client_set_network_event_callbacks, dash_spv_ffi_client_set_progress_callback,
     dash_spv_ffi_client_set_sync_event_callbacks,
     dash_spv_ffi_client_set_wallet_event_callbacks, dash_spv_ffi_client_stop,
@@ -32,12 +34,25 @@ use dash_spv_ffi::types::{
     FFIFiltersProgress, FFIInstantSendProgress, FFIMasternodesProgress, FFIMempoolProgress,
     FFISyncProgress,
 };
+use dashcore::hashes::Hash;
+use key_wallet::managed_account::managed_account_type::ManagedAccountType;
+use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+use key_wallet::DerivationPathBuilder;
 use key_wallet_ffi::error::FFIError as WalletFFIError;
+use key_wallet_ffi::managed_wallet::{managed_wallet_get_next_bip44_change_address, managed_wallet_info_free};
 use key_wallet_ffi::mnemonic::{mnemonic_free, mnemonic_generate};
 use key_wallet_ffi::types::FFINetwork;
+use key_wallet_ffi::utxo::{managed_wallet_get_utxos, utxo_array_free};
+use key_wallet_ffi::wallet::wallet_free_const;
 use key_wallet_ffi::wallet_manager::{
-    wallet_manager_add_wallet_from_mnemonic, wallet_manager_get_wallet_balance,
-    wallet_manager_get_wallet_ids, wallet_manager_free_wallet_ids,
+    wallet_manager_add_wallet_from_mnemonic, wallet_manager_get_managed_wallet_info,
+    wallet_manager_get_wallet, wallet_manager_get_wallet_balance, wallet_manager_get_wallet_ids,
+    wallet_manager_free_wallet_ids,
+};
+use key_wallet_manager::{
+    FeeRate, SelectionStrategy, TransactionBuilder, WalletManager,
 };
 
 use super::error::{BackendError, BackendResult};
@@ -510,8 +525,343 @@ impl SpvBackend for FfiBackend {
         ))
     }
 
-    async fn send(&self, _address: &str, _amount: u64) -> BackendResult<[u8; 32]> {
-        Err(BackendError::Internal("not implemented".into()))
+    fn estimate_fee(&self, _address: &str, _amount: u64, fee_rate: u32) -> BackendResult<u64> {
+        // Estimate for a typical 1-input 2-output P2PKH transaction (226 bytes)
+        let fee = FeeRate::new(fee_rate as u64).calculate_fee(226);
+        Ok(fee)
+    }
+
+    async fn send(&self, address: &str, amount: u64, fee_rate: u32) -> BackendResult<[u8; 32]> {
+        if !self.running.load(Ordering::Relaxed) {
+            return Err(BackendError::NotRunning);
+        }
+
+        // Parse and validate the recipient address
+        let recipient = dashcore::Address::from_str(address)
+            .map_err(|e| BackendError::InvalidAddress(e.to_string()))?;
+        let recipient = recipient
+            .require_network(self.config.network)
+            .map_err(|e| BackendError::InvalidAddress(e.to_string()))?;
+
+        // Load mnemonic and create a local wallet for key derivation
+        let mnemonic_str = self
+            .read_mnemonic()?
+            .ok_or(BackendError::NoWallet)?;
+
+        let network = self.config.network;
+        let mut local_wm = WalletManager::<ManagedWalletInfo>::new(network);
+        let wallet_id = local_wm
+            .create_wallet_from_mnemonic(
+                &mnemonic_str,
+                "",
+                0,
+                WalletAccountCreationOptions::default(),
+            )
+            .map_err(|e| BackendError::Internal(e.to_string()))?;
+
+        let client_usize = *self.client_ptr.lock().unwrap() as usize;
+        if client_usize == 0 {
+            return Err(BackendError::NotRunning);
+        }
+
+        // Get UTXOs and change address from the FFI wallet manager.
+        // These FFI calls internally use `block_on`, so run on a separate OS thread.
+        let (utxos, change_address_str) = std::thread::spawn(move || {
+            let client_ptr = client_usize as *mut FFIDashSpvClient;
+
+            // Safety: client_ptr was cast from a valid pointer.
+            let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
+            if wm.is_null() {
+                return Err(BackendError::Internal(get_last_ffi_error()));
+            }
+            let wm_typed = wm as *const key_wallet_ffi::FFIWalletManager;
+
+            // Get wallet ID from FFI
+            let mut wallet_ids_ptr: *mut u8 = std::ptr::null_mut();
+            let mut count: usize = 0;
+            let mut error = WalletFFIError::success();
+
+            let ok = unsafe {
+                wallet_manager_get_wallet_ids(wm_typed, &mut wallet_ids_ptr, &mut count, &mut error)
+            };
+
+            if !ok || count == 0 {
+                unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+                return Err(BackendError::NoWallet);
+            }
+
+            let mut ffi_wallet_id = [0u8; 32];
+            unsafe {
+                std::ptr::copy_nonoverlapping(wallet_ids_ptr, ffi_wallet_id.as_mut_ptr(), 32);
+                wallet_manager_free_wallet_ids(wallet_ids_ptr, count);
+            }
+
+            // Get managed wallet info for UTXOs
+            error = WalletFFIError::success();
+            let managed_info = unsafe {
+                wallet_manager_get_managed_wallet_info(
+                    wm_typed,
+                    ffi_wallet_id.as_ptr(),
+                    &mut error,
+                )
+            };
+
+            if managed_info.is_null() {
+                unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+                return Err(BackendError::Internal(read_wallet_ffi_error(&error)));
+            }
+
+            // Get UTXOs
+            let mut utxos_ptr: *mut key_wallet_ffi::utxo::FFIUTXO = std::ptr::null_mut();
+            let mut utxo_count: usize = 0;
+            error = WalletFFIError::success();
+
+            let ok = unsafe {
+                managed_wallet_get_utxos(
+                    managed_info,
+                    &mut utxos_ptr,
+                    &mut utxo_count,
+                    &mut error,
+                )
+            };
+
+            if !ok {
+                unsafe {
+                    managed_wallet_info_free(managed_info);
+                    dash_spv_ffi_wallet_manager_free(wm);
+                }
+                return Err(BackendError::Internal(read_wallet_ffi_error(&error)));
+            }
+
+            // Convert FFI UTXOs to Rust Utxo
+            let mut utxos = Vec::with_capacity(utxo_count);
+            if !utxos_ptr.is_null() && utxo_count > 0 {
+                let ffi_utxos = unsafe { std::slice::from_raw_parts(utxos_ptr, utxo_count) };
+                for ffi_utxo in ffi_utxos {
+                    let txid = dashcore::Txid::from_byte_array(ffi_utxo.txid);
+                    let outpoint = dashcore::OutPoint::new(txid, ffi_utxo.vout);
+
+                    let script_bytes = if !ffi_utxo.script_pubkey.is_null() && ffi_utxo.script_len > 0 {
+                        unsafe {
+                            std::slice::from_raw_parts(ffi_utxo.script_pubkey, ffi_utxo.script_len)
+                        }
+                        .to_vec()
+                    } else {
+                        Vec::new()
+                    };
+                    let script_pubkey = dashcore::ScriptBuf::from(script_bytes);
+
+                    let address_str = if !ffi_utxo.address.is_null() {
+                        unsafe { CStr::from_ptr(ffi_utxo.address) }
+                            .to_string_lossy()
+                            .into_owned()
+                    } else {
+                        String::new()
+                    };
+
+                    let address = match dashcore::Address::from_str(&address_str) {
+                        Ok(a) => a.assume_checked(),
+                        Err(_) => continue,
+                    };
+
+                    let txout = dashcore::TxOut {
+                        value: ffi_utxo.amount,
+                        script_pubkey,
+                    };
+
+                    utxos.push(key_wallet::Utxo {
+                        outpoint,
+                        txout,
+                        address,
+                        height: ffi_utxo.height,
+                        is_coinbase: false,
+                        is_confirmed: ffi_utxo.confirmations > 0,
+                        is_instantlocked: false,
+                        is_locked: false,
+                    });
+                }
+
+                unsafe { utxo_array_free(utxos_ptr, utxo_count) };
+            }
+
+            // Get wallet for change address generation
+            error = WalletFFIError::success();
+            let ffi_wallet = unsafe {
+                wallet_manager_get_wallet(wm_typed, ffi_wallet_id.as_ptr(), &mut error)
+            };
+
+            if ffi_wallet.is_null() {
+                unsafe {
+                    managed_wallet_info_free(managed_info);
+                    dash_spv_ffi_wallet_manager_free(wm);
+                }
+                return Err(BackendError::Internal(read_wallet_ffi_error(&error)));
+            }
+
+            // Get change address
+            error = WalletFFIError::success();
+            let change_addr_ptr = unsafe {
+                managed_wallet_get_next_bip44_change_address(
+                    managed_info,
+                    ffi_wallet,
+                    0,
+                    &mut error,
+                )
+            };
+
+            let change_address = if change_addr_ptr.is_null() {
+                unsafe {
+                    wallet_free_const(ffi_wallet);
+                    managed_wallet_info_free(managed_info);
+                    dash_spv_ffi_wallet_manager_free(wm);
+                }
+                return Err(BackendError::Internal(read_wallet_ffi_error(&error)));
+            } else {
+                let addr = unsafe { CStr::from_ptr(change_addr_ptr) }
+                    .to_string_lossy()
+                    .into_owned();
+                unsafe {
+                    key_wallet_ffi::wallet_manager::wallet_manager_free_string(change_addr_ptr);
+                }
+                addr
+            };
+
+            unsafe {
+                wallet_free_const(ffi_wallet);
+                managed_wallet_info_free(managed_info);
+                dash_spv_ffi_wallet_manager_free(wm);
+            }
+
+            Ok((utxos, change_address))
+        })
+        .join()
+        .map_err(|_| BackendError::Internal("FFI thread panicked".into()))??;
+
+        if utxos.is_empty() {
+            return Err(BackendError::InsufficientFunds {
+                available: 0,
+                required: amount,
+            });
+        }
+
+        // Parse change address
+        let change_address = dashcore::Address::from_str(&change_address_str)
+            .map_err(|e| BackendError::Internal(format!("invalid change address: {e}")))?
+            .assume_checked();
+
+        // Get wallet and account info for key derivation from the local wallet manager
+        let (wallet, info) = local_wm
+            .get_wallet_and_info(&wallet_id)
+            .ok_or(BackendError::NoWallet)?;
+
+        let tip_height = self.tip_height().unwrap_or(0);
+        let accounts = info.accounts();
+        let coin_type = coin_type_for_network(network);
+
+        // Build the key provider closure that derives private keys for UTXOs
+        let key_provider =
+            |utxo: &key_wallet::Utxo| -> Option<dashcore::secp256k1::SecretKey> {
+                for (account_index, account) in &accounts.standard_bip44_accounts {
+                    if let ManagedAccountType::Standard {
+                        external_addresses,
+                        internal_addresses,
+                        ..
+                    } = &account.account_type
+                    {
+                        if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
+                            let path = DerivationPathBuilder::new()
+                                .coin_type(coin_type)
+                                .account(*account_index)
+                                .change(0)
+                                .address_index(addr_idx)
+                                .bip44()
+                                .ok()?;
+                            return wallet.derive_private_key(&path).ok();
+                        }
+                        if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
+                            let path = DerivationPathBuilder::new()
+                                .coin_type(coin_type)
+                                .account(*account_index)
+                                .change(1)
+                                .address_index(addr_idx)
+                                .bip44()
+                                .ok()?;
+                            return wallet.derive_private_key(&path).ok();
+                        }
+                    }
+                }
+
+                for (account_index, account) in &accounts.standard_bip32_accounts {
+                    if let ManagedAccountType::Standard {
+                        external_addresses,
+                        internal_addresses,
+                        ..
+                    } = &account.account_type
+                    {
+                        if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
+                            let path = DerivationPathBuilder::new()
+                                .account(*account_index)
+                                .change(0)
+                                .address_index(addr_idx)
+                                .build()
+                                .ok()?;
+                            return wallet.derive_private_key(&path).ok();
+                        }
+                        if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
+                            let path = DerivationPathBuilder::new()
+                                .account(*account_index)
+                                .change(1)
+                                .address_index(addr_idx)
+                                .build()
+                                .ok()?;
+                            return wallet.derive_private_key(&path).ok();
+                        }
+                    }
+                }
+
+                None
+            };
+
+        // Build the transaction
+        let fee = FeeRate::new(fee_rate as u64);
+        let mut builder = TransactionBuilder::new()
+            .set_fee_rate(fee)
+            .set_change_address(change_address)
+            .add_output(&recipient, amount)
+            .map_err(|e| BackendError::Internal(e.to_string()))?
+            .select_inputs(&utxos, SelectionStrategy::BranchAndBound, tip_height, key_provider)
+            .map_err(builder_error_to_backend)?;
+
+        let tx = builder.build().map_err(builder_error_to_backend)?;
+
+        let txid = tx.txid();
+
+        // Serialize and broadcast via FFI
+        let tx_bytes = dashcore::consensus::serialize(&tx);
+        let client_usize = *self.client_ptr.lock().unwrap() as usize;
+        if client_usize == 0 {
+            return Err(BackendError::NotRunning);
+        }
+
+        tokio::task::spawn_blocking(move || {
+            let client_ptr = client_usize as *mut FFIDashSpvClient;
+            // Safety: client_ptr is valid, tx_bytes is a valid slice.
+            let result = unsafe {
+                dash_spv_ffi_client_broadcast_transaction(
+                    client_ptr,
+                    tx_bytes.as_ptr(),
+                    tx_bytes.len(),
+                )
+            };
+            if result != 0 {
+                return Err(BackendError::Sync(get_last_ffi_error()));
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|e| BackendError::Internal(e.to_string()))??;
+
+        Ok(txid.to_byte_array())
     }
 
     fn subscribe_events(&self) -> EventReceiver {
@@ -564,6 +914,33 @@ fn read_wallet_ffi_error(error: &WalletFFIError) -> String {
 
 fn network_to_ffi(network: Network) -> FFINetwork {
     FFINetwork::from(network)
+}
+
+/// Return the BIP44 coin type for the given network.
+fn coin_type_for_network(network: Network) -> u32 {
+    match network {
+        Network::Mainnet => 5,
+        _ => 1,
+    }
+}
+
+fn builder_error_to_backend(
+    e: key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError,
+) -> BackendError {
+    use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
+    use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
+
+    match e {
+        BuilderError::InsufficientFunds {
+            available,
+            required,
+        } => BackendError::InsufficientFunds { available, required },
+        BuilderError::CoinSelection(SelectionError::InsufficientFunds {
+            available,
+            required,
+        }) => BackendError::InsufficientFunds { available, required },
+        other => BackendError::Internal(other.to_string()),
+    }
 }
 
 fn ffi_sync_state_to_rust(state: dash_spv_ffi::types::FFISyncState) -> SyncState {

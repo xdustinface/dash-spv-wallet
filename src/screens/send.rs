@@ -15,6 +15,41 @@ enum SendStep {
     Error(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum FeeRate {
+    Economy,
+    Normal,
+    Priority,
+}
+
+impl FeeRate {
+    fn label(self) -> &'static str {
+        match self {
+            FeeRate::Economy => "Economy",
+            FeeRate::Normal => "Normal",
+            FeeRate::Priority => "Priority",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            FeeRate::Economy => "~1 sat/byte",
+            FeeRate::Normal => "~10 sat/byte",
+            FeeRate::Priority => "~100 sat/byte",
+        }
+    }
+
+    fn sat_per_kb(self) -> u32 {
+        match self {
+            FeeRate::Economy => 1_000,
+            FeeRate::Normal => 10_000,
+            FeeRate::Priority => 100_000,
+        }
+    }
+
+    const ALL: [FeeRate; 3] = [FeeRate::Economy, FeeRate::Normal, FeeRate::Priority];
+}
+
 #[component]
 pub fn Send() -> Element {
     let backend = use_context::<Signal<Backend>>();
@@ -26,6 +61,7 @@ pub fn Send() -> Element {
     let mut step = use_signal(|| SendStep::Form);
     let mut address_error = use_signal(|| false);
     let mut amount_error = use_signal(|| None::<String>);
+    let mut fee_rate = use_signal(|| FeeRate::Normal);
 
     let spendable = wallet.read().balance.spendable();
     let unit = config.read().network.currency_unit();
@@ -60,6 +96,27 @@ pub fn Send() -> Element {
 
         valid
     };
+
+    // Compute fee estimate reactively
+    let fee_estimate = use_memo(move || {
+        let addr = address.read();
+        let amt_str = amount_str.read();
+        let rate = fee_rate.read();
+
+        let amount_sats = match parse_dash_amount(&amt_str) {
+            Some(sats) if sats > 0 => sats,
+            _ => return None,
+        };
+
+        if addr.trim().is_empty() {
+            return None;
+        }
+
+        backend
+            .read()
+            .estimate_fee(&addr, amount_sats, rate.sat_per_kb())
+            .ok()
+    });
 
     match step() {
         SendStep::Form => {
@@ -148,6 +205,53 @@ pub fn Send() -> Element {
                             }
                         }
 
+                        // Fee rate selector
+                        div {
+                            class: "mb-4",
+                            label {
+                                class: "block text-muted text-sm mb-1",
+                                "Fee Rate"
+                            }
+                            div {
+                                class: "flex gap-2",
+                                for rate in FeeRate::ALL {
+                                    button {
+                                        class: if fee_rate() == rate {
+                                            "flex-1 px-4 py-2 rounded-lg bg-dash text-foreground font-medium transition-colors"
+                                        } else {
+                                            "flex-1 px-4 py-2 rounded-lg bg-card text-muted hover:bg-hover transition-colors"
+                                        },
+                                        onclick: move |_| fee_rate.set(rate),
+                                        div {
+                                            class: "text-sm font-medium",
+                                            "{rate.label()}"
+                                        }
+                                        div {
+                                            class: "text-xs text-muted",
+                                            "{rate.description()}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Fee estimate display
+                        if let Some(estimated_fee) = fee_estimate() {
+                            div {
+                                class: "mb-4",
+                                p {
+                                    class: "text-muted text-sm",
+                                    "Estimated fee: {format_balance(estimated_fee, unit)}"
+                                }
+                                if let Some(amount_sats) = parse_dash_amount(&amount_str.read()) {
+                                    p {
+                                        class: "text-foreground font-medium",
+                                        "Total: {format_balance(amount_sats.saturating_add(estimated_fee), unit)}"
+                                    }
+                                }
+                            }
+                        }
+
                         // Review button
                         button {
                             class: "w-full bg-dash hover:bg-dash-hover text-foreground font-medium py-3 px-4 rounded-lg transition-colors",
@@ -165,6 +269,10 @@ pub fn Send() -> Element {
 
         SendStep::Review => {
             let amount_sats = parse_dash_amount(&amount_str.read()).unwrap_or(0);
+            let selected_rate = fee_rate();
+            let estimated_fee = fee_estimate().unwrap_or(0);
+            let total = amount_sats.saturating_add(estimated_fee);
+            let remaining = spendable.saturating_sub(total);
 
             rsx! {
                 div {
@@ -191,7 +299,7 @@ pub fn Send() -> Element {
                         }
 
                         div {
-                            class: "mb-6",
+                            class: "mb-4",
                             p {
                                 class: "text-muted text-sm",
                                 "Amount"
@@ -199,6 +307,54 @@ pub fn Send() -> Element {
                             p {
                                 class: "text-xl font-bold",
                                 "{format_balance(amount_sats, unit)}"
+                            }
+                        }
+
+                        div {
+                            class: "mb-4",
+                            p {
+                                class: "text-muted text-sm",
+                                "Fee Rate"
+                            }
+                            p {
+                                class: "text-foreground",
+                                "{selected_rate.label()} ({selected_rate.description()})"
+                            }
+                        }
+
+                        div {
+                            class: "mb-4",
+                            p {
+                                class: "text-muted text-sm",
+                                "Estimated Fee"
+                            }
+                            p {
+                                class: "text-foreground",
+                                "{format_balance(estimated_fee, unit)}"
+                            }
+                        }
+
+                        div {
+                            class: "mb-4",
+                            p {
+                                class: "text-muted text-sm",
+                                "Total Deduction"
+                            }
+                            p {
+                                class: "text-foreground font-medium",
+                                "{format_balance(total, unit)}"
+                            }
+                        }
+
+                        div {
+                            class: "mb-6",
+                            p {
+                                class: "text-muted text-sm",
+                                "Remaining Balance"
+                            }
+                            p {
+                                class: "text-foreground",
+                                "{format_balance(remaining, unit)}"
                             }
                         }
 
@@ -218,8 +374,9 @@ pub fn Send() -> Element {
                                 onclick: move |_| {
                                     step.set(SendStep::Sending);
                                     let addr = address.read().clone();
+                                    let rate = selected_rate.sat_per_kb();
                                     spawn(async move {
-                                        match backend.read().send(&addr, amount_sats).await {
+                                        match backend.read().send(&addr, amount_sats, rate).await {
                                             Ok(txid) => {
                                                 step.set(SendStep::Success(hex::encode(txid)));
                                             }
