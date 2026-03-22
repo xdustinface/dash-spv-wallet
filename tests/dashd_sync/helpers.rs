@@ -60,6 +60,7 @@ pub async fn wait_for_positive_balance(rx: &mut EventReceiver, timeout: Duration
 
 /// Wait for a `TransactionReceived` event matching the given txid.
 /// Returns the matching event, or panics on timeout.
+#[allow(dead_code)]
 pub async fn wait_for_transaction(
     rx: &mut EventReceiver,
     expected_txid: [u8; 32],
