@@ -196,7 +196,15 @@ impl SpvBackend for MockBackend {
         Ok(self.transactions.lock().unwrap().clone())
     }
 
-    async fn send(&self, address: &str, amount: u64) -> BackendResult<[u8; 32]> {
+    fn estimate_fee(&self, _address: &str, _amount: u64, fee_rate: u32) -> BackendResult<u64> {
+        self.require_wallet()?;
+        // Estimate for a typical 1-input 2-output P2PKH transaction (226 bytes)
+        let estimated_size: u64 = 226;
+        let fee = (fee_rate as u64 * estimated_size).div_ceil(1000);
+        Ok(fee)
+    }
+
+    async fn send(&self, address: &str, amount: u64, _fee_rate: u32) -> BackendResult<[u8; 32]> {
         self.require_wallet()?;
 
         if address.is_empty() {
@@ -398,7 +406,7 @@ mod tests {
             BackendError::NoWallet,
         );
         assert_eq!(
-            backend.send("addr", 100).await.unwrap_err(),
+            backend.send("addr", 100, 1000).await.unwrap_err(),
             BackendError::NoWallet,
         );
     }
@@ -410,7 +418,7 @@ mod tests {
             .build();
         backend.create_wallet(TEST_MNEMONIC_12).await.unwrap();
 
-        let txid = backend.send("XrecipientAddr", 250_000).await.unwrap();
+        let txid = backend.send("XrecipientAddr", 250_000, 1000).await.unwrap();
         assert_ne!(txid, [0u8; 32]);
 
         let balance = backend.get_balance().unwrap();
@@ -429,7 +437,7 @@ mod tests {
             .build();
         backend.create_wallet(TEST_MNEMONIC_12).await.unwrap();
 
-        let err = backend.send("XrecipientAddr", 200).await.unwrap_err();
+        let err = backend.send("XrecipientAddr", 200, 1000).await.unwrap_err();
         assert_eq!(
             err,
             BackendError::InsufficientFunds {
@@ -446,7 +454,7 @@ mod tests {
             .build();
         backend.create_wallet(TEST_MNEMONIC_12).await.unwrap();
 
-        let err = backend.send("", 100).await.unwrap_err();
+        let err = backend.send("", 100, 1000).await.unwrap_err();
         assert!(matches!(err, BackendError::InvalidAddress(_)));
     }
 
@@ -535,7 +543,7 @@ mod tests {
         // Drain the BalanceUpdated from create_wallet
         let _ = rx.try_recv();
 
-        backend.send("Xaddr", 500_000).await.unwrap();
+        backend.send("Xaddr", 500_000, 1000).await.unwrap();
 
         let event1 = rx.try_recv().unwrap();
         assert!(matches!(event1, SpvEvent::BalanceUpdated(_)));

@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
@@ -9,12 +10,19 @@ use dash_spv::storage::DiskStorageManager;
 use dash_spv::sync::SyncEvent;
 use dash_spv::network::NetworkEvent;
 use dash_spv::{ClientConfig, DashSpvClient};
-use key_wallet_manager::{WalletEvent, WalletManager};
+use dashcore::hashes::Hash;
+use key_wallet::managed_account::managed_account_type::ManagedAccountType;
 use key_wallet::mnemonic::Language;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
+use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
-use key_wallet::Mnemonic;
+use key_wallet::{DerivationPathBuilder, Mnemonic};
+use key_wallet_manager::{
+    FeeRate, SelectionStrategy, TransactionBuilder, WalletEvent, WalletManager,
+};
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
@@ -41,6 +49,7 @@ pub struct NativeBackend {
     shutdown_token: tokio::sync::Mutex<Option<CancellationToken>>,
     client_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     bridge_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    client: tokio::sync::Mutex<Option<Arc<SpvClient>>>,
 }
 
 impl NativeBackend {
@@ -58,6 +67,7 @@ impl NativeBackend {
             shutdown_token: tokio::sync::Mutex::new(None),
             client_task: tokio::sync::Mutex::new(None),
             bridge_task: tokio::sync::Mutex::new(None),
+            client: tokio::sync::Mutex::new(None),
         }
     }
 }
@@ -125,14 +135,16 @@ impl SpvBackend for NativeBackend {
             .await
             .map_err(|e| BackendError::Storage(e.to_string()))?;
 
-        let client = SpvClient::new(
-            client_config,
-            network_manager,
-            storage_manager,
-            self.wallet.clone(),
-        )
-        .await
-        .map_err(|e| BackendError::Internal(e.to_string()))?;
+        let client = Arc::new(
+            SpvClient::new(
+                client_config,
+                network_manager,
+                storage_manager,
+                self.wallet.clone(),
+            )
+            .await
+            .map_err(|e| BackendError::Internal(e.to_string()))?,
+        );
 
         let progress_rx = client.subscribe_progress().await;
         let sync_rx = client.subscribe_sync_events().await;
@@ -151,12 +163,14 @@ impl SpvBackend for NativeBackend {
 
         // Spawn client run task
         let run_token = token.clone();
+        let run_client = client.clone();
         let client_handle = tokio::spawn(async move {
-            if let Err(e) = client.run(run_token).await {
+            if let Err(e) = run_client.run(run_token).await {
                 tracing::error!("SPV client error: {e}");
             }
         });
 
+        *self.client.lock().await = Some(client);
         *self.shutdown_token.lock().await = Some(token);
         *self.client_task.lock().await = Some(client_handle);
         *self.bridge_task.lock().await = Some(bridge_handle);
@@ -182,6 +196,7 @@ impl SpvBackend for NativeBackend {
             let _ = handle.await;
         }
 
+        *self.client.lock().await = None;
         self.running.store(false, Ordering::Relaxed);
         Ok(())
     }
@@ -338,12 +353,180 @@ impl SpvBackend for NativeBackend {
         Ok(transactions)
     }
 
-    async fn send(&self, _address: &str, _amount: u64) -> BackendResult<[u8; 32]> {
-        Err(BackendError::Internal("not implemented".into()))
+    fn estimate_fee(&self, _address: &str, _amount: u64, fee_rate: u32) -> BackendResult<u64> {
+        // Estimate for a typical 1-input 2-output P2PKH transaction (226 bytes)
+        let fee = FeeRate::new(fee_rate as u64).calculate_fee(226);
+        Ok(fee)
+    }
+
+    async fn send(&self, address: &str, amount: u64, fee_rate: u32) -> BackendResult<[u8; 32]> {
+        if !self.running.load(Ordering::Relaxed) {
+            return Err(BackendError::NotRunning);
+        }
+
+        // Parse and validate the recipient address
+        let recipient = dashcore::Address::from_str(address)
+            .map_err(|e| BackendError::InvalidAddress(e.to_string()))?;
+        let recipient = recipient
+            .require_network(self.config.network)
+            .map_err(|e| BackendError::InvalidAddress(e.to_string()))?;
+
+        // Get wallet data: UTXOs, change address, private keys
+        let mut wallet_guard = self.wallet.write().await;
+        let wallet_ids: Vec<_> = wallet_guard.list_wallets().into_iter().cloned().collect();
+        let wallet_id = wallet_ids.first().ok_or(BackendError::NoWallet)?;
+
+        // Get UTXOs
+        let utxos: Vec<_> = wallet_guard
+            .wallet_utxos(wallet_id)
+            .map_err(|e| BackendError::Internal(e.to_string()))?
+            .into_iter()
+            .cloned()
+            .collect();
+
+        if utxos.is_empty() {
+            return Err(BackendError::InsufficientFunds {
+                available: 0,
+                required: amount,
+            });
+        }
+
+        // Get a change address
+        let change_result = wallet_guard
+            .get_change_address(wallet_id, 0, AccountTypePreference::PreferBIP44, true)
+            .map_err(|e| BackendError::Internal(e.to_string()))?;
+        let change_address = change_result
+            .address
+            .ok_or_else(|| BackendError::Internal("failed to generate change address".to_string()))?;
+
+        // Get wallet reference for key derivation
+        let (wallet, info) = wallet_guard
+            .get_wallet_and_info(wallet_id)
+            .ok_or(BackendError::NoWallet)?;
+
+        let tip_height = self.tip_height().unwrap_or(0);
+        let network = self.config.network;
+        let accounts = info.accounts();
+
+        // Build the key provider closure that derives private keys for UTXOs
+        let key_provider = |utxo: &key_wallet_manager::Utxo| -> Option<dashcore::secp256k1::SecretKey> {
+            // Search BIP44 accounts first, then BIP32
+            for (account_index, account) in &accounts.standard_bip44_accounts {
+                if let ManagedAccountType::Standard {
+                    external_addresses,
+                    internal_addresses,
+                    ..
+                } = &account.account_type
+                {
+                    // Check external (receive) addresses
+                    if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
+                        let path = DerivationPathBuilder::new()
+                            .coin_type(coin_type_for_network(network))
+                            .account(*account_index)
+                            .change(0)
+                            .address_index(addr_idx)
+                            .bip44()
+                            .ok()?;
+                        return wallet.derive_private_key(&path).ok();
+                    }
+                    // Check internal (change) addresses
+                    if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
+                        let path = DerivationPathBuilder::new()
+                            .coin_type(coin_type_for_network(network))
+                            .account(*account_index)
+                            .change(1)
+                            .address_index(addr_idx)
+                            .bip44()
+                            .ok()?;
+                        return wallet.derive_private_key(&path).ok();
+                    }
+                }
+            }
+
+            for (account_index, account) in &accounts.standard_bip32_accounts {
+                if let ManagedAccountType::Standard {
+                    external_addresses,
+                    internal_addresses,
+                    ..
+                } = &account.account_type
+                {
+                    if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
+                        let path = DerivationPathBuilder::new()
+                            .account(*account_index)
+                            .change(0)
+                            .address_index(addr_idx)
+                            .build()
+                            .ok()?;
+                        return wallet.derive_private_key(&path).ok();
+                    }
+                    if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
+                        let path = DerivationPathBuilder::new()
+                            .account(*account_index)
+                            .change(1)
+                            .address_index(addr_idx)
+                            .build()
+                            .ok()?;
+                        return wallet.derive_private_key(&path).ok();
+                    }
+                }
+            }
+
+            None
+        };
+
+        // Build the transaction
+        let fee = FeeRate::new(fee_rate as u64);
+        let mut builder = TransactionBuilder::new()
+            .set_fee_rate(fee)
+            .set_change_address(change_address)
+            .add_output(&recipient, amount)
+            .map_err(|e| BackendError::Internal(e.to_string()))?
+            .select_inputs(&utxos, SelectionStrategy::BranchAndBound, tip_height, key_provider)
+            .map_err(|e| match e {
+                BuilderError::InsufficientFunds { available, required } => {
+                    BackendError::InsufficientFunds { available, required }
+                }
+                BuilderError::CoinSelection(
+                    SelectionError::InsufficientFunds { available, required },
+                ) => BackendError::InsufficientFunds { available, required },
+                other => BackendError::Internal(other.to_string()),
+            })?;
+
+        let tx = builder.build().map_err(|e| match e {
+            BuilderError::InsufficientFunds { available, required } => {
+                BackendError::InsufficientFunds { available, required }
+            }
+            other => BackendError::Internal(other.to_string()),
+        })?;
+
+        let txid = tx.txid();
+
+        // Drop the wallet lock before broadcasting
+        drop(wallet_guard);
+
+        // Broadcast the transaction
+        let client_guard = self.client.lock().await;
+        let client = client_guard
+            .as_ref()
+            .ok_or(BackendError::NotRunning)?;
+        client
+            .broadcast_transaction(&tx)
+            .await
+            .map_err(|e| BackendError::Sync(e.to_string()))?;
+
+        Ok(txid.to_byte_array())
     }
 
     fn subscribe_events(&self) -> EventReceiver {
         self.event_tx.subscribe()
+    }
+}
+
+/// Return the BIP44 coin type for the given network.
+fn coin_type_for_network(network: Network) -> u32 {
+    match network {
+        Network::Mainnet => 5,
+        _ => 1,
     }
 }
 
