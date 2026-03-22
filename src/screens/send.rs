@@ -410,12 +410,6 @@ pub fn Send() -> Element {
         }
 
         SendStep::Success(txid_hex) => {
-            let short_txid = if txid_hex.len() > 16 {
-                format!("{}...{}", &txid_hex[..8], &txid_hex[txid_hex.len() - 8..])
-            } else {
-                txid_hex.clone()
-            };
-
             rsx! {
                 div {
                     class: "text-foreground p-6",
@@ -432,9 +426,8 @@ pub fn Send() -> Element {
                             "Transaction sent!"
                         }
                         p {
-                            class: "font-mono text-sm text-muted mb-6",
-                            title: "{txid_hex}",
-                            "{short_txid}"
+                            class: "font-mono text-xs text-muted mb-6 break-all select-all",
+                            "{txid_hex}"
                         }
 
                         Link {
