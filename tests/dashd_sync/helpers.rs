@@ -58,43 +58,6 @@ pub async fn wait_for_positive_balance(rx: &mut EventReceiver, timeout: Duration
     }
 }
 
-/// Wait for a `TransactionReceived` event matching the given txid.
-/// Returns the matching event, or panics on timeout.
-#[allow(dead_code)]
-pub async fn wait_for_transaction(
-    rx: &mut EventReceiver,
-    expected_txid: [u8; 32],
-    timeout: Duration,
-) -> SpvEvent {
-    let deadline = tokio::time::sleep(timeout);
-    tokio::pin!(deadline);
-
-    loop {
-        tokio::select! {
-            _ = &mut deadline => {
-                panic!(
-                    "Timeout ({:?}) waiting for transaction {:?}",
-                    timeout, expected_txid,
-                );
-            }
-            result = rx.recv() => {
-                match result {
-                    Ok(ref event @ SpvEvent::TransactionReceived { ref txid, .. })
-                        if txid == &expected_txid =>
-                    {
-                        return event.clone();
-                    }
-                    Ok(_) => continue,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                        eprintln!("Event receiver lagged by {n}");
-                    }
-                    Err(_) => panic!("Event channel closed while waiting for transaction"),
-                }
-            }
-        }
-    }
-}
-
 /// Wait for a `BalanceUpdated` event where the spendable balance differs from
 /// `initial_balance`, or panic on timeout. Returns the new balance.
 pub async fn wait_for_balance_change(
