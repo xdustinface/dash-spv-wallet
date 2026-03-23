@@ -57,7 +57,7 @@ impl NativeBackend {
     pub fn new(config: AppConfig) -> Self {
         let wallet_manager = WalletManager::<ManagedWalletInfo>::new(config.network);
         let wallet = Arc::new(tokio::sync::RwLock::new(wallet_manager));
-        let (event_tx, _) = event_channel(256);
+        let (event_tx, _) = event_channel(4096);
 
         Self {
             config,

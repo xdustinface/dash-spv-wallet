@@ -34,12 +34,16 @@ pub fn Receive() -> Element {
     };
 
     let copy_address = move |_| {
-        copied.set(true);
-        // Reset after a brief visual feedback period
-        spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            copied.set(false);
-        });
+        if let Some(addr) = &wallet.read().receive_address {
+            let addr = addr.clone();
+            spawn(async move {
+                let js = format!("navigator.clipboard.writeText('{addr}')");
+                let _ = document::eval(&js).await;
+                copied.set(true);
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                copied.set(false);
+            });
+        }
     };
 
     rsx! {
@@ -88,7 +92,7 @@ pub fn Receive() -> Element {
                 }
 
                 button {
-                    class: "w-full bg-dash hover:bg-dash-hover text-foreground font-medium py-2 px-4 rounded-lg transition-colors",
+                    class: "bg-hover hover:bg-edge text-foreground text-sm font-medium py-2 px-4 rounded-lg transition-colors",
                     onclick: generate_address,
                     "Generate New Address"
                 }
