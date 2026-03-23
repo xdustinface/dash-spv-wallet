@@ -187,4 +187,199 @@ mod tests {
         assert_eq!(view.percentage, 0.0);
         assert_eq!(view.stage_label, "Syncing... (0%)");
     }
+
+    #[test]
+    fn default_connection_state_is_disconnected() {
+        assert_eq!(ConnectionState::default(), ConnectionState::Disconnected);
+    }
+
+    #[test]
+    fn peer_connected_ignored_when_not_disconnected() {
+        for initial in [
+            ConnectionState::Connecting,
+            ConnectionState::Synced,
+            ConnectionState::Syncing(SyncProgressView {
+                percentage: 50.0,
+                stage_label: "test".into(),
+            }),
+        ] {
+            let mut state = initial.clone();
+            state.apply_event(&SpvEvent::PeerConnected("1.2.3.4:9999".into()));
+            assert_eq!(state, initial);
+        }
+    }
+
+    #[test]
+    fn peer_disconnected_is_noop() {
+        let mut state = ConnectionState::Connecting;
+        state.apply_event(&SpvEvent::PeerDisconnected("1.2.3.4:9999".into()));
+        assert_eq!(state, ConnectionState::Connecting);
+    }
+
+    #[test]
+    fn zero_peers_does_not_override_error() {
+        let mut state = ConnectionState::Error("fatal".into());
+        state.apply_event(&SpvEvent::PeersUpdated {
+            count: 0,
+            best_height: 0,
+        });
+        assert!(matches!(state, ConnectionState::Error(_)));
+    }
+
+    #[test]
+    fn nonzero_peers_is_noop() {
+        let mut state = ConnectionState::Connecting;
+        state.apply_event(&SpvEvent::PeersUpdated {
+            count: 3,
+            best_height: 1000,
+        });
+        assert_eq!(state, ConnectionState::Connecting);
+    }
+
+    #[test]
+    fn sync_progress_updated_ignores_error_state() {
+        let mut state = ConnectionState::Error("broken".into());
+        let progress = SyncProgress::default();
+        state.apply_event(&SpvEvent::SyncProgressUpdated(Box::new(progress)));
+        assert!(matches!(state, ConnectionState::Error(_)));
+    }
+
+    #[test]
+    fn sync_progress_synced_transitions_to_synced() {
+        use dash_spv::sync::{BlockHeadersProgress, FilterHeadersProgress, FiltersProgress};
+
+        let mut progress = SyncProgress::default();
+        let mut headers = BlockHeadersProgress::default();
+        headers.set_state(SyncState::Synced);
+        progress.update_headers(headers);
+        let mut fh = FilterHeadersProgress::default();
+        fh.set_state(SyncState::Synced);
+        progress.update_filter_headers(fh);
+        let mut f = FiltersProgress::default();
+        f.set_state(SyncState::Synced);
+        progress.update_filters(f);
+
+        let mut state = ConnectionState::Connecting;
+        state.apply_event(&SpvEvent::SyncProgressUpdated(Box::new(progress)));
+        assert_eq!(state, ConnectionState::Synced);
+    }
+
+    #[test]
+    fn format_sync_stage_headers() {
+        use dash_spv::sync::BlockHeadersProgress;
+
+        let mut progress = SyncProgress::default();
+        let mut headers = BlockHeadersProgress::default();
+        headers.set_state(SyncState::Syncing);
+        progress.update_headers(headers);
+
+        let view = SyncProgressView::from_progress(&progress);
+        assert_eq!(view.stage_label, "Syncing headers...");
+    }
+
+    #[test]
+    fn format_sync_stage_filter_headers() {
+        use dash_spv::sync::{BlockHeadersProgress, FilterHeadersProgress};
+
+        let mut progress = SyncProgress::default();
+        let mut headers = BlockHeadersProgress::default();
+        headers.set_state(SyncState::Synced);
+        progress.update_headers(headers);
+        let mut fh = FilterHeadersProgress::default();
+        fh.set_state(SyncState::Syncing);
+        progress.update_filter_headers(fh);
+
+        let view = SyncProgressView::from_progress(&progress);
+        assert_eq!(view.stage_label, "Syncing filter headers...");
+    }
+
+    #[test]
+    fn format_sync_stage_filters() {
+        use dash_spv::sync::{BlockHeadersProgress, FilterHeadersProgress, FiltersProgress};
+
+        let mut progress = SyncProgress::default();
+        let mut headers = BlockHeadersProgress::default();
+        headers.set_state(SyncState::Synced);
+        progress.update_headers(headers);
+        let mut fh = FilterHeadersProgress::default();
+        fh.set_state(SyncState::Synced);
+        progress.update_filter_headers(fh);
+        let mut f = FiltersProgress::default();
+        f.set_state(SyncState::Syncing);
+        progress.update_filters(f);
+
+        let view = SyncProgressView::from_progress(&progress);
+        assert_eq!(view.stage_label, "Downloading filters...");
+    }
+
+    #[test]
+    fn format_sync_stage_blocks() {
+        use dash_spv::sync::BlocksProgress;
+
+        let mut progress = SyncProgress::default();
+        let mut blocks = BlocksProgress::default();
+        blocks.set_state(SyncState::Syncing);
+        progress.update_blocks(blocks);
+
+        let view = SyncProgressView::from_progress(&progress);
+        assert_eq!(view.stage_label, "Processing blocks...");
+    }
+
+    #[test]
+    fn format_sync_stage_masternodes() {
+        use dash_spv::sync::MasternodesProgress;
+
+        let mut progress = SyncProgress::default();
+        let mut mn = MasternodesProgress::default();
+        mn.set_state(SyncState::Syncing);
+        progress.update_masternodes(mn);
+
+        let view = SyncProgressView::from_progress(&progress);
+        assert_eq!(view.stage_label, "Syncing masternodes...");
+    }
+
+    #[test]
+    fn format_sync_stage_chainlocks() {
+        use dash_spv::sync::ChainLockProgress;
+
+        let mut progress = SyncProgress::default();
+        let mut cl = ChainLockProgress::default();
+        cl.set_state(SyncState::Syncing);
+        progress.update_chainlocks(cl);
+
+        let view = SyncProgressView::from_progress(&progress);
+        assert_eq!(view.stage_label, "Validating chain locks...");
+    }
+
+    #[test]
+    fn format_sync_stage_instantsend() {
+        use dash_spv::sync::InstantSendProgress;
+
+        let mut progress = SyncProgress::default();
+        let mut is = InstantSendProgress::default();
+        is.set_state(SyncState::Syncing);
+        progress.update_instantsend(is);
+
+        let view = SyncProgressView::from_progress(&progress);
+        assert_eq!(view.stage_label, "Processing instant send...");
+    }
+
+    #[test]
+    fn format_sync_stage_synced() {
+        use dash_spv::sync::{BlockHeadersProgress, FilterHeadersProgress, FiltersProgress};
+
+        let mut progress = SyncProgress::default();
+        let mut headers = BlockHeadersProgress::default();
+        headers.set_state(SyncState::Synced);
+        progress.update_headers(headers);
+        let mut fh = FilterHeadersProgress::default();
+        fh.set_state(SyncState::Synced);
+        progress.update_filter_headers(fh);
+        let mut f = FiltersProgress::default();
+        f.set_state(SyncState::Synced);
+        progress.update_filters(f);
+
+        let view = SyncProgressView::from_progress(&progress);
+        assert_eq!(view.stage_label, "Synced");
+    }
 }
