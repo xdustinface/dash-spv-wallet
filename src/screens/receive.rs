@@ -1,3 +1,4 @@
+use dioxus::document;
 use dioxus::prelude::*;
 
 use crate::backend::dispatch::Backend;
@@ -34,12 +35,16 @@ pub fn Receive() -> Element {
     };
 
     let copy_address = move |_| {
-        copied.set(true);
-        // Reset after a brief visual feedback period
-        spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            copied.set(false);
-        });
+        if let Some(addr) = &wallet.read().receive_address {
+            let addr = addr.clone();
+            spawn(async move {
+                let js = format!("navigator.clipboard.writeText('{addr}')");
+                let _ = document::eval(&js).await;
+                copied.set(true);
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                copied.set(false);
+            });
+        }
     };
 
     rsx! {
