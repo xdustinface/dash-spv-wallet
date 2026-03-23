@@ -93,7 +93,7 @@ pub fn Receive() -> Element {
                 }
 
                 button {
-                    class: "w-full bg-dash hover:bg-dash-hover text-foreground font-medium py-2 px-4 rounded-lg transition-colors",
+                    class: "bg-card hover:bg-hover text-muted text-sm py-2 px-4 rounded-lg transition-colors",
                     onclick: generate_address,
                     "Generate New Address"
                 }
