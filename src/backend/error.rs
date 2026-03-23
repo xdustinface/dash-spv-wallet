@@ -78,10 +78,7 @@ mod tests {
             ),
             (BackendError::NotRunning, "client is not running"),
             (BackendError::AlreadyRunning, "client is already running"),
-            (
-                BackendError::Sync("timeout".into()),
-                "sync error: timeout",
-            ),
+            (BackendError::Sync("timeout".into()), "sync error: timeout"),
             (
                 BackendError::Storage("disk full".into()),
                 "storage error: disk full",
