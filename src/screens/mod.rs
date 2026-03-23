@@ -11,7 +11,6 @@ pub mod wallet_import;
 #[cfg(test)]
 mod tests {
 
-
     use std::rc::Rc;
 
     use dioxus::prelude::*;
