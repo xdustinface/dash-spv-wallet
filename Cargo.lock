@@ -1012,6 +1012,7 @@ dependencies = [
 [[package]]
 name = "dash-spv"
 version = "0.42.0"
+source = "git+https://github.com/xdustinface/rust-dashcore?branch=feat%2Fdash-spv-wallet#632893bda816c7f9f492ac6350993755e70b9773"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1046,6 +1047,7 @@ dependencies = [
 [[package]]
 name = "dash-spv-ffi"
 version = "0.42.0"
+source = "git+https://github.com/xdustinface/rust-dashcore?branch=feat%2Fdash-spv-wallet#632893bda816c7f9f492ac6350993755e70b9773"
 dependencies = [
  "cbindgen",
  "clap",
@@ -1068,7 +1070,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dash-spv-ui"
+name = "dash-spv-wallet"
 version = "0.1.0"
 dependencies = [
  "clap",
@@ -1092,6 +1094,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.42.0"
+source = "git+https://github.com/xdustinface/rust-dashcore?branch=feat%2Fdash-spv-wallet#632893bda816c7f9f492ac6350993755e70b9773"
 dependencies = [
  "anyhow",
  "base64-compat",
@@ -1116,10 +1119,12 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.42.0"
+source = "git+https://github.com/xdustinface/rust-dashcore?branch=feat%2Fdash-spv-wallet#632893bda816c7f9f492ac6350993755e70b9773"
 
 [[package]]
 name = "dashcore-rpc"
 version = "0.42.0"
+source = "git+https://github.com/xdustinface/rust-dashcore?branch=feat%2Fdash-spv-wallet#632893bda816c7f9f492ac6350993755e70b9773"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -1132,6 +1137,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.42.0"
+source = "git+https://github.com/xdustinface/rust-dashcore?branch=feat%2Fdash-spv-wallet#632893bda816c7f9f492ac6350993755e70b9773"
 dependencies = [
  "bincode",
  "dashcore",
@@ -1146,6 +1152,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.42.0"
+source = "git+https://github.com/xdustinface/rust-dashcore?branch=feat%2Fdash-spv-wallet#632893bda816c7f9f492ac6350993755e70b9773"
 dependencies = [
  "bincode",
  "dashcore-private",
@@ -3012,6 +3019,7 @@ dependencies = [
 [[package]]
 name = "key-wallet"
 version = "0.42.0"
+source = "git+https://github.com/xdustinface/rust-dashcore?branch=feat%2Fdash-spv-wallet#632893bda816c7f9f492ac6350993755e70b9773"
 dependencies = [
  "aes",
  "async-trait",
@@ -3039,6 +3047,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-ffi"
 version = "0.42.0"
+source = "git+https://github.com/xdustinface/rust-dashcore?branch=feat%2Fdash-spv-wallet#632893bda816c7f9f492ac6350993755e70b9773"
 dependencies = [
  "cbindgen",
  "dashcore",
@@ -3053,6 +3062,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-manager"
 version = "0.42.0"
+source = "git+https://github.com/xdustinface/rust-dashcore?branch=feat%2Fdash-spv-wallet#632893bda816c7f9f492ac6350993755e70b9773"
 dependencies = [
  "async-trait",
  "bincode",

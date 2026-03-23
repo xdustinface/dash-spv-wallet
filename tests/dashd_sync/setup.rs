@@ -1,6 +1,6 @@
 use dash_spv::test_utils::{DashdTestContext, TestChain};
-use dash_spv_ui::backend::events::SpvEvent;
-use dash_spv_ui::config::AppConfig;
+use dash_spv_wallet::backend::events::SpvEvent;
+use dash_spv_wallet::config::AppConfig;
 use dashcore::Network;
 use tempfile::TempDir;
 

@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use dash_spv::test_utils::SYNC_TIMEOUT;
-use dash_spv_ui::backend::events::{EventReceiver, SpvEvent};
-use dash_spv_ui::backend::types::{TransactionInfo, WalletCoreBalance};
+use dash_spv_wallet::backend::events::{EventReceiver, SpvEvent};
+use dash_spv_wallet::backend::types::{TransactionInfo, WalletCoreBalance};
 
 use super::setup::is_sync_complete;
 
