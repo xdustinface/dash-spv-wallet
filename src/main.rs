@@ -1,6 +1,6 @@
 // Re-export library modules so binary-only modules can use `crate::backend` and `crate::config`.
-use dash_spv_ui::backend;
-use dash_spv_ui::config;
+use dash_spv_wallet::backend;
+use dash_spv_wallet::config;
 
 mod components;
 mod event_bridge;

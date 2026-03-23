@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use dash_spv::test_utils::TestChain;
-use dash_spv_ui::backend::error::BackendError;
-use dash_spv_ui::backend::native::NativeBackend;
-use dash_spv_ui::backend::r#trait::SpvBackend;
-use dash_spv_ui::backend::types::TransactionDirection;
+use dash_spv_wallet::backend::error::BackendError;
+use dash_spv_wallet::backend::native::NativeBackend;
+use dash_spv_wallet::backend::r#trait::SpvBackend;
+use dash_spv_wallet::backend::types::TransactionDirection;
 use dashcore::hashes::Hash;
 use dashcore::Network;
 
