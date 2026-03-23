@@ -32,7 +32,10 @@ pub fn use_event_bridge() {
                     dev_log.write().push(&event);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::error!("Event bridge lost {n} events — UI state may be inconsistent");
+                    panic!(
+                        "Event bridge lost {n} events — this is a bug. \
+                         Increase the event channel capacity or reduce event volume."
+                    );
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     break;
