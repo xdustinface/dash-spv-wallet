@@ -1,27 +1,16 @@
-// Re-export library modules so binary-only modules can use `crate::backend` and `crate::config`.
-use dash_spv_wallet::backend;
-use dash_spv_wallet::config;
-
-mod components;
-mod event_bridge;
-mod router;
-mod screens;
-mod state;
-
-use dioxus::prelude::*;
-
-use crate::router::Route;
-use crate::state::app_state::AppState;
-use crate::state::connection::ConnectionState;
-use crate::state::dev_log::DevLog;
-use crate::state::network::NetworkInfo;
-use crate::state::wallet::WalletState;
-use backend::dispatch::Backend;
+use dash_spv_wallet::backend::dispatch::Backend;
 #[cfg(feature = "ffi")]
-use backend::ffi::FfiBackend;
-use backend::mock::MockBackend;
-use backend::native::NativeBackend;
-use config::AppConfig;
+use dash_spv_wallet::backend::ffi::FfiBackend;
+use dash_spv_wallet::backend::mock::MockBackend;
+use dash_spv_wallet::backend::native::NativeBackend;
+use dash_spv_wallet::config::AppConfig;
+use dash_spv_wallet::router::Route;
+use dash_spv_wallet::state::app_state::AppState;
+use dash_spv_wallet::state::connection::ConnectionState;
+use dash_spv_wallet::state::dev_log::DevLog;
+use dash_spv_wallet::state::network::NetworkInfo;
+use dash_spv_wallet::state::wallet::WalletState;
+use dioxus::prelude::*;
 
 fn main() {
     let config = AppConfig::load().unwrap_or_else(|e| {
