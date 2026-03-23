@@ -4,9 +4,10 @@ fn main() {
     println!("cargo:rerun-if-changed=input.css");
     println!("cargo:rerun-if-changed=src/");
 
-    // Try to compile Tailwind CSS. If npx is not available, fall back
-    // to using the existing assets/tailwind.css (if any).
-    let result = Command::new("npx")
+    // On Windows, npx is a .cmd script
+    let npx = if cfg!(windows) { "npx.cmd" } else { "npx" };
+
+    let result = Command::new(npx)
         .args([
             "@tailwindcss/cli",
             "-i",
@@ -20,16 +21,14 @@ fn main() {
     match result {
         Ok(status) if status.success() => {}
         Ok(status) => {
-            eprintln!(
-                "cargo:warning=Tailwind CSS compilation failed (exit code: {}). \
-                 Styles may be missing. Run `npm install` to set up Tailwind.",
-                status
+            println!(
+                "cargo:warning=Tailwind CSS compilation failed (exit code: {status}). \
+                 Run `npm install` to set up Tailwind.",
             );
         }
         Err(_) => {
-            eprintln!(
-                "cargo:warning=`npx` not found. Tailwind CSS will not be compiled. \
-                 Install Node.js and run `npm install` for styled builds."
+            println!(
+                "cargo:warning=`npx` not found. Run `npm install` and ensure Node.js is installed.",
             );
         }
     }
