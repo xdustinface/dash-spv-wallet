@@ -774,3 +774,390 @@ fn extract_context_fields(
         ),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::SocketAddr;
+
+    use dash_spv::network::NetworkEvent;
+    use dash_spv::sync::{ManagerIdentifier, SyncEvent};
+    use dashcore::bls_sig_utils::BLSSignature;
+    use dashcore::ephemerealdata::chain_lock::ChainLock;
+    use dashcore::ephemerealdata::instant_lock::InstantLock;
+    use dashcore::hashes::Hash;
+    use dashcore::{Address, BlockHash, PublicKey, Txid};
+    use key_wallet::transaction_checking::TransactionContext;
+    use key_wallet_manager::WalletEvent;
+
+    use super::*;
+
+    fn test_address() -> Address {
+        let pk = PublicKey::from_slice(&[
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x01,
+        ])
+        .unwrap();
+        Address::p2pkh(&pk, Network::Testnet)
+    }
+
+    #[test]
+    fn coin_type_mainnet_returns_5() {
+        assert_eq!(coin_type_for_network(Network::Mainnet), 5);
+    }
+
+    #[test]
+    fn coin_type_non_mainnet_returns_1() {
+        assert_eq!(coin_type_for_network(Network::Testnet), 1);
+        assert_eq!(coin_type_for_network(Network::Regtest), 1);
+        assert_eq!(coin_type_for_network(Network::Devnet), 1);
+    }
+
+    #[test]
+    fn extract_context_mempool() {
+        let (height, timestamp, block_hash, is, cl) =
+            extract_context_fields(&TransactionContext::Mempool);
+        assert_eq!(height, None);
+        assert_eq!(timestamp, None);
+        assert_eq!(block_hash, None);
+        assert!(!is);
+        assert!(!cl);
+    }
+
+    #[test]
+    fn extract_context_instant_send() {
+        let (height, timestamp, block_hash, is, cl) =
+            extract_context_fields(&TransactionContext::InstantSend);
+        assert_eq!(height, None);
+        assert_eq!(timestamp, None);
+        assert_eq!(block_hash, None);
+        assert!(is);
+        assert!(!cl);
+    }
+
+    #[test]
+    fn extract_context_in_block() {
+        let hash = BlockHash::all_zeros();
+        let ctx = TransactionContext::InBlock {
+            height: 1000,
+            timestamp: Some(1700000000),
+            block_hash: Some(hash),
+        };
+        let (height, timestamp, block_hash, is, cl) = extract_context_fields(&ctx);
+        assert_eq!(height, Some(1000));
+        assert_eq!(timestamp, Some(1700000000));
+        assert_eq!(block_hash, Some(hash.to_byte_array()));
+        assert!(!is);
+        assert!(!cl);
+    }
+
+    #[test]
+    fn extract_context_in_block_none_optionals() {
+        let ctx = TransactionContext::InBlock {
+            height: 500,
+            timestamp: None,
+            block_hash: None,
+        };
+        let (height, timestamp, block_hash, is, cl) = extract_context_fields(&ctx);
+        assert_eq!(height, Some(500));
+        assert_eq!(timestamp, None);
+        assert_eq!(block_hash, None);
+        assert!(!is);
+        assert!(!cl);
+    }
+
+    #[test]
+    fn extract_context_in_chain_locked_block() {
+        let hash = BlockHash::all_zeros();
+        let ctx = TransactionContext::InChainLockedBlock {
+            height: 2000,
+            timestamp: Some(1700001000),
+            block_hash: Some(hash),
+        };
+        let (height, timestamp, block_hash, is, cl) = extract_context_fields(&ctx);
+        assert_eq!(height, Some(2000));
+        assert_eq!(timestamp, Some(1700001000));
+        assert_eq!(block_hash, Some(hash.to_byte_array()));
+        assert!(!is);
+        assert!(cl);
+    }
+
+    #[test]
+    fn map_sync_event_sync_start() {
+        let event = SyncEvent::SyncStart {
+            identifier: ManagerIdentifier::BlockHeader,
+        };
+        let mapped = map_sync_event(event);
+        assert_eq!(
+            mapped,
+            Some(SpvEvent::SyncStarted {
+                manager: ManagerIdentifier::BlockHeader,
+            })
+        );
+    }
+
+    #[test]
+    fn map_sync_event_block_headers_stored() {
+        let event = SyncEvent::BlockHeadersStored { tip_height: 5000 };
+        assert_eq!(
+            map_sync_event(event),
+            Some(SpvEvent::HeadersSynced { tip_height: 5000 })
+        );
+    }
+
+    #[test]
+    fn map_sync_event_block_header_sync_complete() {
+        let event = SyncEvent::BlockHeaderSyncComplete { tip_height: 5000 };
+        assert_eq!(
+            map_sync_event(event),
+            Some(SpvEvent::HeadersSynced { tip_height: 5000 })
+        );
+    }
+
+    #[test]
+    fn map_sync_event_filters_sync_complete() {
+        let event = SyncEvent::FiltersSyncComplete { tip_height: 4000 };
+        assert_eq!(
+            map_sync_event(event),
+            Some(SpvEvent::FiltersSynced { tip_height: 4000 })
+        );
+    }
+
+    #[test]
+    fn map_sync_event_block_processed() {
+        let event = SyncEvent::BlockProcessed {
+            block_hash: BlockHash::all_zeros(),
+            height: 100,
+            new_addresses: vec![test_address()],
+            confirmed_txids: vec![],
+        };
+        assert_eq!(
+            map_sync_event(event),
+            Some(SpvEvent::BlockProcessed {
+                height: 100,
+                new_addresses: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn map_sync_event_sync_complete() {
+        let event = SyncEvent::SyncComplete {
+            header_tip: 6000,
+            cycle: 1,
+        };
+        assert_eq!(
+            map_sync_event(event),
+            Some(SpvEvent::SyncComplete {
+                tip_height: 6000,
+                cycle: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn map_sync_event_chain_lock_received() {
+        let chain_lock = ChainLock {
+            block_height: 7777,
+            block_hash: BlockHash::all_zeros(),
+            signature: BLSSignature::from([0; 96]),
+        };
+        let event = SyncEvent::ChainLockReceived {
+            chain_lock,
+            validated: true,
+        };
+        assert_eq!(
+            map_sync_event(event),
+            Some(SpvEvent::ChainLockReceived {
+                height: 7777,
+                validated: true,
+            })
+        );
+    }
+
+    #[test]
+    fn map_sync_event_instant_lock_received() {
+        let instant_lock = InstantLock {
+            txid: Txid::all_zeros(),
+            ..InstantLock::default()
+        };
+        let event = SyncEvent::InstantLockReceived {
+            instant_lock,
+            validated: false,
+        };
+        assert_eq!(
+            map_sync_event(event),
+            Some(SpvEvent::InstantLockReceived {
+                txid: Txid::all_zeros().to_byte_array(),
+                validated: false,
+            })
+        );
+    }
+
+    #[test]
+    fn map_sync_event_manager_error() {
+        let event = SyncEvent::ManagerError {
+            manager: ManagerIdentifier::Filter,
+            error: "timeout".to_string(),
+        };
+        assert_eq!(
+            map_sync_event(event),
+            Some(SpvEvent::Error("Filter: timeout".to_string()))
+        );
+    }
+
+    #[test]
+    fn map_sync_event_unmapped_returns_none() {
+        let unmapped = vec![
+            SyncEvent::FilterHeadersStored {
+                start_height: 0,
+                end_height: 100,
+                tip_height: 100,
+            },
+            SyncEvent::FilterHeadersSyncComplete { tip_height: 100 },
+            SyncEvent::FiltersStored {
+                start_height: 0,
+                end_height: 100,
+            },
+            SyncEvent::BlocksNeeded {
+                blocks: Default::default(),
+            },
+            SyncEvent::MasternodeStateUpdated { height: 100 },
+        ];
+        for event in unmapped {
+            assert_eq!(map_sync_event(event), None);
+        }
+    }
+
+    #[test]
+    fn map_network_event_peer_connected() {
+        let addr: SocketAddr = "192.168.1.1:9999".parse().unwrap();
+        let event = NetworkEvent::PeerConnected { address: addr };
+        assert_eq!(
+            map_network_event(event),
+            SpvEvent::PeerConnected("192.168.1.1:9999".to_string())
+        );
+    }
+
+    #[test]
+    fn map_network_event_peer_disconnected() {
+        let addr: SocketAddr = "10.0.0.1:19999".parse().unwrap();
+        let event = NetworkEvent::PeerDisconnected { address: addr };
+        assert_eq!(
+            map_network_event(event),
+            SpvEvent::PeerDisconnected("10.0.0.1:19999".to_string())
+        );
+    }
+
+    #[test]
+    fn map_network_event_peers_updated() {
+        let addr: SocketAddr = "127.0.0.1:9999".parse().unwrap();
+        let event = NetworkEvent::PeersUpdated {
+            connected_count: 3,
+            addresses: vec![addr],
+            best_height: Some(10000),
+        };
+        assert_eq!(
+            map_network_event(event),
+            SpvEvent::PeersUpdated {
+                count: 3,
+                best_height: 10000,
+            }
+        );
+    }
+
+    #[test]
+    fn map_network_event_peers_updated_no_best_height() {
+        let event = NetworkEvent::PeersUpdated {
+            connected_count: 0,
+            addresses: vec![],
+            best_height: None,
+        };
+        assert_eq!(
+            map_network_event(event),
+            SpvEvent::PeersUpdated {
+                count: 0,
+                best_height: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn map_wallet_event_transaction_received() {
+        let txid = Txid::all_zeros();
+        let event = WalletEvent::TransactionReceived {
+            wallet_id: [0; 32],
+            status: TransactionContext::Mempool,
+            account_index: 0,
+            txid,
+            amount: 50000,
+            addresses: vec![test_address()],
+        };
+        let mapped = map_wallet_event(event);
+        match mapped {
+            SpvEvent::TransactionReceived {
+                txid: mapped_txid,
+                amount,
+                addresses,
+                height,
+                is_instant_send,
+                is_chain_locked,
+                ..
+            } => {
+                assert_eq!(mapped_txid, txid.to_byte_array());
+                assert_eq!(amount, 50000);
+                assert_eq!(addresses.len(), 1);
+                assert_eq!(height, None);
+                assert!(!is_instant_send);
+                assert!(!is_chain_locked);
+            }
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn map_wallet_event_transaction_status_changed() {
+        let txid = Txid::all_zeros();
+        let event = WalletEvent::TransactionStatusChanged {
+            wallet_id: [0; 32],
+            txid,
+            status: TransactionContext::InBlock {
+                height: 300,
+                timestamp: Some(1700000000),
+                block_hash: Some(BlockHash::all_zeros()),
+            },
+        };
+        let mapped = map_wallet_event(event);
+        match mapped {
+            SpvEvent::TransactionReceived {
+                amount,
+                height,
+                timestamp,
+                is_chain_locked,
+                ..
+            } => {
+                assert_eq!(amount, 0);
+                assert_eq!(height, Some(300));
+                assert_eq!(timestamp, Some(1700000000));
+                assert!(!is_chain_locked);
+            }
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn map_wallet_event_balance_updated() {
+        let event = WalletEvent::BalanceUpdated {
+            wallet_id: [0; 32],
+            spendable: 100_000,
+            unconfirmed: 50_000,
+            immature: 25_000,
+            locked: 10_000,
+        };
+        let mapped = map_wallet_event(event);
+        assert_eq!(
+            mapped,
+            SpvEvent::BalanceUpdated(WalletCoreBalance::new(100_000, 50_000, 25_000, 10_000))
+        );
+    }
+}
