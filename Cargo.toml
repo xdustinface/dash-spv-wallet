@@ -39,6 +39,8 @@ ffi = ["dep:dash-spv-ffi", "dep:key-wallet-ffi"]
 
 [dev-dependencies]
 dash-spv = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", features = ["test-utils"] }
+dioxus-history = "0.7"
+dioxus-ssr = "0.7"
 tempfile = "3"
 
 # Temporary: use fork with dash-spv-wallet specific changes until merged upstream
