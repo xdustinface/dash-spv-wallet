@@ -35,7 +35,6 @@ pub fn Receive() -> Element {
 
     let copy_address = move |_| {
         copied.set(true);
-        // Reset after a brief visual feedback period
         spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             copied.set(false);
@@ -52,10 +51,10 @@ pub fn Receive() -> Element {
             }
 
             div {
-                class: "bg-card rounded-lg p-6 max-w-lg",
+                class: "max-w-2xl space-y-4",
 
                 p {
-                    class: "text-muted text-sm mb-4",
+                    class: "text-sm text-muted",
                     "Share this address to receive {unit}"
                 }
 
@@ -63,7 +62,7 @@ pub fn Receive() -> Element {
                 match &address {
                     Some(addr) => rsx! {
                         div {
-                            class: "bg-surface-alt rounded-lg p-4 mb-4",
+                            class: "bg-surface-alt border border-edge rounded-lg p-4",
                             p {
                                 class: "font-mono text-sm break-all text-center select-all",
                                 "{addr}"
@@ -71,14 +70,14 @@ pub fn Receive() -> Element {
                         }
 
                         button {
-                            class: "w-full bg-hover hover:bg-edge text-foreground font-medium py-2 px-4 rounded-lg transition-colors mb-3",
+                            class: "w-full bg-card hover:bg-hover text-foreground font-medium py-3 rounded-lg transition-colors",
                             onclick: copy_address,
                             if copied() { "Copied!" } else { "Copy Address" }
                         }
                     },
                     None => rsx! {
                         div {
-                            class: "bg-surface-alt rounded-lg p-4 mb-4 text-center",
+                            class: "bg-surface-alt border border-edge rounded-lg p-4 text-center",
                             p {
                                 class: "text-disabled",
                                 "No address generated yet"
@@ -88,15 +87,18 @@ pub fn Receive() -> Element {
                 }
 
                 button {
-                    class: "w-full bg-dash hover:bg-dash-hover text-foreground font-medium py-2 px-4 rounded-lg transition-colors",
+                    class: "w-full bg-dash hover:bg-dash-hover text-foreground font-semibold py-3 rounded-lg transition-colors",
                     onclick: generate_address,
                     "Generate New Address"
                 }
 
                 if let Some(err) = error_msg() {
-                    p {
-                        class: "text-error text-sm mt-3",
-                        "{err}"
+                    div {
+                        class: "bg-error/10 border border-error/30 rounded-lg p-3",
+                        p {
+                            class: "text-error text-sm",
+                            "{err}"
+                        }
                     }
                 }
             }

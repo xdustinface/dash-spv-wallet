@@ -130,19 +130,18 @@ pub fn Send() -> Element {
                     }
 
                     div {
-                        class: "bg-card rounded-lg p-6 max-w-lg",
+                        class: "max-w-2xl space-y-6",
 
-                        // Address input
+                        // Address section
                         div {
-                            class: "mb-4",
                             label {
-                                class: "block text-muted text-sm mb-1",
+                                class: "block text-sm font-medium text-foreground mb-2",
                                 "Destination Address"
                             }
                             input {
-                                class: "w-full bg-surface-alt text-foreground rounded-lg p-3 outline-none focus:ring-2 focus:ring-dash",
+                                class: "w-full bg-surface-alt border border-edge text-foreground rounded-lg p-3 outline-none focus:ring-2 focus:ring-dash",
                                 r#type: "text",
-                                placeholder: "Dash address",
+                                placeholder: "Enter a Dash address",
                                 value: "{address}",
                                 oninput: move |e| {
                                     address.set(e.value());
@@ -157,17 +156,16 @@ pub fn Send() -> Element {
                             }
                         }
 
-                        // Amount input
+                        // Amount section
                         div {
-                            class: "mb-4",
                             label {
-                                class: "block text-muted text-sm mb-1",
+                                class: "block text-sm font-medium text-foreground mb-2",
                                 "Amount ({unit})"
                             }
                             div {
-                                class: "flex gap-2",
+                                class: "relative",
                                 input {
-                                    class: "flex-1 bg-surface-alt text-foreground rounded-lg p-3 outline-none focus:ring-2 focus:ring-dash",
+                                    class: "w-full bg-surface-alt border border-edge text-foreground rounded-lg p-3 pr-16 outline-none focus:ring-2 focus:ring-dash",
                                     r#type: "text",
                                     placeholder: "0.0",
                                     value: "{amount_str}",
@@ -177,7 +175,7 @@ pub fn Send() -> Element {
                                     },
                                 }
                                 button {
-                                    class: "bg-hover hover:bg-edge text-foreground px-4 rounded-lg transition-colors",
+                                    class: "absolute right-2 top-1/2 -translate-y-1/2 bg-hover hover:bg-edge text-muted text-xs px-3 py-1 rounded transition-colors",
                                     onclick: move |_| {
                                         let whole = spendable / 100_000_000;
                                         let frac = spendable % 100_000_000;
@@ -194,7 +192,7 @@ pub fn Send() -> Element {
                                 }
                             }
                             p {
-                                class: "text-disabled text-xs mt-1",
+                                class: "text-muted text-xs mt-1",
                                 "Available: {format_balance(spendable, unit)}"
                             }
                             if let Some(err) = amount_error() {
@@ -205,48 +203,58 @@ pub fn Send() -> Element {
                             }
                         }
 
-                        // Fee rate selector
+                        // Fee rate section
                         div {
-                            class: "mb-4",
                             label {
-                                class: "block text-muted text-sm mb-1",
+                                class: "block text-sm font-medium text-foreground mb-2",
                                 "Fee Rate"
                             }
                             div {
-                                class: "flex gap-2",
-                                for rate in FeeRate::ALL {
-                                    button {
-                                        class: if fee_rate() == rate {
-                                            "flex-1 px-4 py-2 rounded-lg bg-dash text-foreground font-medium transition-colors"
+                                class: "flex",
+                                for (i, rate) in FeeRate::ALL.iter().enumerate() {
+                                    {
+                                        let rate = *rate;
+                                        let rounding = match i {
+                                            0 => "rounded-l-lg border-r-0",
+                                            2 => "rounded-r-lg border-l-0",
+                                            _ => "border-x-0",
+                                        };
+                                        let style = if fee_rate() == rate {
+                                            format!("flex-1 px-4 py-2.5 border border-dash bg-dash text-foreground font-medium transition-colors {rounding}")
                                         } else {
-                                            "flex-1 px-4 py-2 rounded-lg bg-card text-muted hover:bg-hover transition-colors"
-                                        },
-                                        onclick: move |_| fee_rate.set(rate),
-                                        div {
-                                            class: "text-sm font-medium",
-                                            "{rate.label()}"
-                                        }
-                                        div {
-                                            class: "text-xs text-muted",
-                                            "{rate.description()}"
+                                            format!("flex-1 px-4 py-2.5 border border-edge bg-surface-alt text-muted hover:bg-hover transition-colors {rounding}")
+                                        };
+                                        rsx! {
+                                            button {
+                                                class: "{style}",
+                                                onclick: move |_| fee_rate.set(rate),
+                                                div {
+                                                    class: "text-sm font-medium",
+                                                    "{rate.label()}"
+                                                }
+                                                div {
+                                                    class: if fee_rate() == rate { "text-xs opacity-70" } else { "text-xs text-muted" },
+                                                    "{rate.description()}"
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
 
-                        // Fee estimate display
-                        if let Some(estimated_fee) = fee_estimate() {
-                            div {
-                                class: "mb-4",
-                                p {
-                                    class: "text-muted text-sm",
-                                    "Estimated fee: {format_balance(estimated_fee, unit)}"
-                                }
-                                if let Some(amount_sats) = parse_dash_amount(&amount_str.read()) {
+                            // Fee estimate below the selector
+                            if let Some(estimated_fee) = fee_estimate() {
+                                div {
+                                    class: "mt-2 space-y-0.5",
                                     p {
-                                        class: "text-foreground font-medium",
-                                        "Total: {format_balance(amount_sats.saturating_add(estimated_fee), unit)}"
+                                        class: "text-sm text-muted",
+                                        "Estimated fee: {format_balance(estimated_fee, unit)}"
+                                    }
+                                    if let Some(amount_sats) = parse_dash_amount(&amount_str.read()) {
+                                        p {
+                                            class: "text-sm text-foreground font-medium",
+                                            "Total: {format_balance(amount_sats.saturating_add(estimated_fee), unit)}"
+                                        }
                                     }
                                 }
                             }
@@ -254,13 +262,13 @@ pub fn Send() -> Element {
 
                         // Review button
                         button {
-                            class: "w-full bg-dash hover:bg-dash-hover text-foreground font-medium py-3 px-4 rounded-lg transition-colors",
+                            class: "w-full bg-dash hover:bg-dash-hover text-foreground font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                             onclick: move |_| {
                                 if validate_form() {
                                     step.set(SendStep::Review);
                                 }
                             },
-                            "Review"
+                            "Review Transaction"
                         }
                     }
                 }
@@ -284,110 +292,80 @@ pub fn Send() -> Element {
                     }
 
                     div {
-                        class: "bg-card rounded-lg p-6 max-w-lg",
+                        class: "max-w-2xl bg-card rounded-lg divide-y divide-edge",
 
+                        // To
                         div {
-                            class: "mb-4",
-                            p {
-                                class: "text-muted text-sm",
-                                "To"
-                            }
-                            p {
-                                class: "font-mono text-sm break-all",
-                                "{address}"
-                            }
+                            class: "flex justify-between items-start p-4",
+                            span { class: "text-muted text-sm", "To" }
+                            span { class: "font-mono text-sm break-all text-right ml-4 max-w-[70%]", "{address}" }
                         }
 
+                        // Amount
                         div {
-                            class: "mb-4",
-                            p {
-                                class: "text-muted text-sm",
-                                "Amount"
-                            }
-                            p {
-                                class: "text-xl font-bold",
-                                "{format_balance(amount_sats, unit)}"
-                            }
+                            class: "flex justify-between items-center p-4",
+                            span { class: "text-muted text-sm", "Amount" }
+                            span { class: "text-foreground font-semibold", "{format_balance(amount_sats, unit)}" }
                         }
 
+                        // Fee rate
                         div {
-                            class: "mb-4",
-                            p {
-                                class: "text-muted text-sm",
-                                "Fee Rate"
-                            }
-                            p {
-                                class: "text-foreground",
-                                "{selected_rate.label()} ({selected_rate.description()})"
-                            }
+                            class: "flex justify-between items-center p-4",
+                            span { class: "text-muted text-sm", "Fee Rate" }
+                            span { class: "text-foreground", "{selected_rate.label()} ({selected_rate.description()})" }
                         }
 
+                        // Estimated fee
                         div {
-                            class: "mb-4",
-                            p {
-                                class: "text-muted text-sm",
-                                "Estimated Fee"
-                            }
-                            p {
-                                class: "text-foreground",
-                                "{format_balance(estimated_fee, unit)}"
-                            }
+                            class: "flex justify-between items-center p-4",
+                            span { class: "text-muted text-sm", "Estimated Fee" }
+                            span { class: "text-foreground", "{format_balance(estimated_fee, unit)}" }
                         }
 
+                        // Total
                         div {
-                            class: "mb-4",
-                            p {
-                                class: "text-muted text-sm",
-                                "Total Deduction"
-                            }
-                            p {
-                                class: "text-foreground font-medium",
-                                "{format_balance(total, unit)}"
-                            }
+                            class: "flex justify-between items-center p-4",
+                            span { class: "text-muted text-sm", "Total Deduction" }
+                            span { class: "text-foreground font-semibold", "{format_balance(total, unit)}" }
                         }
 
+                        // Remaining
                         div {
-                            class: "mb-6",
-                            p {
-                                class: "text-muted text-sm",
-                                "Remaining Balance"
-                            }
-                            p {
-                                class: "text-foreground",
-                                "{format_balance(remaining, unit)}"
-                            }
+                            class: "flex justify-between items-center p-4",
+                            span { class: "text-muted text-sm", "Remaining Balance" }
+                            span { class: "text-foreground", "{format_balance(remaining, unit)}" }
+                        }
+                    }
+
+                    div {
+                        class: "max-w-2xl flex gap-3 mt-6",
+
+                        button {
+                            class: "flex-1 bg-card hover:bg-hover text-foreground font-medium py-3 rounded-lg transition-colors",
+                            onclick: move |_| {
+                                step.set(SendStep::Form);
+                            },
+                            "Cancel"
                         }
 
-                        div {
-                            class: "flex gap-3",
-
-                            button {
-                                class: "flex-1 bg-hover hover:bg-edge text-foreground font-medium py-3 px-4 rounded-lg transition-colors",
-                                onclick: move |_| {
-                                    step.set(SendStep::Form);
-                                },
-                                "Cancel"
-                            }
-
-                            button {
-                                class: "flex-1 bg-dash hover:bg-dash-hover text-foreground font-medium py-3 px-4 rounded-lg transition-colors",
-                                onclick: move |_| {
-                                    step.set(SendStep::Sending);
-                                    let addr = address.read().clone();
-                                    let rate = selected_rate.sat_per_kb();
-                                    spawn(async move {
-                                        match backend.read().send(&addr, amount_sats, rate).await {
-                                            Ok(txid) => {
-                                                step.set(SendStep::Success(hex::encode(txid)));
-                                            }
-                                            Err(e) => {
-                                                step.set(SendStep::Error(format!("{e}")));
-                                            }
+                        button {
+                            class: "flex-1 bg-dash hover:bg-dash-hover text-foreground font-semibold py-3 rounded-lg transition-colors",
+                            onclick: move |_| {
+                                step.set(SendStep::Sending);
+                                let addr = address.read().clone();
+                                let rate = selected_rate.sat_per_kb();
+                                spawn(async move {
+                                    match backend.read().send(&addr, amount_sats, rate).await {
+                                        Ok(txid) => {
+                                            step.set(SendStep::Success(hex::encode(txid)));
                                         }
-                                    });
-                                },
-                                "Confirm & Send"
-                            }
+                                        Err(e) => {
+                                            step.set(SendStep::Error(format!("{e}")));
+                                        }
+                                    }
+                                });
+                            },
+                            "Confirm & Send"
                         }
                     }
                 }
@@ -412,27 +390,34 @@ pub fn Send() -> Element {
         SendStep::Success(txid_hex) => {
             rsx! {
                 div {
-                    class: "text-foreground p-6",
+                    class: "text-foreground p-6 flex flex-col items-center",
 
                     div {
-                        class: "bg-card rounded-lg p-6 max-w-lg text-center",
+                        class: "max-w-2xl w-full bg-card rounded-lg p-8 text-center",
 
-                        p {
-                            class: "text-success text-4xl mb-4",
-                            "✓"
+                        div {
+                            class: "w-16 h-16 rounded-full bg-success/20 flex items-center justify-center mx-auto mb-4",
+                            span {
+                                class: "text-success text-3xl",
+                                "✓"
+                            }
                         }
                         h2 {
-                            class: "text-xl font-bold mb-4",
-                            "Transaction sent!"
+                            class: "text-xl font-bold mb-2",
+                            "Transaction Sent"
                         }
                         p {
-                            class: "font-mono text-xs text-muted mb-6 break-all select-all",
+                            class: "text-muted text-sm mb-4",
+                            "Transaction ID"
+                        }
+                        p {
+                            class: "font-mono text-xs text-muted break-all select-all bg-surface-alt rounded-lg p-3 mb-6",
                             "{txid_hex}"
                         }
 
                         Link {
                             to: crate::router::Route::Dashboard {},
-                            class: "inline-block bg-dash hover:bg-dash-hover text-foreground font-medium py-3 px-6 rounded-lg transition-colors",
+                            class: "inline-block bg-dash hover:bg-dash-hover text-foreground font-semibold py-3 px-8 rounded-lg transition-colors",
                             "Back to Dashboard"
                         }
                     }
@@ -446,10 +431,10 @@ pub fn Send() -> Element {
                     class: "text-foreground p-6",
 
                     div {
-                        class: "bg-card rounded-lg p-6 max-w-lg",
+                        class: "max-w-2xl bg-error/10 border border-error/30 rounded-lg p-6",
 
                         h2 {
-                            class: "text-xl font-bold mb-4 text-error",
+                            class: "text-xl font-bold mb-3 text-error",
                             "Send Failed"
                         }
                         p {
@@ -458,7 +443,7 @@ pub fn Send() -> Element {
                         }
 
                         button {
-                            class: "w-full bg-dash hover:bg-dash-hover text-foreground font-medium py-3 px-4 rounded-lg transition-colors",
+                            class: "w-full bg-dash hover:bg-dash-hover text-foreground font-semibold py-3 rounded-lg transition-colors",
                             onclick: move |_| {
                                 step.set(SendStep::Form);
                             },
