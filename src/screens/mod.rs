@@ -10,7 +10,7 @@ pub mod wallet_import;
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+
 
     use std::rc::Rc;
 
@@ -31,7 +31,7 @@ mod tests {
     fn test_config() -> AppConfig {
         AppConfig {
             network: Network::Testnet,
-            data_dir: PathBuf::from("/tmp/dash-spv-test"),
+            data_dir: std::env::temp_dir().join(format!("dash-spv-test-{}", std::process::id())),
             ..Default::default()
         }
     }
