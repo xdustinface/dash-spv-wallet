@@ -130,7 +130,7 @@ pub fn Send() -> Element {
                     }
 
                     div {
-                        class: "bg-card rounded-lg p-6 max-w-lg",
+                        class: "bg-card rounded-lg p-6 max-w-xl",
 
                         // Address input
                         div {
@@ -165,9 +165,9 @@ pub fn Send() -> Element {
                                 "Amount ({unit})"
                             }
                             div {
-                                class: "flex gap-2",
+                                class: "relative",
                                 input {
-                                    class: "flex-1 bg-surface-alt text-foreground rounded-lg p-3 outline-none focus:ring-2 focus:ring-dash",
+                                    class: "w-full bg-surface-alt text-foreground rounded-lg p-3 pr-16 outline-none focus:ring-2 focus:ring-dash",
                                     r#type: "text",
                                     placeholder: "0.0",
                                     value: "{amount_str}",
@@ -177,7 +177,7 @@ pub fn Send() -> Element {
                                     },
                                 }
                                 button {
-                                    class: "bg-hover hover:bg-edge text-foreground px-4 rounded-lg transition-colors",
+                                    class: "absolute right-2 top-1/2 -translate-y-1/2 bg-hover hover:bg-edge text-muted text-xs px-3 py-1 rounded transition-colors",
                                     onclick: move |_| {
                                         let whole = spendable / 100_000_000;
                                         let frac = spendable % 100_000_000;
@@ -213,22 +213,26 @@ pub fn Send() -> Element {
                                 "Fee Rate"
                             }
                             div {
-                                class: "flex gap-2",
-                                for rate in FeeRate::ALL {
-                                    button {
-                                        class: if fee_rate() == rate {
-                                            "flex-1 px-4 py-2 rounded-lg bg-dash text-foreground font-medium transition-colors"
-                                        } else {
-                                            "flex-1 px-4 py-2 rounded-lg bg-card text-muted hover:bg-hover transition-colors"
-                                        },
-                                        onclick: move |_| fee_rate.set(rate),
-                                        div {
-                                            class: "text-sm font-medium",
-                                            "{rate.label()}"
-                                        }
-                                        div {
-                                            class: "text-xs text-muted",
-                                            "{rate.description()}"
+                                class: "flex border border-edge rounded-lg overflow-hidden",
+                                for (i, rate) in FeeRate::ALL.iter().enumerate() {
+                                    {
+                                        let rate = *rate;
+                                        let active = fee_rate() == rate;
+                                        let border = if i > 0 { "border-l border-edge" } else { "" };
+                                        let bg = if active { "bg-dash text-foreground" } else { "bg-surface-alt text-muted hover:bg-hover" };
+                                        rsx! {
+                                            button {
+                                                class: "flex-1 py-2 text-center transition-colors {bg} {border}",
+                                                onclick: move |_| fee_rate.set(rate),
+                                                span {
+                                                    class: "text-xs font-medium block",
+                                                    "{rate.label()}"
+                                                }
+                                                span {
+                                                    class: if active { "text-[10px] opacity-70 block" } else { "text-[10px] text-disabled block" },
+                                                    "{rate.description()}"
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -253,14 +257,17 @@ pub fn Send() -> Element {
                         }
 
                         // Review button
-                        button {
-                            class: "w-full bg-dash hover:bg-dash-hover text-foreground font-medium py-3 px-4 rounded-lg transition-colors",
-                            onclick: move |_| {
-                                if validate_form() {
-                                    step.set(SendStep::Review);
-                                }
-                            },
-                            "Review"
+                        div {
+                            class: "flex justify-end",
+                            button {
+                                class: "bg-dash hover:bg-dash-hover text-foreground text-sm font-medium py-2 px-6 rounded-lg transition-colors",
+                                onclick: move |_| {
+                                    if validate_form() {
+                                        step.set(SendStep::Review);
+                                    }
+                                },
+                                "Review"
+                            }
                         }
                     }
                 }
@@ -284,7 +291,7 @@ pub fn Send() -> Element {
                     }
 
                     div {
-                        class: "bg-card rounded-lg p-6 max-w-lg",
+                        class: "bg-card rounded-lg p-6 max-w-xl",
 
                         div {
                             class: "mb-4",
@@ -415,7 +422,7 @@ pub fn Send() -> Element {
                     class: "text-foreground p-6",
 
                     div {
-                        class: "bg-card rounded-lg p-6 max-w-lg text-center",
+                        class: "bg-card rounded-lg p-6 max-w-xl text-center",
 
                         p {
                             class: "text-success text-4xl mb-4",
@@ -446,7 +453,7 @@ pub fn Send() -> Element {
                     class: "text-foreground p-6",
 
                     div {
-                        class: "bg-card rounded-lg p-6 max-w-lg",
+                        class: "bg-card rounded-lg p-6 max-w-xl",
 
                         h2 {
                             class: "text-xl font-bold mb-4 text-error",
