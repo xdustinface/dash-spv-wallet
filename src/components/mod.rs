@@ -37,7 +37,7 @@ mod tests {
         state
     }
 
-    fn provide_test_contexts() {
+    fn use_test_contexts() {
         use_context_provider(|| Signal::new(test_backend()));
         use_context_provider(|| Signal::new(test_config()));
         use_context_provider(|| Signal::new(test_app_state(false)));
@@ -47,7 +47,7 @@ mod tests {
         use_context_provider(|| Signal::new(DevLog::default()));
     }
 
-    fn provide_dev_mode_contexts() {
+    fn use_dev_mode_contexts() {
         use_context_provider(|| Signal::new(test_backend()));
         use_context_provider(|| Signal::new(test_config()));
         use_context_provider(|| Signal::new(test_app_state(true)));
@@ -65,8 +65,9 @@ mod tests {
 
     // -- StatusBar --
 
+    #[component]
     fn status_bar_disconnected_wrapper() -> Element {
-        provide_test_contexts();
+        use_test_contexts();
         rsx! { super::status_bar::StatusBar {} }
     }
 
@@ -83,6 +84,7 @@ mod tests {
         );
     }
 
+    #[component]
     fn status_bar_syncing_wrapper() -> Element {
         use_context_provider(|| Signal::new(test_backend()));
         use_context_provider(|| Signal::new(test_config()));
@@ -116,6 +118,7 @@ mod tests {
         assert!(html.contains("Height 45000"), "expected chain tip height");
     }
 
+    #[component]
     fn status_bar_synced_wrapper() -> Element {
         use_context_provider(|| Signal::new(test_backend()));
         use_context_provider(|| Signal::new(test_config()));
@@ -145,8 +148,9 @@ mod tests {
 
     // -- DevPanel --
 
+    #[component]
     fn dev_panel_hidden_wrapper() -> Element {
-        provide_test_contexts();
+        use_test_contexts();
         rsx! { super::dev_panel::DevPanel {} }
     }
 
@@ -159,8 +163,9 @@ mod tests {
         );
     }
 
+    #[component]
     fn dev_panel_visible_wrapper() -> Element {
-        provide_dev_mode_contexts();
+        use_dev_mode_contexts();
         rsx! { super::dev_panel::DevPanel {} }
     }
 
