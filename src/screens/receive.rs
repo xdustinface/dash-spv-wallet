@@ -52,7 +52,7 @@ pub fn Receive() -> Element {
             }
 
             div {
-                class: "bg-card rounded-lg p-6 max-w-lg",
+                class: "bg-card rounded-lg p-6 max-w-xl",
 
                 p {
                     class: "text-muted text-sm mb-4",
