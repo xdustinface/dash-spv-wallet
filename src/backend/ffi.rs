@@ -84,7 +84,7 @@ unsafe impl Sync for FfiBackend {}
 
 impl FfiBackend {
     pub fn new(config: AppConfig) -> Self {
-        let (event_tx, _) = event_channel(256);
+        let (event_tx, _) = event_channel(4096);
 
         Self {
             config,
