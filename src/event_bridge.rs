@@ -36,7 +36,9 @@ pub fn use_event_bridge() {
                     tracing::warn!("Event bridge lagged, skipped {n} events");
                     // Re-query backend state to catch up on missed events
                     let progress = backend.read().sync_progress();
-                    connection.write().apply_event(&SpvEvent::SyncProgressUpdated(Box::new(progress)));
+                    connection
+                        .write()
+                        .apply_event(&SpvEvent::SyncProgressUpdated(Box::new(progress)));
                     if let Ok(balance) = backend.read().get_balance() {
                         wallet.write().balance = balance;
                     }
