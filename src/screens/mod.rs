@@ -41,7 +41,7 @@ mod tests {
     }
 
     /// Provides all context signals that screen components expect.
-    fn provide_test_contexts() {
+    fn use_test_contexts() {
         use_context_provider(|| Signal::new(test_backend()));
         use_context_provider(|| Signal::new(test_config()));
         use_context_provider(|| Signal::new(AppState::new(false)));
@@ -61,28 +61,33 @@ mod tests {
     // -- Wrapper components for each screen --
     // Each provides context and delegates to the actual screen component.
 
+    #[component]
     fn send_wrapper() -> Element {
-        provide_test_contexts();
+        use_test_contexts();
         super::send::Send()
     }
 
+    #[component]
     fn receive_wrapper() -> Element {
-        provide_test_contexts();
+        use_test_contexts();
         super::receive::Receive()
     }
 
+    #[component]
     fn transactions_wrapper() -> Element {
-        provide_test_contexts();
+        use_test_contexts();
         super::transactions::Transactions()
     }
 
+    #[component]
     fn settings_wrapper() -> Element {
-        provide_test_contexts();
+        use_test_contexts();
         super::settings::Settings()
     }
 
+    #[component]
     fn dashboard_wrapper() -> Element {
-        provide_test_contexts();
+        use_test_contexts();
         super::dashboard::Dashboard()
     }
 
@@ -90,8 +95,9 @@ mod tests {
     /// a `Router::<Route>` with a `MemoryHistory` starting at that path.
     macro_rules! routed_wrapper {
         ($name:ident, $url:expr) => {
+            #[component]
             fn $name() -> Element {
-                provide_test_contexts();
+                use_test_contexts();
                 provide_history_context(Rc::new(MemoryHistory::with_initial_path($url)));
                 rsx! { Router::<Route> {} }
             }
