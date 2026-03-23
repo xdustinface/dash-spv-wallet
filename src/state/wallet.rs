@@ -53,8 +53,7 @@ impl WalletState {
                         existing.timestamp = *ts;
                     }
                     if let Some(bh) = block_hash {
-                        existing.block_hash =
-                            Some(dashcore::BlockHash::from_byte_array(*bh));
+                        existing.block_hash = Some(dashcore::BlockHash::from_byte_array(*bh));
                     }
                     existing.is_instant_send = *is_instant_send;
                     existing.is_chain_locked = *is_chain_locked;
@@ -86,8 +85,7 @@ impl WalletState {
                     height: *height,
                     fee: None,
                     addresses: addresses.clone(),
-                    block_hash: block_hash
-                        .map(dashcore::BlockHash::from_byte_array),
+                    block_hash: block_hash.map(dashcore::BlockHash::from_byte_array),
                     is_instant_send: *is_instant_send,
                     is_chain_locked: *is_chain_locked,
                 };
@@ -141,7 +139,10 @@ mod tests {
             is_chain_locked: false,
         });
         assert_eq!(state.transactions.len(), 1);
-        assert_eq!(state.transactions[0].direction, TransactionDirection::Received);
+        assert_eq!(
+            state.transactions[0].direction,
+            TransactionDirection::Received
+        );
 
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [2u8; 32],

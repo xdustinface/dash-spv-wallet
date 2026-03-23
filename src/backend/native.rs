@@ -6,20 +6,20 @@ use std::sync::{Arc, RwLock};
 
 use std::path::PathBuf;
 
+use dash_spv::network::NetworkEvent;
 use dash_spv::network::manager::PeerNetworkManager;
 use dash_spv::storage::DiskStorageManager;
 use dash_spv::sync::SyncEvent;
-use dash_spv::network::NetworkEvent;
 use dash_spv::{ClientConfig, DashSpvClient};
 use dashcore::hashes::Hash;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
 use key_wallet::mnemonic::Language;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::{DerivationPathBuilder, Mnemonic};
 use key_wallet_manager::{
     FeeRate, SelectionStrategy, TransactionBuilder, WalletEvent, WalletManager,
@@ -28,18 +28,15 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use super::error::{BackendError, BackendResult};
-use super::events::{event_channel, EventReceiver, EventSender, SpvEvent};
+use super::events::{EventReceiver, EventSender, SpvEvent, event_channel};
 use super::r#trait::SpvBackend;
 use super::types::{
     Network, SyncProgress, TransactionDirection, TransactionInfo, WalletCoreBalance,
 };
 use crate::config::AppConfig;
 
-type SpvClient = DashSpvClient<
-    WalletManager<ManagedWalletInfo>,
-    PeerNetworkManager,
-    DiskStorageManager,
->;
+type SpvClient =
+    DashSpvClient<WalletManager<ManagedWalletInfo>, PeerNetworkManager, DiskStorageManager>;
 
 pub struct NativeBackend {
     config: AppConfig,
@@ -81,11 +78,9 @@ impl NativeBackend {
     fn save_mnemonic(&self, mnemonic: &str) -> BackendResult<()> {
         let path = self.mnemonic_path();
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| BackendError::Storage(e.to_string()))?;
+            std::fs::create_dir_all(parent).map_err(|e| BackendError::Storage(e.to_string()))?;
         }
-        std::fs::write(&path, mnemonic)
-            .map_err(|e| BackendError::Storage(e.to_string()))
+        std::fs::write(&path, mnemonic).map_err(|e| BackendError::Storage(e.to_string()))
     }
 
     fn read_mnemonic(&self) -> BackendResult<Option<String>> {
@@ -93,8 +88,8 @@ impl NativeBackend {
         if !path.exists() {
             return Ok(None);
         }
-        let contents = std::fs::read_to_string(&path)
-            .map_err(|e| BackendError::Storage(e.to_string()))?;
+        let contents =
+            std::fs::read_to_string(&path).map_err(|e| BackendError::Storage(e.to_string()))?;
         let trimmed = contents.trim().to_string();
         if trimmed.is_empty() {
             Ok(None)
@@ -158,9 +153,15 @@ impl SpvBackend for NativeBackend {
         let bridge_token = token.clone();
         let event_tx = self.event_tx.clone();
         let cached_progress = self.progress.clone();
-        let bridge_handle = tokio::spawn(
-            event_bridge(bridge_token, progress_rx, sync_rx, network_rx, wallet_rx, event_tx, cached_progress),
-        );
+        let bridge_handle = tokio::spawn(event_bridge(
+            bridge_token,
+            progress_rx,
+            sync_rx,
+            network_rx,
+            wallet_rx,
+            event_tx,
+            cached_progress,
+        ));
 
         // Spawn client run task
         let run_token = token.clone();
@@ -218,10 +219,7 @@ impl SpvBackend for NativeBackend {
     }
 
     fn sync_progress(&self) -> SyncProgress {
-        self.progress
-            .read()
-            .map(|p| p.clone())
-            .unwrap_or_default()
+        self.progress.read().map(|p| p.clone()).unwrap_or_default()
     }
 
     fn generate_mnemonic(&self) -> BackendResult<String> {
@@ -290,25 +288,22 @@ impl SpvBackend for NativeBackend {
     }
 
     fn get_receive_address(&self) -> BackendResult<String> {
-        let wallet = self.wallet.try_read().map_err(|_| {
-            BackendError::Internal("wallet lock contention".to_string())
-        })?;
+        let wallet = self
+            .wallet
+            .try_read()
+            .map_err(|_| BackendError::Internal("wallet lock contention".to_string()))?;
 
         let wallet_ids: Vec<_> = wallet.list_wallets().into_iter().cloned().collect();
         let wallet_id = wallet_ids.first().ok_or(BackendError::NoWallet)?;
         drop(wallet);
 
-        let mut wallet = self.wallet.try_write().map_err(|_| {
-            BackendError::Internal("wallet lock contention".to_string())
-        })?;
+        let mut wallet = self
+            .wallet
+            .try_write()
+            .map_err(|_| BackendError::Internal("wallet lock contention".to_string()))?;
 
         let result = wallet
-            .get_receive_address(
-                wallet_id,
-                0,
-                AccountTypePreference::PreferBIP44,
-                true,
-            )
+            .get_receive_address(wallet_id, 0, AccountTypePreference::PreferBIP44, true)
             .map_err(|e| BackendError::Internal(e.to_string()))?;
 
         result
@@ -318,9 +313,10 @@ impl SpvBackend for NativeBackend {
     }
 
     fn get_balance(&self) -> BackendResult<WalletCoreBalance> {
-        let wallet = self.wallet.try_read().map_err(|_| {
-            BackendError::Internal("wallet lock contention".to_string())
-        })?;
+        let wallet = self
+            .wallet
+            .try_read()
+            .map_err(|_| BackendError::Internal("wallet lock contention".to_string()))?;
 
         let wallet_ids: Vec<_> = wallet.list_wallets().into_iter().cloned().collect();
         let wallet_id = wallet_ids.first().ok_or(BackendError::NoWallet)?;
@@ -331,9 +327,10 @@ impl SpvBackend for NativeBackend {
     }
 
     fn get_transactions(&self) -> BackendResult<Vec<TransactionInfo>> {
-        let wallet = self.wallet.try_read().map_err(|_| {
-            BackendError::Internal("wallet lock contention".to_string())
-        })?;
+        let wallet = self
+            .wallet
+            .try_read()
+            .map_err(|_| BackendError::Internal("wallet lock contention".to_string()))?;
 
         let wallet_ids: Vec<_> = wallet.list_wallets().into_iter().cloned().collect();
         let wallet_id = wallet_ids.first().ok_or(BackendError::NoWallet)?;
@@ -366,12 +363,10 @@ impl SpvBackend for NativeBackend {
             .collect();
 
         // Sort: unconfirmed first, then by timestamp descending
-        transactions.sort_by(|a, b| {
-            match (a.height.is_some(), b.height.is_some()) {
-                (false, true) => std::cmp::Ordering::Less,
-                (true, false) => std::cmp::Ordering::Greater,
-                _ => b.timestamp.cmp(&a.timestamp),
-            }
+        transactions.sort_by(|a, b| match (a.height.is_some(), b.height.is_some()) {
+            (false, true) => std::cmp::Ordering::Less,
+            (true, false) => std::cmp::Ordering::Greater,
+            _ => b.timestamp.cmp(&a.timestamp),
         });
 
         Ok(transactions)
@@ -419,9 +414,9 @@ impl SpvBackend for NativeBackend {
         let change_result = wallet_guard
             .get_change_address(wallet_id, 0, AccountTypePreference::PreferBIP44, true)
             .map_err(|e| BackendError::Internal(e.to_string()))?;
-        let change_address = change_result
-            .address
-            .ok_or_else(|| BackendError::Internal("failed to generate change address".to_string()))?;
+        let change_address = change_result.address.ok_or_else(|| {
+            BackendError::Internal("failed to generate change address".to_string())
+        })?;
 
         // Get wallet reference for key derivation
         let (wallet, info) = wallet_guard
@@ -433,70 +428,71 @@ impl SpvBackend for NativeBackend {
         let accounts = info.accounts();
 
         // Build the key provider closure that derives private keys for UTXOs
-        let key_provider = |utxo: &key_wallet_manager::Utxo| -> Option<dashcore::secp256k1::SecretKey> {
-            // Search BIP44 accounts first, then BIP32
-            for (account_index, account) in &accounts.standard_bip44_accounts {
-                if let ManagedAccountType::Standard {
-                    external_addresses,
-                    internal_addresses,
-                    ..
-                } = &account.account_type
-                {
-                    // Check external (receive) addresses
-                    if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
-                        let path = DerivationPathBuilder::new()
-                            .coin_type(coin_type_for_network(network))
-                            .account(*account_index)
-                            .change(0)
-                            .address_index(addr_idx)
-                            .bip44()
-                            .ok()?;
-                        return wallet.derive_private_key(&path).ok();
-                    }
-                    // Check internal (change) addresses
-                    if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
-                        let path = DerivationPathBuilder::new()
-                            .coin_type(coin_type_for_network(network))
-                            .account(*account_index)
-                            .change(1)
-                            .address_index(addr_idx)
-                            .bip44()
-                            .ok()?;
-                        return wallet.derive_private_key(&path).ok();
-                    }
-                }
-            }
-
-            for (account_index, account) in &accounts.standard_bip32_accounts {
-                if let ManagedAccountType::Standard {
-                    external_addresses,
-                    internal_addresses,
-                    ..
-                } = &account.account_type
-                {
-                    if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
-                        let path = DerivationPathBuilder::new()
-                            .account(*account_index)
-                            .change(0)
-                            .address_index(addr_idx)
-                            .build()
-                            .ok()?;
-                        return wallet.derive_private_key(&path).ok();
-                    }
-                    if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
-                        let path = DerivationPathBuilder::new()
-                            .account(*account_index)
-                            .change(1)
-                            .address_index(addr_idx)
-                            .build()
-                            .ok()?;
-                        return wallet.derive_private_key(&path).ok();
+        let key_provider =
+            |utxo: &key_wallet_manager::Utxo| -> Option<dashcore::secp256k1::SecretKey> {
+                // Search BIP44 accounts first, then BIP32
+                for (account_index, account) in &accounts.standard_bip44_accounts {
+                    if let ManagedAccountType::Standard {
+                        external_addresses,
+                        internal_addresses,
+                        ..
+                    } = &account.account_type
+                    {
+                        // Check external (receive) addresses
+                        if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
+                            let path = DerivationPathBuilder::new()
+                                .coin_type(coin_type_for_network(network))
+                                .account(*account_index)
+                                .change(0)
+                                .address_index(addr_idx)
+                                .bip44()
+                                .ok()?;
+                            return wallet.derive_private_key(&path).ok();
+                        }
+                        // Check internal (change) addresses
+                        if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
+                            let path = DerivationPathBuilder::new()
+                                .coin_type(coin_type_for_network(network))
+                                .account(*account_index)
+                                .change(1)
+                                .address_index(addr_idx)
+                                .bip44()
+                                .ok()?;
+                            return wallet.derive_private_key(&path).ok();
+                        }
                     }
                 }
-            }
 
-            None
-        };
+                for (account_index, account) in &accounts.standard_bip32_accounts {
+                    if let ManagedAccountType::Standard {
+                        external_addresses,
+                        internal_addresses,
+                        ..
+                    } = &account.account_type
+                    {
+                        if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
+                            let path = DerivationPathBuilder::new()
+                                .account(*account_index)
+                                .change(0)
+                                .address_index(addr_idx)
+                                .build()
+                                .ok()?;
+                            return wallet.derive_private_key(&path).ok();
+                        }
+                        if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
+                            let path = DerivationPathBuilder::new()
+                                .account(*account_index)
+                                .change(1)
+                                .address_index(addr_idx)
+                                .build()
+                                .ok()?;
+                            return wallet.derive_private_key(&path).ok();
+                        }
+                    }
+                }
+
+                None
+            };
 
         // Build the transaction
         let fee = FeeRate::new(fee_rate as u64);
@@ -505,21 +501,38 @@ impl SpvBackend for NativeBackend {
             .set_change_address(change_address)
             .add_output(&recipient, amount)
             .map_err(|e| BackendError::Internal(e.to_string()))?
-            .select_inputs(&utxos, SelectionStrategy::BranchAndBound, tip_height, key_provider)
+            .select_inputs(
+                &utxos,
+                SelectionStrategy::BranchAndBound,
+                tip_height,
+                key_provider,
+            )
             .map_err(|e| match e {
-                BuilderError::InsufficientFunds { available, required } => {
-                    BackendError::InsufficientFunds { available, required }
-                }
-                BuilderError::CoinSelection(
-                    SelectionError::InsufficientFunds { available, required },
-                ) => BackendError::InsufficientFunds { available, required },
+                BuilderError::InsufficientFunds {
+                    available,
+                    required,
+                } => BackendError::InsufficientFunds {
+                    available,
+                    required,
+                },
+                BuilderError::CoinSelection(SelectionError::InsufficientFunds {
+                    available,
+                    required,
+                }) => BackendError::InsufficientFunds {
+                    available,
+                    required,
+                },
                 other => BackendError::Internal(other.to_string()),
             })?;
 
         let tx = builder.build().map_err(|e| match e {
-            BuilderError::InsufficientFunds { available, required } => {
-                BackendError::InsufficientFunds { available, required }
-            }
+            BuilderError::InsufficientFunds {
+                available,
+                required,
+            } => BackendError::InsufficientFunds {
+                available,
+                required,
+            },
             other => BackendError::Internal(other.to_string()),
         })?;
 
@@ -530,9 +543,7 @@ impl SpvBackend for NativeBackend {
 
         // Broadcast the transaction
         let client_guard = self.client.lock().await;
-        let client = client_guard
-            .as_ref()
-            .ok_or(BackendError::NotRunning)?;
+        let client = client_guard.as_ref().ok_or(BackendError::NotRunning)?;
         client
             .broadcast_transaction(&tx)
             .await
@@ -662,9 +673,7 @@ fn map_sync_event(event: SyncEvent) -> Option<SpvEvent> {
 
 fn map_network_event(event: NetworkEvent) -> SpvEvent {
     match event {
-        NetworkEvent::PeerConnected { address } => {
-            SpvEvent::PeerConnected(address.to_string())
-        }
+        NetworkEvent::PeerConnected { address } => SpvEvent::PeerConnected(address.to_string()),
         NetworkEvent::PeerDisconnected { address } => {
             SpvEvent::PeerDisconnected(address.to_string())
         }
@@ -724,7 +733,10 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             locked,
             ..
         } => SpvEvent::BalanceUpdated(WalletCoreBalance::new(
-            spendable, unconfirmed, immature, locked,
+            spendable,
+            unconfirmed,
+            immature,
+            locked,
         )),
     }
 }

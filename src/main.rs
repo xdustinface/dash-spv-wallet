@@ -10,18 +10,18 @@ mod state;
 
 use dioxus::prelude::*;
 
-use backend::dispatch::Backend;
-#[cfg(feature = "ffi")]
-use backend::ffi::FfiBackend;
-use backend::mock::MockBackend;
-use backend::native::NativeBackend;
-use config::AppConfig;
 use crate::router::Route;
 use crate::state::app_state::AppState;
 use crate::state::connection::ConnectionState;
 use crate::state::dev_log::DevLog;
 use crate::state::network::NetworkInfo;
 use crate::state::wallet::WalletState;
+use backend::dispatch::Backend;
+#[cfg(feature = "ffi")]
+use backend::ffi::FfiBackend;
+use backend::mock::MockBackend;
+use backend::native::NativeBackend;
+use config::AppConfig;
 
 fn main() {
     let config = AppConfig::load().unwrap_or_else(|e| {
@@ -49,7 +49,7 @@ fn main() {
     APP_STATE.with(|cell| cell.set(app_state).ok());
     CONFIG.with(|cell| cell.set(config).ok());
 
-    let mut window_builder = dioxus::desktop::WindowBuilder::new()
+    let window_builder = dioxus::desktop::WindowBuilder::new()
         .with_title("Dash SPV Wallet")
         .with_inner_size(dioxus::desktop::LogicalSize::new(
             window_width,
@@ -57,13 +57,13 @@ fn main() {
         ));
 
     #[cfg(target_os = "macos")]
-    {
+    let window_builder = {
         use dioxus::desktop::tao::platform::macos::WindowBuilderExtMacOS;
-        window_builder = window_builder
+        window_builder
             .with_titlebar_transparent(true)
             .with_fullsize_content_view(true)
-            .with_title_hidden(true);
-    }
+            .with_title_hidden(true)
+    };
 
     dioxus::LaunchBuilder::desktop()
         .with_cfg(dioxus::desktop::Config::new().with_window(window_builder))
@@ -99,7 +99,9 @@ fn app() -> Element {
             }
             #[cfg(not(feature = "ffi"))]
             {
-                eprintln!("FFI backend requested but `ffi` feature not enabled, falling back to native");
+                eprintln!(
+                    "FFI backend requested but `ffi` feature not enabled, falling back to native"
+                );
                 Backend::Native(NativeBackend::new(config.clone()))
             }
         } else {

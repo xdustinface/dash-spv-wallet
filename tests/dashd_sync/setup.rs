@@ -32,10 +32,7 @@ impl BackendTestContext {
 
         // Spawn in a separate task so panics from dashd startup failures
         // (e.g., "Not enough file descriptors") are caught as JoinErrors.
-        let result = tokio::task::spawn(async move {
-            DashdTestContext::new(chain).await
-        })
-        .await;
+        let result = tokio::task::spawn(async move { DashdTestContext::new(chain).await }).await;
 
         match result {
             Ok(Some(dashd)) => {

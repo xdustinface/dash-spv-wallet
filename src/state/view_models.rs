@@ -167,7 +167,16 @@ pub fn format_timestamp_absolute(timestamp: u64) -> String {
     let month_days: [i64; 12] = [
         31,
         if leap { 29 } else { 28 },
-        31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
     ];
     let mut month = 0;
     for (i, &days) in month_days.iter().enumerate() {
@@ -215,7 +224,11 @@ pub struct TransactionView {
 }
 
 /// Convert a transaction record to a display-ready view.
-pub fn format_transaction(tx: &TransactionInfo, current_height: u32, unit: &str) -> TransactionView {
+pub fn format_transaction(
+    tx: &TransactionInfo,
+    current_height: u32,
+    unit: &str,
+) -> TransactionView {
     let txid_hex = tx.txid.to_string();
     let direction_label = match tx.direction {
         TransactionDirection::Sent => "Sent",
@@ -282,7 +295,10 @@ mod tests {
 
     #[test]
     fn format_balance_large_value() {
-        assert_eq!(format_balance(2_100_000_000_000_000, "DASH"), "21000000.0 DASH");
+        assert_eq!(
+            format_balance(2_100_000_000_000_000, "DASH"),
+            "21000000.0 DASH"
+        );
     }
 
     #[test]
@@ -630,10 +646,7 @@ mod tests {
     #[test]
     fn format_timestamp_absolute_known_value() {
         // 2023-11-14 22:13:20 UTC
-        assert_eq!(
-            format_timestamp_absolute(1700000000),
-            "2023-11-14 22:13:20",
-        );
+        assert_eq!(format_timestamp_absolute(1700000000), "2023-11-14 22:13:20",);
     }
 
     #[test]
@@ -644,9 +657,6 @@ mod tests {
     #[test]
     fn format_timestamp_absolute_leap_year() {
         // 2024-02-29 00:00:00 UTC = 1709164800
-        assert_eq!(
-            format_timestamp_absolute(1709164800),
-            "2024-02-29 00:00:00",
-        );
+        assert_eq!(format_timestamp_absolute(1709164800), "2024-02-29 00:00:00",);
     }
 }

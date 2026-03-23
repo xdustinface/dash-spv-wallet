@@ -18,10 +18,7 @@ impl NetworkInfo {
             SpvEvent::PeerDisconnected(_) => {
                 self.connected_peers = self.connected_peers.saturating_sub(1);
             }
-            SpvEvent::PeersUpdated {
-                count,
-                best_height,
-            } => {
+            SpvEvent::PeersUpdated { count, best_height } => {
                 self.connected_peers = *count;
                 self.best_height = *best_height;
             }

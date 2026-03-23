@@ -26,9 +26,35 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libudev-dev
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libudev-dev libxdo-dev
+      - run: npm install
+      - name: Install Dioxus CLI (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "$HOME/.cargo/bin"
+          curl -fsSL https://github.com/DioxusLabs/dioxus/releases/download/v0.7.3/dx-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C "$HOME/.cargo/bin"
+          chmod +x "$HOME/.cargo/bin/dx"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Install Dioxus CLI (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p "$HOME/.cargo/bin"
+          curl -fsSL https://github.com/DioxusLabs/dioxus/releases/download/v0.7.3/dx-aarch64-apple-darwin.tar.gz \
+            | tar -xz -C "$HOME/.cargo/bin"
+          chmod +x "$HOME/.cargo/bin/dx"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Install Dioxus CLI (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/DioxusLabs/dioxus/releases/download/v0.7.3/dx-x86_64-pc-windows-msvc.zip" -OutFile dx.zip
+          Expand-Archive -Path dx.zip -DestinationPath "$env:USERPROFILE\.cargo\bin" -Force
       - uses: pre-commit/action@v3.0.1
         with:
           extra_args: --all-files --hook-stage push --verbose

@@ -5,8 +5,8 @@ use dash_spv_wallet::backend::error::BackendError;
 use dash_spv_wallet::backend::native::NativeBackend;
 use dash_spv_wallet::backend::r#trait::SpvBackend;
 use dash_spv_wallet::backend::types::TransactionDirection;
-use dashcore::hashes::Hash;
 use dashcore::Network;
+use dashcore::hashes::Hash;
 
 use super::helpers::{
     assert_no_duplicate_txids, assert_tx_confirmed, assert_tx_sorted, assert_tx_unconfirmed,
@@ -405,8 +405,7 @@ async fn native_balance_updates_during_sync() {
     backend.start().await.unwrap();
 
     // Wait for at least one BalanceUpdated event during sync.
-    let got_balance =
-        wait_for_positive_balance(&mut balance_rx, Duration::from_secs(60)).await;
+    let got_balance = wait_for_positive_balance(&mut balance_rx, Duration::from_secs(60)).await;
     assert!(
         got_balance,
         "Should receive at least one BalanceUpdated event during sync"
@@ -521,8 +520,7 @@ async fn native_transaction_count_increases_during_sync() {
 
     // Collect TransactionReceived events during sync (with generous timeout).
     let sync_future = wait_for_sync(&mut event_rx, ctx.dashd.initial_height);
-    let collect_future =
-        collect_transaction_events(&mut tx_event_rx, 1, SYNC_TIMEOUT);
+    let collect_future = collect_transaction_events(&mut tx_event_rx, 1, SYNC_TIMEOUT);
 
     // Run both concurrently -- sync must complete, and we collect tx events meanwhile.
     use dash_spv::test_utils::SYNC_TIMEOUT;

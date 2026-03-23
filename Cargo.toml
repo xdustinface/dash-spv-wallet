@@ -49,3 +49,7 @@ key-wallet = { git = "https://github.com/xdustinface/rust-dashcore", branch = "f
 key-wallet-manager = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
 dash-spv-ffi = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
 key-wallet-ffi = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
+
+# Use patched version with Windows support (crates.io 0.1.8 lacks unistd.h handling)
+[patch.crates-io]
+rs-x11-hash = { git = "https://github.com/dashpay/rs-x11-hash", tag = "0.1.9" }
