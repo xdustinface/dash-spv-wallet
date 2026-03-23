@@ -1041,7 +1041,6 @@ dependencies = [
  "dash-spv-ffi",
  "dashcore",
  "dioxus",
- "dioxus-history",
  "dioxus-ssr",
  "dirs",
  "hex",
