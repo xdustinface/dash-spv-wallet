@@ -1,7 +1,6 @@
 use dioxus::prelude::*;
 
 use crate::backend::dispatch::Backend;
-use crate::backend::events::SpvEvent;
 use crate::backend::r#trait::SpvBackend;
 use crate::state::connection::ConnectionState;
 use crate::state::dev_log::DevLog;
@@ -10,9 +9,9 @@ use crate::state::wallet::WalletState;
 
 /// Spawns a coroutine that bridges async backend events into reactive UI signals.
 ///
-/// Call this once from a component that has all the required context signals
-/// (e.g., the Dashboard). The coroutine subscribes to the backend event channel
-/// and updates `ConnectionState`, `WalletState`, `NetworkInfo`, and `DevLog`
+/// Call this once from a component that has all the required context signals.
+/// The coroutine subscribes to the backend event channel and updates
+/// `ConnectionState`, `WalletState`, `NetworkInfo`, and `DevLog`
 /// on each received event.
 pub fn use_event_bridge() {
     let backend = use_context::<Signal<Backend>>();
@@ -33,15 +32,7 @@ pub fn use_event_bridge() {
                     dev_log.write().push(&event);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!("Event bridge lagged, skipped {n} events");
-                    // Re-query backend state to catch up on missed events
-                    let progress = backend.read().sync_progress();
-                    connection
-                        .write()
-                        .apply_event(&SpvEvent::SyncProgressUpdated(Box::new(progress)));
-                    if let Ok(balance) = backend.read().get_balance() {
-                        wallet.write().balance = balance;
-                    }
+                    tracing::error!("Event bridge lost {n} events — UI state may be inconsistent");
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     break;
