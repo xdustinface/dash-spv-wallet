@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::backend::dispatch::Backend;
+use crate::backend::events::SpvEvent;
 use crate::backend::r#trait::SpvBackend;
 use crate::state::connection::ConnectionState;
 use crate::state::dev_log::DevLog;
@@ -33,6 +34,12 @@ pub fn use_event_bridge() {
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     tracing::warn!("Event bridge lagged, skipped {n} events");
+                    // Re-query backend state to catch up on missed events
+                    let progress = backend.read().sync_progress();
+                    connection.write().apply_event(&SpvEvent::SyncProgressUpdated(Box::new(progress)));
+                    if let Ok(balance) = backend.read().get_balance() {
+                        wallet.write().balance = balance;
+                    }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     break;
