@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use dashcore::address::NetworkUnchecked;
 use dashcore::Address as DashAddress;
+use dashcore::address::NetworkUnchecked;
 use dioxus::prelude::*;
 
 use crate::backend::dispatch::Backend;

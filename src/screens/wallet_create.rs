@@ -23,20 +23,15 @@ pub fn WalletCreate() -> Element {
     let mut error_message = use_signal(|| None::<String>);
     let mut is_creating = use_signal(|| false);
 
-    let generate_mnemonic = move |_| {
-        match backend.read().generate_mnemonic() {
-            Ok(phrase) => {
-                let words: Vec<String> = phrase
-                    .split_whitespace()
-                    .map(|w| w.to_string())
-                    .collect();
-                mnemonic_words.set(words);
-                error_message.set(None);
-                step.set(Step::DisplayMnemonic);
-            }
-            Err(e) => {
-                error_message.set(Some(e.to_string()));
-            }
+    let generate_mnemonic = move |_| match backend.read().generate_mnemonic() {
+        Ok(phrase) => {
+            let words: Vec<String> = phrase.split_whitespace().map(|w| w.to_string()).collect();
+            mnemonic_words.set(words);
+            error_message.set(None);
+            step.set(Step::DisplayMnemonic);
+        }
+        Err(e) => {
+            error_message.set(Some(e.to_string()));
         }
     };
 

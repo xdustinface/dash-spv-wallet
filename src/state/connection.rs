@@ -52,7 +52,6 @@ impl ConnectionState {
             _ => {}
         }
     }
-
 }
 
 /// Display-ready sync progress.

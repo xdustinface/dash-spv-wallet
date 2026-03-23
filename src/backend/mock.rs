@@ -1,6 +1,6 @@
 use std::sync::{
-    atomic::{AtomicBool, AtomicU32, Ordering},
     Mutex,
+    atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
 use dashcore::hashes::Hash;
@@ -157,9 +157,7 @@ impl SpvBackend for MockBackend {
         if self.wallet_loaded.load(Ordering::Relaxed) {
             return Err(BackendError::WalletAlreadyExists);
         }
-        if mnemonic.split_whitespace().count() != 12
-            && mnemonic.split_whitespace().count() != 24
-        {
+        if mnemonic.split_whitespace().count() != 12 && mnemonic.split_whitespace().count() != 24 {
             return Err(BackendError::InvalidMnemonic(
                 "mnemonic must be 12 or 24 words".to_string(),
             ));
@@ -303,10 +301,8 @@ mod tests {
     use super::super::types::SyncState;
     use super::*;
 
-    const TEST_MNEMONIC_12: &str =
-        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-    const TEST_MNEMONIC_24: &str =
-        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+    const TEST_MNEMONIC_12: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    const TEST_MNEMONIC_24: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
 
     // -- Trait contract tests --
 

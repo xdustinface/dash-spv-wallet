@@ -59,7 +59,12 @@ pub fn Transactions() -> Element {
     let current_height = network_info.read().chain_tip;
     let unit = config.read().network.currency_unit();
 
-    let filtered = apply_filters(&transactions, *active_filter.read(), &search_query.read(), unit);
+    let filtered = apply_filters(
+        &transactions,
+        *active_filter.read(),
+        &search_query.read(),
+        unit,
+    );
     let total_filtered = filtered.len();
     let visible = (*visible_count.read()).min(total_filtered);
     let remaining = total_filtered.saturating_sub(visible);

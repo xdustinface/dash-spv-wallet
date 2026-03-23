@@ -107,14 +107,10 @@ fn categorize_event(event: &SpvEvent) -> (EventCategory, String) {
         SpvEvent::PeerConnected(addr) => {
             (EventCategory::Network, format!("Peer connected: {addr}"))
         }
-        SpvEvent::PeerDisconnected(addr) => (
-            EventCategory::Network,
-            format!("Peer disconnected: {addr}"),
-        ),
-        SpvEvent::PeersUpdated {
-            count,
-            best_height,
-        } => (
+        SpvEvent::PeerDisconnected(addr) => {
+            (EventCategory::Network, format!("Peer disconnected: {addr}"))
+        }
+        SpvEvent::PeersUpdated { count, best_height } => (
             EventCategory::Network,
             format!("Peers: {count}, best height: {best_height}"),
         ),

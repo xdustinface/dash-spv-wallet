@@ -1,6 +1,6 @@
 // Re-export types from rust-dashcore crates.
-pub use dashcore::Network;
 pub use dash_spv::sync::{ManagerIdentifier, SyncProgress, SyncState};
+pub use dashcore::Network;
 pub use key_wallet::WalletCoreBalance;
 
 // UI-specific types that don't exist in rust-dashcore.

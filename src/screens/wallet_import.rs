@@ -18,7 +18,11 @@ pub fn WalletImport() -> Element {
     let word_count = {
         let input = mnemonic_input.read();
         let trimmed = input.trim();
-        if trimmed.is_empty() { 0 } else { trimmed.split_whitespace().count() }
+        if trimmed.is_empty() {
+            0
+        } else {
+            trimmed.split_whitespace().count()
+        }
     };
 
     let is_valid_count = word_count == 12 || word_count == 24;

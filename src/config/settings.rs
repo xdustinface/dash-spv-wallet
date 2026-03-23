@@ -107,8 +107,8 @@ impl AppConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(ConfigError::Io)?;
         }
-        let contents = toml::to_string_pretty(self)
-            .map_err(|e| ConfigError::Parse(e.to_string()))?;
+        let contents =
+            toml::to_string_pretty(self).map_err(|e| ConfigError::Parse(e.to_string()))?;
         fs::write(&path, contents).map_err(ConfigError::Io)
     }
 
@@ -234,12 +234,20 @@ mod tests {
             ..Default::default()
         };
         let toml_str = toml::to_string_pretty(&config).unwrap();
-        assert!(toml_str.contains("regtest"), "expected 'regtest' in TOML output: {toml_str}");
+        assert!(
+            toml_str.contains("regtest"),
+            "expected 'regtest' in TOML output: {toml_str}"
+        );
     }
 
     #[test]
     fn all_networks_roundtrip() {
-        for network in [Network::Mainnet, Network::Testnet, Network::Devnet, Network::Regtest] {
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ] {
             let config = AppConfig {
                 network,
                 ..AppConfig::default()
@@ -269,7 +277,8 @@ mod tests {
         let toml_str = toml::to_string_pretty(&config).unwrap();
         std::fs::write(&config_path, &toml_str).unwrap();
 
-        let restored: AppConfig = toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        let restored: AppConfig =
+            toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
         assert_eq!(restored.network, Network::Regtest);
         assert!(restored.dev_mode);
         assert_eq!(restored.log_level, "trace");
