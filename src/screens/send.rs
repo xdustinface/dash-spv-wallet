@@ -1,3 +1,7 @@
+use std::str::FromStr;
+
+use dashcore::address::NetworkUnchecked;
+use dashcore::Address as DashAddress;
 use dioxus::prelude::*;
 
 use crate::backend::dispatch::Backend;
@@ -59,7 +63,7 @@ pub fn Send() -> Element {
     let mut address = use_signal(String::new);
     let mut amount_str = use_signal(String::new);
     let mut step = use_signal(|| SendStep::Form);
-    let mut address_error = use_signal(|| false);
+    let mut address_error = use_signal(|| None::<String>);
     let mut amount_error = use_signal(|| None::<String>);
     let mut fee_rate = use_signal(|| FeeRate::Normal);
 
@@ -69,11 +73,26 @@ pub fn Send() -> Element {
     let mut validate_form = move || -> bool {
         let mut valid = true;
 
-        if address.read().trim().is_empty() {
-            address_error.set(true);
+        let addr_str = address.read().clone();
+        if addr_str.trim().is_empty() {
+            address_error.set(Some("Address is required".to_string()));
             valid = false;
         } else {
-            address_error.set(false);
+            match DashAddress::<NetworkUnchecked>::from_str(addr_str.trim()) {
+                Err(_) => {
+                    address_error.set(Some("Invalid address format".to_string()));
+                    valid = false;
+                }
+                Ok(unchecked) => {
+                    let network = config.read().network;
+                    if !unchecked.is_valid_for_network(network) {
+                        address_error.set(Some("Address is for a different network".to_string()));
+                        valid = false;
+                    } else {
+                        address_error.set(None);
+                    }
+                }
+            }
         }
 
         match parse_dash_amount(&amount_str.read()) {
@@ -146,13 +165,13 @@ pub fn Send() -> Element {
                                 value: "{address}",
                                 oninput: move |e| {
                                     address.set(e.value());
-                                    address_error.set(false);
+                                    address_error.set(None);
                                 },
                             }
-                            if address_error() {
+                            if let Some(err) = address_error() {
                                 p {
                                     class: "text-error text-sm mt-1",
-                                    "Address is required"
+                                    "{err}"
                                 }
                             }
                         }
