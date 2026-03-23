@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/xdustinface/dash-spv-ui/actions/workflows/ci.yml">
-    <img alt="CI" src="https://github.com/xdustinface/dash-spv-ui/actions/workflows/ci.yml/badge.svg?branch=dev">
+  <a href="https://github.com/xdustinface/dash-spv-wallet/actions/workflows/ci.yml">
+    <img alt="CI" src="https://github.com/xdustinface/dash-spv-wallet/actions/workflows/ci.yml/badge.svg?branch=dev">
   </a>
-  <a href="https://codecov.io/gh/xdustinface/dash-spv-ui">
-    <img alt="Coverage" src="https://codecov.io/gh/xdustinface/dash-spv-ui/branch/dev/graph/badge.svg">
+  <a href="https://codecov.io/gh/xdustinface/dash-spv-wallet">
+    <img alt="Coverage" src="https://codecov.io/gh/xdustinface/dash-spv-wallet/branch/dev/graph/badge.svg">
   </a>
 </p>
 
