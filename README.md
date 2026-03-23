@@ -34,16 +34,20 @@ Dash SPV Wallet is a cross-platform desktop wallet built with [Dioxus](https://d
 
 ## Architecture
 
-```
-┌─────────────────────────────────┐
-│  Dioxus Components (RSX+TW)    │  UI layer
-├─────────────────────────────────┤
-│  View Models / State            │  Pure Rust, testable
-├─────────────────────────────────┤
-│  SpvBackend trait               │  Backend abstraction
-├────────────┬────────────────────┤
-│ NativeBackend │  FfiBackend     │  dash-spv / dash-spv-ffi
-└────────────┴────────────────────┘
+```mermaid
+block-beta
+  columns 1
+  block:ui["Dioxus Components (RSX + Tailwind CSS)"]
+  end
+  block:vm["View Models / State"]
+  end
+  block:trait["SpvBackend trait"]
+  end
+  block:backends
+    columns 2
+    native["NativeBackend\n(dash-spv)"]
+    ffi["FfiBackend\n(dash-spv-ffi)"]
+  end
 ```
 
 ## Prerequisites
@@ -54,14 +58,14 @@ Dash SPV Wallet is a cross-platform desktop wallet built with [Dioxus](https://d
 
 **Linux:**
 ```bash
-sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libudev-dev
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libudev-dev libxdo-dev
 ```
 
 ## Getting Started
 
 ```bash
 npm install
-dx serve
+cargo run
 ```
 
 Dev mode:
@@ -92,7 +96,12 @@ pre-commit install --hook-type pre-push
 ### Running tests
 
 ```bash
-cargo test --lib
+cargo test --all-features --lib
+```
+
+Integration tests (requires a running `dashd` regtest node):
+```bash
+cargo test --all-features
 ```
 
 ### Branch conventions
