@@ -285,4 +285,105 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
+
+    #[test]
+    fn default_window_dimensions() {
+        let config = AppConfig::default();
+        assert_eq!(config.window_width, 1024);
+        assert_eq!(config.window_height, 768);
+    }
+
+    #[test]
+    fn window_dimensions_from_toml() {
+        let toml_str = r#"
+            network = "testnet"
+            data_dir = "/tmp"
+            dev_mode = false
+            log_level = "info"
+            window_width = 1920
+            window_height = 1080
+        "#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.window_width, 1920);
+        assert_eq!(config.window_height, 1080);
+    }
+
+    #[test]
+    fn window_dimensions_default_when_omitted_from_toml() {
+        let toml_str = r#"
+            network = "testnet"
+            data_dir = "/tmp"
+            dev_mode = false
+            log_level = "info"
+        "#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.window_width, 1024);
+        assert_eq!(config.window_height, 768);
+    }
+
+    #[test]
+    fn skip_fields_not_persisted_in_roundtrip() {
+        let config = AppConfig {
+            mock_mode: true,
+            backend: "ffi".to_string(),
+            peers: vec!["1.2.3.4:9999".to_string()],
+            ..Default::default()
+        };
+
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let restored: AppConfig = toml::from_str(&toml_str).unwrap();
+
+        assert!(!restored.mock_mode);
+        assert!(restored.backend.is_empty());
+        assert!(restored.peers.is_empty());
+    }
+
+    #[test]
+    fn invalid_toml_produces_parse_error() {
+        let bad_toml = "this is not valid toml {{{}}}";
+        let result = toml::from_str::<AppConfig>(bad_toml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn partial_toml_uses_defaults_for_missing_fields() {
+        let toml_str = r#"
+            network = "mainnet"
+            data_dir = "/data"
+            dev_mode = false
+            log_level = "warn"
+        "#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.network, Network::Mainnet);
+        assert!(config.wallet_dir.is_none());
+        assert_eq!(config.window_width, 1024);
+    }
+
+    #[test]
+    fn config_error_display() {
+        let io_err = ConfigError::Io(io::Error::new(io::ErrorKind::NotFound, "gone"));
+        assert!(io_err.to_string().contains("config I/O error"));
+
+        let parse_err = ConfigError::Parse("bad value".to_string());
+        assert!(parse_err.to_string().contains("config parse error"));
+        assert!(parse_err.to_string().contains("bad value"));
+    }
+
+    #[test]
+    fn ensure_dirs_creates_directories() {
+        let tmp = std::env::temp_dir().join("dash-spv-ui-test-ensure-dirs");
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        let config = AppConfig {
+            data_dir: tmp.join("data"),
+            wallet_dir: Some(tmp.join("wallets")),
+            ..Default::default()
+        };
+        config.ensure_dirs().unwrap();
+
+        assert!(config.data_dir.exists());
+        assert!(config.wallet_dir().exists());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }
