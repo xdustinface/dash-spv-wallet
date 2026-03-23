@@ -36,15 +36,19 @@ jobs:
       - name: Install Dioxus CLI (Linux)
         if: runner.os == 'Linux'
         run: |
+          mkdir -p "$HOME/.cargo/bin"
           curl -fsSL https://github.com/DioxusLabs/dioxus/releases/download/v0.7.3/dx-x86_64-unknown-linux-gnu.tar.gz \
-            | tar -xz -C /usr/local/bin
-          chmod +x /usr/local/bin/dx
+            | tar -xz -C "$HOME/.cargo/bin"
+          chmod +x "$HOME/.cargo/bin/dx"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Install Dioxus CLI (macOS)
         if: runner.os == 'macOS'
         run: |
+          mkdir -p "$HOME/.cargo/bin"
           curl -fsSL https://github.com/DioxusLabs/dioxus/releases/download/v0.7.3/dx-aarch64-apple-darwin.tar.gz \
-            | tar -xz -C /usr/local/bin
-          chmod +x /usr/local/bin/dx
+            | tar -xz -C "$HOME/.cargo/bin"
+          chmod +x "$HOME/.cargo/bin/dx"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Install Dioxus CLI (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
