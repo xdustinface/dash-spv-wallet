@@ -21,3 +21,6 @@ Thumbs.db
 
 # Environment
 .env
+
+# Crash logs
+crash.log
