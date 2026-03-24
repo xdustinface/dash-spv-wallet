@@ -861,19 +861,23 @@ impl SpvBackend for FfiBackend {
 /// explicit `stop()` — which runs the teardown on `spawn_blocking` — we
 /// avoid this runtime nesting issue entirely.
 ///
-/// If `stop()` was not called (e.g., due to a panic), Drop performs
-/// best-effort cleanup: it reclaims the callback context to avoid leaking
-/// memory, but the FFI client itself is leaked to avoid a `block_on` panic.
+/// If `stop()` was not called (e.g., due to a panic), Drop leaks both the
+/// FFI client and the callback context to avoid use-after-free — the leaked
+/// client's background tasks may still reference the context via user_data.
 impl Drop for FfiBackend {
     fn drop(&mut self) {
         let client_ptr = *self.client_ptr.lock().unwrap();
         if !client_ptr.is_null() {
             tracing::error!(
-                "FfiBackend dropped without calling stop() first — FFI client resources leaked"
+                "FfiBackend dropped without calling stop() — FFI client resources leaked. \
+                 Always call stop() before dropping."
             );
+            // Do NOT free callback_context here — the leaked client's background
+            // tasks may still reference it via user_data pointers.
+            return;
         }
 
-        // Reclaim callback context if still held (shouldn't happen after stop()).
+        // Client was properly stopped (ptr is null) — safe to free callback context.
         if let Some(ud) = self.callback_ctx.lock().unwrap().take() {
             // Safety: ud was created by Box::into_raw(Box::new(CallbackContext {...})).
             let _ = unsafe { Box::from_raw(ud as *mut CallbackContext) };

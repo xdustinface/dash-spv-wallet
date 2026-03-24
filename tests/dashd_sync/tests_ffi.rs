@@ -97,7 +97,7 @@ async fn ffi_full_sync_with_wallet() {
     assert!(!backend.is_running());
 }
 
-#[ignore] // TODO: fix SIGSEGV, see #78
+#[ignore] // TODO: wallet doesn't detect sent transactions, see #42
 #[tokio::test]
 async fn ffi_send_transaction() {
     let ctx = match BackendTestContext::new(TestChain::Full).await {
