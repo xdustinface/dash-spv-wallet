@@ -13,9 +13,8 @@ pub struct BackendTestContext {
 impl BackendTestContext {
     /// Create a new test context for the given chain variant.
     ///
-    /// Returns `None` if dashd integration tests should be skipped (either
-    /// `SKIP_DASHD_TESTS` is set, required env vars are missing, or dashd
-    /// fails to start).
+    /// Returns `None` if `SKIP_DASHD_TESTS` is set or if dashd fails to
+    /// start. Panics if `DASHD_PATH` or `DASHD_TEST_DATA` are missing.
     pub async fn new(chain: TestChain) -> Option<Self> {
         if std::env::var("SKIP_DASHD_TESTS").is_ok() {
             eprintln!("Skipping: SKIP_DASHD_TESTS is set");
@@ -23,11 +22,11 @@ impl BackendTestContext {
         }
 
         if std::env::var("DASHD_PATH").is_err() || std::env::var("DASHD_TEST_DATA").is_err() {
-            eprintln!(
-                "Skipping: DASHD_PATH / DASHD_TEST_DATA not set. \
-                 Run `eval $(python3 contrib/setup-dashd.py)` to enable dashd tests."
+            panic!(
+                "DASHD_PATH and DASHD_TEST_DATA environment variables are required. \
+                 Run `eval $(python3 contrib/setup-dashd.py)` to set them, \
+                 or set SKIP_DASHD_TESTS=1 to skip these tests."
             );
-            return None;
         }
 
         // Spawn in a separate task so panics from dashd startup failures
