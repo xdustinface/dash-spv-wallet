@@ -160,3 +160,61 @@ fn format_time(timestamp: u64) -> String {
     let hours = (timestamp / 3600) % 24;
     format!("{hours:02}:{mins:02}:{secs:02}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_time_zero() {
+        assert_eq!(format_time(0), "00:00:00");
+    }
+
+    #[test]
+    fn format_time_wraps_at_24h() {
+        // 25 hours should wrap to 01:00:00
+        assert_eq!(format_time(25 * 3600), "01:00:00");
+    }
+
+    #[test]
+    fn format_time_all_components() {
+        // 13h 45m 30s = 13*3600 + 45*60 + 30 = 49530
+        assert_eq!(format_time(49530), "13:45:30");
+    }
+
+    #[test]
+    fn category_labels() {
+        assert_eq!(category_label(&EventCategory::Sync), "SYNC");
+        assert_eq!(category_label(&EventCategory::Network), "NET");
+        assert_eq!(category_label(&EventCategory::Wallet), "WALLET");
+        assert_eq!(category_label(&EventCategory::Error), "ERR");
+    }
+
+    #[test]
+    fn category_badge_classes_are_distinct() {
+        let classes: Vec<&str> = [
+            EventCategory::Sync,
+            EventCategory::Network,
+            EventCategory::Wallet,
+            EventCategory::Error,
+        ]
+        .iter()
+        .map(|c| category_badge_class(c))
+        .collect();
+
+        // Each category should produce a unique CSS class
+        for (i, a) in classes.iter().enumerate() {
+            for b in &classes[i + 1..] {
+                assert_ne!(a, b, "badge classes should be unique per category");
+            }
+        }
+    }
+
+    #[test]
+    fn category_badge_class_contains_expected_tokens() {
+        assert!(category_badge_class(&EventCategory::Error).contains("error"));
+        assert!(category_badge_class(&EventCategory::Network).contains("success"));
+        assert!(category_badge_class(&EventCategory::Sync).contains("dash"));
+        assert!(category_badge_class(&EventCategory::Wallet).contains("chainlock"));
+    }
+}

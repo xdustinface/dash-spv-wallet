@@ -181,4 +181,29 @@ mod tests {
         let html = render_component(dev_panel_visible_wrapper);
         assert!(html.contains("[0]"), "expected zero entry count");
     }
+
+    #[component]
+    fn dev_panel_with_entries_wrapper() -> Element {
+        use_context_provider(|| Signal::new(test_backend()));
+        use_context_provider(|| Signal::new(test_config()));
+        use_context_provider(|| Signal::new(test_app_state(true)));
+        use_context_provider(|| Signal::new(WalletState::default()));
+        use_context_provider(|| Signal::new(NetworkInfo::default()));
+        use_context_provider(|| Signal::new(ConnectionState::default()));
+
+        let mut log = DevLog::default();
+        use crate::backend::events::SpvEvent;
+        log.push(&SpvEvent::PeerConnected("10.0.0.1".into()));
+        log.push(&SpvEvent::HeadersSynced { tip_height: 500 });
+        log.push(&SpvEvent::Error("timeout".into()));
+        use_context_provider(|| Signal::new(log));
+
+        rsx! { super::dev_panel::DevPanel {} }
+    }
+
+    #[test]
+    fn dev_panel_shows_nonzero_entry_count() {
+        let html = render_component(dev_panel_with_entries_wrapper);
+        assert!(html.contains("[3]"), "expected entry count of 3");
+    }
 }
