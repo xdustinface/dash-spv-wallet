@@ -189,6 +189,167 @@ mod tests {
     }
 
     #[test]
+    fn sync_complete_transitions_to_synced() {
+        let (mut conn, mut wallet, mut net, mut log) = make_state();
+        let event = SpvEvent::SyncComplete {
+            tip_height: 5000,
+            cycle: 2,
+        };
+
+        dispatch_event(&event, &mut conn, &mut wallet, &mut net, &mut log);
+
+        assert_eq!(conn, ConnectionState::Synced);
+        assert_eq!(net.chain_tip, 5000);
+        assert_eq!(wallet, WalletState::default());
+        assert_eq!(log.len(), 1);
+        assert_eq!(log.entries(Some(EventCategory::Sync)).len(), 1);
+    }
+
+    #[test]
+    fn error_event_sets_error_state() {
+        let (mut conn, mut wallet, mut net, mut log) = make_state();
+        let event = SpvEvent::Error("connection timed out".into());
+
+        dispatch_event(&event, &mut conn, &mut wallet, &mut net, &mut log);
+
+        assert!(matches!(conn, ConnectionState::Error(ref msg) if msg == "connection timed out"));
+        assert_eq!(wallet, WalletState::default());
+        assert_eq!(net, NetworkInfo::default());
+        assert_eq!(log.len(), 1);
+        assert_eq!(log.entries(Some(EventCategory::Error)).len(), 1);
+    }
+
+    #[test]
+    fn peer_disconnected_decrements_peer_count() {
+        let (mut conn, mut wallet, mut net, mut log) = make_state();
+
+        dispatch_event(
+            &SpvEvent::PeerConnected("1.2.3.4".into()),
+            &mut conn,
+            &mut wallet,
+            &mut net,
+            &mut log,
+        );
+        assert_eq!(net.connected_peers, 1);
+
+        dispatch_event(
+            &SpvEvent::PeerDisconnected("1.2.3.4".into()),
+            &mut conn,
+            &mut wallet,
+            &mut net,
+            &mut log,
+        );
+        assert_eq!(net.connected_peers, 0);
+        assert_eq!(log.len(), 2);
+        assert_eq!(log.entries(Some(EventCategory::Network)).len(), 2);
+    }
+
+    #[test]
+    fn peers_updated_zero_disconnects() {
+        let (mut conn, mut wallet, mut net, mut log) = make_state();
+
+        // First connect so we're in Connecting state
+        dispatch_event(
+            &SpvEvent::PeerConnected("1.2.3.4".into()),
+            &mut conn,
+            &mut wallet,
+            &mut net,
+            &mut log,
+        );
+        assert_eq!(conn, ConnectionState::Connecting);
+
+        let event = SpvEvent::PeersUpdated {
+            count: 0,
+            best_height: 0,
+        };
+        dispatch_event(&event, &mut conn, &mut wallet, &mut net, &mut log);
+
+        assert_eq!(conn, ConnectionState::Disconnected);
+        assert_eq!(net.connected_peers, 0);
+        assert_eq!(net.best_height, 0);
+    }
+
+    #[test]
+    fn sync_started_logged_as_sync() {
+        use crate::backend::types::ManagerIdentifier;
+
+        let (mut conn, mut wallet, mut net, mut log) = make_state();
+        let event = SpvEvent::SyncStarted {
+            manager: ManagerIdentifier::BlockHeader,
+        };
+
+        dispatch_event(&event, &mut conn, &mut wallet, &mut net, &mut log);
+
+        // SyncStarted doesn't change connection/wallet/network state
+        assert_eq!(conn, ConnectionState::Disconnected);
+        assert_eq!(wallet, WalletState::default());
+        assert_eq!(net, NetworkInfo::default());
+        assert_eq!(log.len(), 1);
+        assert_eq!(log.entries(Some(EventCategory::Sync)).len(), 1);
+    }
+
+    #[test]
+    fn filters_synced_logged_as_sync() {
+        let (mut conn, mut wallet, mut net, mut log) = make_state();
+        let event = SpvEvent::FiltersSynced { tip_height: 3000 };
+
+        dispatch_event(&event, &mut conn, &mut wallet, &mut net, &mut log);
+
+        assert_eq!(conn, ConnectionState::Disconnected);
+        assert_eq!(wallet, WalletState::default());
+        assert_eq!(log.len(), 1);
+        assert_eq!(log.entries(Some(EventCategory::Sync)).len(), 1);
+    }
+
+    #[test]
+    fn block_processed_logged_as_sync() {
+        let (mut conn, mut wallet, mut net, mut log) = make_state();
+        let event = SpvEvent::BlockProcessed {
+            height: 1500,
+            new_addresses: 3,
+        };
+
+        dispatch_event(&event, &mut conn, &mut wallet, &mut net, &mut log);
+
+        assert_eq!(conn, ConnectionState::Disconnected);
+        assert_eq!(wallet, WalletState::default());
+        assert_eq!(log.len(), 1);
+        assert_eq!(log.entries(Some(EventCategory::Sync)).len(), 1);
+    }
+
+    #[test]
+    fn chain_lock_received_logged_as_sync() {
+        let (mut conn, mut wallet, mut net, mut log) = make_state();
+        let event = SpvEvent::ChainLockReceived {
+            height: 10000,
+            validated: true,
+        };
+
+        dispatch_event(&event, &mut conn, &mut wallet, &mut net, &mut log);
+
+        assert_eq!(conn, ConnectionState::Disconnected);
+        assert_eq!(wallet, WalletState::default());
+        assert_eq!(log.len(), 1);
+        assert_eq!(log.entries(Some(EventCategory::Sync)).len(), 1);
+    }
+
+    #[test]
+    fn instant_lock_received_logged_as_sync() {
+        let (mut conn, mut wallet, mut net, mut log) = make_state();
+        let event = SpvEvent::InstantLockReceived {
+            txid: [0xBB; 32],
+            validated: false,
+        };
+
+        dispatch_event(&event, &mut conn, &mut wallet, &mut net, &mut log);
+
+        assert_eq!(conn, ConnectionState::Disconnected);
+        assert_eq!(wallet, WalletState::default());
+        assert_eq!(log.len(), 1);
+        assert_eq!(log.entries(Some(EventCategory::Sync)).len(), 1);
+    }
+
+    #[test]
     fn full_lifecycle_sequence() {
         let (mut conn, mut wallet, mut net, mut log) = make_state();
 
