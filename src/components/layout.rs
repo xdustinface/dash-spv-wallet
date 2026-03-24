@@ -106,3 +106,21 @@ pub fn AppLayout() -> Element {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn event_bridge_lives_in_layout_not_dashboard() {
+        let layout_src = include_str!("layout.rs");
+        let dashboard_src = include_str!("../screens/dashboard.rs");
+
+        assert!(
+            layout_src.contains("use_event_bridge"),
+            "use_event_bridge must be called in AppLayout (layout.rs) so events update on all screens"
+        );
+        assert!(
+            !dashboard_src.contains("use_event_bridge"),
+            "use_event_bridge must NOT be in Dashboard — it was moved to AppLayout to fix screen navigation event loss"
+        );
+    }
+}
