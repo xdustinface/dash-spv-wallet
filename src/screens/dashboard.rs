@@ -1,10 +1,7 @@
 use dioxus::prelude::*;
 
-use crate::backend::dispatch::Backend;
-use crate::backend::r#trait::SpvBackend;
 use crate::backend::types::TransactionDirection;
 use crate::config::AppConfig;
-use crate::event_bridge::use_event_bridge;
 use crate::router::Route;
 use crate::state::network::NetworkInfo;
 use crate::state::view_models::{
@@ -16,37 +13,9 @@ const DASHBOARD_TX_LIMIT: usize = 5;
 
 #[component]
 pub fn Dashboard() -> Element {
-    let backend = use_context::<Signal<Backend>>();
     let wallet = use_context::<Signal<WalletState>>();
     let network_info = use_context::<Signal<NetworkInfo>>();
     let config = use_context::<Signal<AppConfig>>();
-
-    // Start the event bridge coroutine to pipe backend events into UI state.
-    use_event_bridge();
-
-    // Load persisted wallet and auto-connect if not already running.
-    use_future(move || async move {
-        let _ = backend.read().load_wallet().await;
-        if !backend.read().is_running() {
-            let _ = backend.read().start().await;
-        }
-    });
-
-    // Load persisted transactions and balance on first mount only.
-    use_future(move || {
-        let mut wallet_state = wallet;
-        async move {
-            if !wallet_state.read().transactions.is_empty() {
-                return;
-            }
-            if let Ok(txs) = backend.read().get_transactions() {
-                wallet_state.write().set_transactions(txs);
-            }
-            if let Ok(balance) = backend.read().get_balance() {
-                wallet_state.write().balance = balance;
-            }
-        }
-    });
 
     let mut expanded_txid = use_signal(|| None::<dashcore::Txid>);
 

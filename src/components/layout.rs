@@ -8,6 +8,8 @@ use crate::components::dev_panel::DevPanel;
 use crate::components::sidebar::Sidebar;
 use crate::components::status_bar::StatusBar;
 use crate::config::AppConfig;
+use crate::event_bridge::use_event_bridge;
+use crate::state::wallet::WalletState;
 
 #[component]
 pub fn AppLayout() -> Element {
@@ -26,9 +28,38 @@ pub fn AppLayout() -> Element {
         }
     });
 
+    // Start the event bridge coroutine to pipe backend events into UI state.
+    use_event_bridge();
+
+    let backend = use_context::<Signal<Backend>>();
+    let wallet = use_context::<Signal<WalletState>>();
+
+    // Load persisted wallet and auto-connect if not already running.
+    use_future(move || async move {
+        let _ = backend.read().load_wallet().await;
+        if !backend.read().is_running() {
+            let _ = backend.read().start().await;
+        }
+    });
+
+    // Load persisted transactions and balance on first mount only.
+    use_future(move || {
+        let mut wallet_state = wallet;
+        async move {
+            if !wallet_state.read().transactions.is_empty() {
+                return;
+            }
+            if let Ok(txs) = backend.read().get_transactions() {
+                wallet_state.write().set_transactions(txs);
+            }
+            if let Ok(balance) = backend.read().get_balance() {
+                wallet_state.write().balance = balance;
+            }
+        }
+    });
+
     // Stop the backend and persist window size when the component unmounts (app close).
     let window = use_window();
-    let backend = use_context::<Signal<Backend>>();
     use_drop(move || {
         if backend.read().is_running() {
             let rt = tokio::runtime::Runtime::new().expect("failed to create shutdown runtime");
@@ -73,5 +104,23 @@ pub fn AppLayout() -> Element {
 
             StatusBar {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn event_bridge_lives_in_layout_not_dashboard() {
+        let layout_src = include_str!("layout.rs");
+        let dashboard_src = include_str!("../screens/dashboard.rs");
+
+        assert!(
+            layout_src.contains("use_event_bridge"),
+            "use_event_bridge must be called in AppLayout (layout.rs) so events update on all screens"
+        );
+        assert!(
+            !dashboard_src.contains("use_event_bridge"),
+            "use_event_bridge must NOT be in Dashboard — it was moved to AppLayout to fix screen navigation event loss"
+        );
     }
 }
