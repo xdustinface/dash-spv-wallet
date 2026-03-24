@@ -35,19 +35,16 @@ Dash SPV Wallet is a cross-platform desktop wallet built with [Dioxus](https://d
 ## Architecture
 
 ```mermaid
-block-beta
-  columns 1
-  block:ui["Dioxus Components (RSX + Tailwind CSS)"]
-  end
-  block:vm["View Models / State"]
-  end
-  block:trait["SpvBackend trait"]
-  end
-  block:backends
-    columns 2
-    native["NativeBackend\n(dash-spv)"]
-    ffi["FfiBackend\n(dash-spv-ffi)"]
-  end
+graph TD
+    UI["Dioxus Components<br/>(RSX + Tailwind CSS)"]
+    VM["View Models / State"]
+    Trait["SpvBackend trait"]
+    Native["NativeBackend<br/>(dash-spv)"]
+    FFI["FfiBackend<br/>(dash-spv-ffi)"]
+
+    UI --> VM --> Trait
+    Trait --> Native
+    Trait --> FFI
 ```
 
 ## Prerequisites
