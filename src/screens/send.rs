@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use dashcore::Address as DashAddress;
 use dashcore::address::NetworkUnchecked;
+use dashcore::{Address as DashAddress, Network};
 use dioxus::prelude::*;
 
 use crate::backend::dispatch::Backend;
@@ -54,6 +54,42 @@ impl FeeRate {
     const ALL: [FeeRate; 3] = [FeeRate::Economy, FeeRate::Normal, FeeRate::Priority];
 }
 
+/// Validate a Dash address string for a given network.
+fn validate_send_address(address: &str, network: Network) -> Result<(), String> {
+    let trimmed = address.trim();
+    if trimmed.is_empty() {
+        return Err("Address is required".to_string());
+    }
+    let unchecked = DashAddress::<NetworkUnchecked>::from_str(trimmed)
+        .map_err(|_| "Invalid address format".to_string())?;
+    if !unchecked.is_valid_for_network(network) {
+        return Err("Address is for a different network".to_string());
+    }
+    Ok(())
+}
+
+/// Validate a send amount against the spendable balance.
+fn validate_send_amount(amount_str: &str, spendable: u64) -> Result<u64, String> {
+    match parse_dash_amount(amount_str) {
+        None => Err("Invalid amount".to_string()),
+        Some(0) => Err("Amount must be greater than 0".to_string()),
+        Some(sats) if sats > spendable => Err("Exceeds spendable balance".to_string()),
+        Some(sats) => Ok(sats),
+    }
+}
+
+/// Format a satoshi amount as a user-friendly DASH string for the "Max" button.
+fn format_max_amount(sats: u64) -> String {
+    let whole = sats / 100_000_000;
+    let frac = sats % 100_000_000;
+    if frac == 0 {
+        format!("{whole}")
+    } else {
+        let frac_str = format!("{frac:08}").trim_end_matches('0').to_string();
+        format!("{whole}.{frac_str}")
+    }
+}
+
 #[component]
 pub fn Send() -> Element {
     let backend = use_context::<Signal<Backend>>();
@@ -73,43 +109,20 @@ pub fn Send() -> Element {
     let mut validate_form = move || -> bool {
         let mut valid = true;
 
-        let addr_str = address.read().clone();
-        if addr_str.trim().is_empty() {
-            address_error.set(Some("Address is required".to_string()));
-            valid = false;
-        } else {
-            match DashAddress::<NetworkUnchecked>::from_str(addr_str.trim()) {
-                Err(_) => {
-                    address_error.set(Some("Invalid address format".to_string()));
-                    valid = false;
-                }
-                Ok(unchecked) => {
-                    let network = config.read().network;
-                    if !unchecked.is_valid_for_network(network) {
-                        address_error.set(Some("Address is for a different network".to_string()));
-                        valid = false;
-                    } else {
-                        address_error.set(None);
-                    }
-                }
+        let network = config.read().network;
+        match validate_send_address(&address.read(), network) {
+            Ok(()) => address_error.set(None),
+            Err(e) => {
+                address_error.set(Some(e));
+                valid = false;
             }
         }
 
-        match parse_dash_amount(&amount_str.read()) {
-            None => {
-                amount_error.set(Some("Invalid amount".to_string()));
+        match validate_send_amount(&amount_str.read(), spendable) {
+            Ok(_) => amount_error.set(None),
+            Err(e) => {
+                amount_error.set(Some(e));
                 valid = false;
-            }
-            Some(0) => {
-                amount_error.set(Some("Amount must be greater than 0".to_string()));
-                valid = false;
-            }
-            Some(sats) if sats > spendable => {
-                amount_error.set(Some("Exceeds spendable balance".to_string()));
-                valid = false;
-            }
-            Some(_) => {
-                amount_error.set(None);
             }
         }
 
@@ -198,15 +211,7 @@ pub fn Send() -> Element {
                                 button {
                                     class: "absolute right-2 top-1/2 -translate-y-1/2 bg-hover hover:bg-edge text-muted text-xs px-3 py-1 rounded transition-colors",
                                     onclick: move |_| {
-                                        let whole = spendable / 100_000_000;
-                                        let frac = spendable % 100_000_000;
-                                        let s = if frac == 0 {
-                                            format!("{whole}")
-                                        } else {
-                                            let frac_str = format!("{frac:08}").trim_end_matches('0').to_string();
-                                            format!("{whole}.{frac_str}")
-                                        };
-                                        amount_str.set(s);
+                                        amount_str.set(format_max_amount(spendable));
                                         amount_error.set(None);
                                     },
                                     "Max"
@@ -494,5 +499,148 @@ pub fn Send() -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dashcore::PublicKey;
+
+    use super::*;
+
+    fn test_address(network: Network) -> String {
+        let pk = PublicKey::from_slice(&[
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x01,
+        ])
+        .unwrap();
+        DashAddress::p2pkh(&pk, network).to_string()
+    }
+
+    // -- validate_send_address --
+
+    #[test]
+    fn validate_send_address_empty() {
+        let err = validate_send_address("", Network::Testnet).unwrap_err();
+        assert_eq!(err, "Address is required");
+    }
+
+    #[test]
+    fn validate_send_address_whitespace_only() {
+        let err = validate_send_address("   ", Network::Testnet).unwrap_err();
+        assert_eq!(err, "Address is required");
+    }
+
+    #[test]
+    fn validate_send_address_invalid_format() {
+        let err = validate_send_address("not-an-address", Network::Testnet).unwrap_err();
+        assert_eq!(err, "Invalid address format");
+    }
+
+    #[test]
+    fn validate_send_address_wrong_network() {
+        let testnet_addr = test_address(Network::Testnet);
+        let err = validate_send_address(&testnet_addr, Network::Mainnet).unwrap_err();
+        assert_eq!(err, "Address is for a different network");
+    }
+
+    #[test]
+    fn validate_send_address_valid_testnet() {
+        let addr = test_address(Network::Testnet);
+        assert!(validate_send_address(&addr, Network::Testnet).is_ok());
+    }
+
+    #[test]
+    fn validate_send_address_valid_mainnet() {
+        let addr = test_address(Network::Mainnet);
+        assert!(validate_send_address(&addr, Network::Mainnet).is_ok());
+    }
+
+    // -- validate_send_amount --
+
+    #[test]
+    fn validate_send_amount_valid() {
+        assert_eq!(validate_send_amount("1.5", 200_000_000), Ok(150_000_000));
+    }
+
+    #[test]
+    fn validate_send_amount_invalid_input() {
+        assert_eq!(
+            validate_send_amount("abc", 100_000_000),
+            Err("Invalid amount".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_send_amount_zero() {
+        assert_eq!(
+            validate_send_amount("0", 100_000_000),
+            Err("Amount must be greater than 0".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_send_amount_exceeds_balance() {
+        assert_eq!(
+            validate_send_amount("2", 100_000_000),
+            Err("Exceeds spendable balance".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_send_amount_exact_balance() {
+        assert_eq!(validate_send_amount("1", 100_000_000), Ok(100_000_000));
+    }
+
+    #[test]
+    fn validate_send_amount_empty() {
+        assert_eq!(
+            validate_send_amount("", 100_000_000),
+            Err("Invalid amount".to_string())
+        );
+    }
+
+    // -- format_max_amount --
+
+    #[test]
+    fn format_max_amount_zero() {
+        assert_eq!(format_max_amount(0), "0");
+    }
+
+    #[test]
+    fn format_max_amount_whole() {
+        assert_eq!(format_max_amount(100_000_000), "1");
+    }
+
+    #[test]
+    fn format_max_amount_with_fraction() {
+        assert_eq!(format_max_amount(150_000_000), "1.5");
+    }
+
+    #[test]
+    fn format_max_amount_one_satoshi() {
+        assert_eq!(format_max_amount(1), "0.00000001");
+    }
+
+    #[test]
+    fn format_max_amount_trailing_zeros_stripped() {
+        assert_eq!(format_max_amount(123_400_000), "1.234");
+    }
+
+    // -- FeeRate --
+
+    #[test]
+    fn fee_rate_labels() {
+        assert_eq!(FeeRate::Economy.label(), "Economy");
+        assert_eq!(FeeRate::Normal.label(), "Normal");
+        assert_eq!(FeeRate::Priority.label(), "Priority");
+    }
+
+    #[test]
+    fn fee_rate_sat_per_kb() {
+        assert_eq!(FeeRate::Economy.sat_per_kb(), 1_000);
+        assert_eq!(FeeRate::Normal.sat_per_kb(), 10_000);
+        assert_eq!(FeeRate::Priority.sat_per_kb(), 100_000);
     }
 }

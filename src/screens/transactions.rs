@@ -309,3 +309,115 @@ pub fn Transactions() -> Element {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use dashcore::hashes::Hash;
+
+    use super::*;
+
+    fn sample_txs() -> Vec<TransactionInfo> {
+        vec![
+            TransactionInfo {
+                txid: dashcore::Txid::from_byte_array([0xAA; 32]),
+                amount: 100_000_000,
+                direction: TransactionDirection::Received,
+                timestamp: 1700000000,
+                height: Some(100),
+                fee: None,
+                addresses: vec!["yAddr1".into()],
+                block_hash: None,
+                is_instant_send: false,
+                is_chain_locked: false,
+            },
+            TransactionInfo {
+                txid: dashcore::Txid::from_byte_array([0xBB; 32]),
+                amount: -50_000_000,
+                direction: TransactionDirection::Sent,
+                timestamp: 1700001000,
+                height: Some(101),
+                fee: Some(226),
+                addresses: vec!["yAddr2".into()],
+                block_hash: None,
+                is_instant_send: false,
+                is_chain_locked: false,
+            },
+            TransactionInfo {
+                txid: dashcore::Txid::from_byte_array([0xCC; 32]),
+                amount: 200_000_000,
+                direction: TransactionDirection::Received,
+                timestamp: 1700002000,
+                height: Some(102),
+                fee: None,
+                addresses: vec!["yAddr3".into()],
+                block_hash: None,
+                is_instant_send: true,
+                is_chain_locked: false,
+            },
+        ]
+    }
+
+    #[test]
+    fn apply_filters_all() {
+        let txs = sample_txs();
+        let result = apply_filters(&txs, TxFilter::All, "", "DASH");
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn apply_filters_received_only() {
+        let txs = sample_txs();
+        let result = apply_filters(&txs, TxFilter::Received, "", "DASH");
+        assert_eq!(result.len(), 2);
+        assert!(
+            result
+                .iter()
+                .all(|tx| tx.direction == TransactionDirection::Received)
+        );
+    }
+
+    #[test]
+    fn apply_filters_sent_only() {
+        let txs = sample_txs();
+        let result = apply_filters(&txs, TxFilter::Sent, "", "DASH");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].direction, TransactionDirection::Sent);
+    }
+
+    #[test]
+    fn apply_filters_with_search() {
+        let txs = sample_txs();
+        let result = apply_filters(&txs, TxFilter::All, "yAddr2", "DASH");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].addresses[0], "yAddr2");
+    }
+
+    #[test]
+    fn apply_filters_no_match() {
+        let txs = sample_txs();
+        let result = apply_filters(&txs, TxFilter::All, "zzz_nonexistent", "DASH");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn apply_filters_combined_filter_and_search() {
+        let txs = sample_txs();
+        let result = apply_filters(&txs, TxFilter::Received, "yAddr3", "DASH");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].addresses[0], "yAddr3");
+    }
+
+    #[test]
+    fn apply_filters_empty_transactions() {
+        let txs: Vec<TransactionInfo> = vec![];
+        let result = apply_filters(&txs, TxFilter::All, "", "DASH");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn tx_filter_labels() {
+        assert_eq!(TxFilter::All.label(), "All");
+        assert_eq!(TxFilter::Received.label(), "Received");
+        assert_eq!(TxFilter::Sent.label(), "Sent");
+    }
+}

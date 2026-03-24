@@ -69,6 +69,24 @@ pub fn NetworkSelect() -> Element {
     }
 }
 
+fn border_class_for_color(color: &str) -> &'static str {
+    match color {
+        "blue" => "border-dash hover:bg-dash/10",
+        "green" => "border-success hover:bg-success/10",
+        "orange" => "border-warning hover:bg-warning/10",
+        _ => "border-edge hover:bg-hover",
+    }
+}
+
+fn dot_class_for_color(color: &str) -> &'static str {
+    match color {
+        "blue" => "bg-dash",
+        "green" => "bg-success",
+        "orange" => "bg-warning",
+        _ => "bg-muted",
+    }
+}
+
 #[component]
 fn NetworkCard(
     name: &'static str,
@@ -76,19 +94,8 @@ fn NetworkCard(
     color: &'static str,
     onclick: EventHandler<MouseEvent>,
 ) -> Element {
-    let border_class = match color {
-        "blue" => "border-dash hover:bg-dash/10",
-        "green" => "border-success hover:bg-success/10",
-        "orange" => "border-warning hover:bg-warning/10",
-        _ => "border-edge hover:bg-hover",
-    };
-
-    let dot_class = match color {
-        "blue" => "bg-dash",
-        "green" => "bg-success",
-        "orange" => "bg-warning",
-        _ => "bg-muted",
-    };
+    let border_class = border_class_for_color(color);
+    let dot_class = dot_class_for_color(color);
 
     rsx! {
         div {
@@ -107,5 +114,44 @@ fn NetworkCard(
                 "{description}"
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn border_class_known_colors() {
+        assert_eq!(
+            border_class_for_color("blue"),
+            "border-dash hover:bg-dash/10"
+        );
+        assert_eq!(
+            border_class_for_color("green"),
+            "border-success hover:bg-success/10"
+        );
+        assert_eq!(
+            border_class_for_color("orange"),
+            "border-warning hover:bg-warning/10"
+        );
+    }
+
+    #[test]
+    fn border_class_unknown_color() {
+        assert_eq!(border_class_for_color("red"), "border-edge hover:bg-hover");
+        assert_eq!(border_class_for_color(""), "border-edge hover:bg-hover");
+    }
+
+    #[test]
+    fn dot_class_known_colors() {
+        assert_eq!(dot_class_for_color("blue"), "bg-dash");
+        assert_eq!(dot_class_for_color("green"), "bg-success");
+        assert_eq!(dot_class_for_color("orange"), "bg-warning");
+    }
+
+    #[test]
+    fn dot_class_unknown_color() {
+        assert_eq!(dot_class_for_color("red"), "bg-muted");
     }
 }
