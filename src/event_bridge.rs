@@ -48,7 +48,7 @@ pub fn use_event_bridge() {
 #[cfg(test)]
 mod tests {
     use crate::backend::events::{SpvEvent, event_channel};
-    use crate::backend::types::WalletCoreBalance;
+    use crate::backend::types::{ManagerIdentifier, WalletCoreBalance};
     use crate::state::connection::ConnectionState;
     use crate::state::dev_log::{DevLog, EventCategory};
     use crate::state::network::NetworkInfo;
@@ -271,8 +271,6 @@ mod tests {
 
     #[test]
     fn sync_started_logged_as_sync() {
-        use crate::backend::types::ManagerIdentifier;
-
         let (mut conn, mut wallet, mut net, mut log) = make_state();
         let event = SpvEvent::SyncStarted {
             manager: ManagerIdentifier::BlockHeader,
