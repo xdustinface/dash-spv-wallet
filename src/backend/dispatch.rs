@@ -300,4 +300,102 @@ mod tests {
         let event = rx.try_recv();
         assert!(event.is_ok());
     }
+
+    #[test]
+    fn dispatch_network_devnet() {
+        assert_eq!(mock_backend(Network::Devnet).network(), Network::Devnet);
+    }
+
+    #[tokio::test]
+    async fn dispatch_start_already_running() {
+        let backend = mock_backend(Network::Testnet);
+        backend.start().await.unwrap();
+        let err = backend.start().await.unwrap_err();
+        assert_eq!(err, BackendError::AlreadyRunning);
+    }
+
+    #[tokio::test]
+    async fn dispatch_stop_not_running() {
+        let backend = mock_backend(Network::Testnet);
+        let err = backend.stop().await.unwrap_err();
+        assert_eq!(err, BackendError::NotRunning);
+    }
+
+    #[test]
+    fn dispatch_operations_without_wallet() {
+        let backend = mock_backend(Network::Testnet);
+        assert_eq!(backend.get_balance().unwrap_err(), BackendError::NoWallet);
+        assert_eq!(
+            backend.get_receive_address().unwrap_err(),
+            BackendError::NoWallet,
+        );
+        assert_eq!(
+            backend.get_transactions().unwrap_err(),
+            BackendError::NoWallet,
+        );
+        assert_eq!(
+            backend.estimate_fee("addr", 100, 1000).unwrap_err(),
+            BackendError::NoWallet,
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_send_errors() {
+        let backend = mock_backend_with_wallet(Network::Testnet, 1_000_000);
+        backend.load_wallet().await.unwrap();
+
+        // Empty address
+        let err = backend.send("", 100, 1000).await.unwrap_err();
+        assert!(matches!(err, BackendError::InvalidAddress(_)));
+
+        // Insufficient funds
+        let err = backend.send("Xaddr", 2_000_000, 1000).await.unwrap_err();
+        assert!(matches!(err, BackendError::InsufficientFunds { .. }));
+    }
+
+    #[tokio::test]
+    async fn dispatch_create_wallet_invalid_mnemonic() {
+        let backend = mock_backend(Network::Testnet);
+        let err = backend.create_wallet("bad mnemonic").await.unwrap_err();
+        assert!(matches!(err, BackendError::InvalidMnemonic(_)));
+    }
+
+    #[tokio::test]
+    async fn dispatch_sync_progress_with_tip() {
+        let backend = Backend::Mock(
+            MockBackend::builder(Network::Testnet)
+                .with_tip_height(5000)
+                .build(),
+        );
+        backend.start().await.unwrap();
+
+        let progress = backend.sync_progress();
+        assert_eq!(progress.state(), SyncState::WaitForEvents);
+    }
+
+    #[tokio::test]
+    async fn dispatch_generate_mnemonic_is_12_words() {
+        let backend = mock_backend(Network::Regtest);
+        let mnemonic = backend.generate_mnemonic().unwrap();
+        assert_eq!(mnemonic.split_whitespace().count(), 12);
+
+        // Verify the mnemonic can be used to create a wallet through dispatch
+        backend.create_wallet(&mnemonic).await.unwrap();
+        assert!(backend.get_balance().is_ok());
+    }
+
+    #[tokio::test]
+    async fn dispatch_multiple_sends_update_state() {
+        let backend = mock_backend_with_wallet(Network::Testnet, 1_000_000);
+        backend.load_wallet().await.unwrap();
+
+        backend.send("Xaddr1", 100_000, 1000).await.unwrap();
+        backend.send("Xaddr2", 200_000, 1000).await.unwrap();
+
+        let balance = backend.get_balance().unwrap();
+        assert_eq!(balance.spendable(), 700_000);
+
+        let txs = backend.get_transactions().unwrap();
+        assert_eq!(txs.len(), 2);
+    }
 }

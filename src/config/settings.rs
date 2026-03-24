@@ -386,4 +386,118 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
+
+    #[test]
+    fn ensure_dirs_with_default_wallet_dir() {
+        let tmp = std::env::temp_dir().join("dash-spv-ui-test-ensure-dirs-default");
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        let config = AppConfig {
+            data_dir: tmp.join("data"),
+            wallet_dir: None,
+            ..Default::default()
+        };
+        config.ensure_dirs().unwrap();
+
+        assert!(config.data_dir.exists());
+        assert!(tmp.join("data").join("wallets").exists());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn save_writes_valid_toml() {
+        let tmp = std::env::temp_dir().join("dash-spv-ui-test-save");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let config = AppConfig {
+            network: Network::Regtest,
+            data_dir: PathBuf::from("/tmp/data"),
+            wallet_dir: Some(PathBuf::from("/tmp/wallets")),
+            dev_mode: true,
+            log_level: "debug".to_string(),
+            window_width: 800,
+            window_height: 600,
+            ..Default::default()
+        };
+
+        let path = tmp.join("config.toml");
+        let contents = toml::to_string_pretty(&config).unwrap();
+        std::fs::write(&path, &contents).unwrap();
+
+        let restored: AppConfig = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(restored.network, Network::Regtest);
+        assert!(restored.dev_mode);
+        assert_eq!(restored.log_level, "debug");
+        assert_eq!(restored.window_width, 800);
+        assert_eq!(restored.window_height, 600);
+        assert_eq!(restored.wallet_dir, Some(PathBuf::from("/tmp/wallets")));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn config_error_implements_std_error() {
+        let io_err = ConfigError::Io(io::Error::new(io::ErrorKind::PermissionDenied, "denied"));
+        let std_err: &dyn std::error::Error = &io_err;
+        assert!(std_err.source().is_none());
+
+        let parse_err = ConfigError::Parse("bad".to_string());
+        let std_err: &dyn std::error::Error = &parse_err;
+        assert!(std_err.source().is_none());
+    }
+
+    #[test]
+    fn config_error_debug() {
+        let io_err = ConfigError::Io(io::Error::new(io::ErrorKind::NotFound, "missing"));
+        let debug = format!("{io_err:?}");
+        assert!(debug.contains("Io"));
+
+        let parse_err = ConfigError::Parse("invalid".to_string());
+        let debug = format!("{parse_err:?}");
+        assert!(debug.contains("Parse"));
+        assert!(debug.contains("invalid"));
+    }
+
+    #[test]
+    fn default_config_backend_and_peers() {
+        let config = AppConfig::default();
+        assert!(!config.mock_mode);
+        assert_eq!(config.backend, "native");
+        assert!(config.peers.is_empty());
+    }
+
+    #[test]
+    fn all_networks_serialize_distinct() {
+        let networks = [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ];
+        let mut serialized = std::collections::HashSet::new();
+        for network in &networks {
+            let config = AppConfig {
+                network: *network,
+                ..Default::default()
+            };
+            let toml_str = toml::to_string_pretty(&config).unwrap();
+            assert!(
+                serialized.insert(toml_str),
+                "duplicate serialization for {network:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn devnet_roundtrip() {
+        let config = AppConfig {
+            network: Network::Devnet,
+            ..Default::default()
+        };
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let restored: AppConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(restored.network, Network::Devnet);
+    }
 }
