@@ -70,7 +70,7 @@ impl BackendTestContext {
 
 impl Drop for BackendTestContext {
     fn drop(&mut self) {
-        retain_test_dir(self.storage_dir.path(), "wallet");
+        retain_test_dir(self.storage_dir.path(), "wallets");
     }
 }
 
