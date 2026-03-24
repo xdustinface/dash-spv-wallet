@@ -5,6 +5,12 @@ on:
     branches: [main, dev]
   pull_request:
 
+# Keep these defaults in sync with contrib/setup-dashd.py
+env:
+  DASHVERSION: "23.1.0"
+  TEST_DATA_REPO: "dashpay/regtest-blockchain"
+  TEST_DATA_VERSION: "v0.0.3"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -62,9 +68,31 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libudev-dev libxdo-dev
       - run: npm install
+
+      - name: Cache dashd and test data
+        uses: actions/cache@v4
+        with:
+          path: .rust-dashcore-test
+          key: rust-dashcore-test-${{ matrix.os }}-${{ env.DASHVERSION }}-${{ env.TEST_DATA_REPO }}-${{ env.TEST_DATA_VERSION }}
+
+      - name: Setup dashd for integration tests
+        env:
+          CACHE_DIR: ${{ github.workspace }}/.rust-dashcore-test
+        shell: bash
+        run: python contrib/setup-dashd.py >> "$GITHUB_ENV"
+
       - run: cargo test --all-features
         env:
-          SKIP_DASHD_TESTS: 1
+          DASHD_TEST_RETAIN_DIR: ${{ runner.temp }}/dashd-test-logs
+
+      - name: Upload failed dashd test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashd-test-logs-test-${{ matrix.os }}
+          path: ${{ runner.temp }}/dashd-test-logs/
+          retention-days: 7
+          if-no-files-found: ignore
 
   build:
     name: Build
@@ -104,10 +132,32 @@ jobs:
       - name: Install Linux dependencies
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libudev-dev libxdo-dev
       - run: npm install
+
+      - name: Cache dashd and test data
+        uses: actions/cache@v4
+        with:
+          path: .rust-dashcore-test
+          key: rust-dashcore-test-ubuntu-latest-${{ env.DASHVERSION }}-${{ env.TEST_DATA_REPO }}-${{ env.TEST_DATA_VERSION }}
+
+      - name: Setup dashd for integration tests
+        env:
+          CACHE_DIR: ${{ github.workspace }}/.rust-dashcore-test
+        shell: bash
+        run: python contrib/setup-dashd.py >> "$GITHUB_ENV"
+
       - name: Generate coverage
         run: cargo llvm-cov --all-features --lcov --output-path lcov.info
         env:
-          SKIP_DASHD_TESTS: 1
+          DASHD_TEST_RETAIN_DIR: ${{ runner.temp }}/dashd-test-logs
+
+      - name: Upload failed dashd test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashd-test-logs-coverage
+          path: ${{ runner.temp }}/dashd-test-logs/
+          retention-days: 7
+          if-no-files-found: ignore
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
