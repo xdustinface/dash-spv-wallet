@@ -5,6 +5,21 @@ use crate::backend::r#trait::SpvBackend;
 use crate::router::Route;
 use crate::state::app_state::AppState;
 
+/// Count the number of whitespace-separated words in a mnemonic input.
+fn mnemonic_word_count(input: &str) -> usize {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        0
+    } else {
+        trimmed.split_whitespace().count()
+    }
+}
+
+/// Check whether a word count is valid for a BIP-39 mnemonic (12 or 24 words).
+fn is_valid_mnemonic_word_count(count: usize) -> bool {
+    count == 12 || count == 24
+}
+
 #[component]
 pub fn WalletImport() -> Element {
     let mut app_state = use_context::<Signal<AppState>>();
@@ -15,17 +30,8 @@ pub fn WalletImport() -> Element {
     let mut error_message = use_signal(|| None::<String>);
     let mut is_importing = use_signal(|| false);
 
-    let word_count = {
-        let input = mnemonic_input.read();
-        let trimmed = input.trim();
-        if trimmed.is_empty() {
-            0
-        } else {
-            trimmed.split_whitespace().count()
-        }
-    };
-
-    let is_valid_count = word_count == 12 || word_count == 24;
+    let word_count = mnemonic_word_count(&mnemonic_input.read());
+    let is_valid_count = is_valid_mnemonic_word_count(word_count);
 
     let import_wallet = move |_| async move {
         if *is_importing.read() {
@@ -103,5 +109,57 @@ pub fn WalletImport() -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- mnemonic_word_count --
+
+    #[test]
+    fn mnemonic_word_count_empty() {
+        assert_eq!(mnemonic_word_count(""), 0);
+    }
+
+    #[test]
+    fn mnemonic_word_count_whitespace_only() {
+        assert_eq!(mnemonic_word_count("   \t  \n  "), 0);
+    }
+
+    #[test]
+    fn mnemonic_word_count_twelve_words() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        assert_eq!(mnemonic_word_count(phrase), 12);
+    }
+
+    #[test]
+    fn mnemonic_word_count_extra_spaces() {
+        let phrase = "  word1  word2   word3  ";
+        assert_eq!(mnemonic_word_count(phrase), 3);
+    }
+
+    #[test]
+    fn mnemonic_word_count_single_word() {
+        assert_eq!(mnemonic_word_count("abandon"), 1);
+    }
+
+    // -- is_valid_mnemonic_word_count --
+
+    #[test]
+    fn valid_mnemonic_word_counts() {
+        assert!(is_valid_mnemonic_word_count(12));
+        assert!(is_valid_mnemonic_word_count(24));
+    }
+
+    #[test]
+    fn invalid_mnemonic_word_counts() {
+        assert!(!is_valid_mnemonic_word_count(0));
+        assert!(!is_valid_mnemonic_word_count(1));
+        assert!(!is_valid_mnemonic_word_count(11));
+        assert!(!is_valid_mnemonic_word_count(13));
+        assert!(!is_valid_mnemonic_word_count(23));
+        assert!(!is_valid_mnemonic_word_count(25));
     }
 }
