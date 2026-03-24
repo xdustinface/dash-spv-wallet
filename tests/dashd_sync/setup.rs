@@ -1,4 +1,4 @@
-use dash_spv::test_utils::{DashdTestContext, TestChain};
+use dash_spv::test_utils::{DashdTestContext, TestChain, retain_test_dir};
 use dash_spv_wallet::backend::events::SpvEvent;
 use dash_spv_wallet::config::AppConfig;
 use dashcore::Network;
@@ -65,6 +65,12 @@ impl BackendTestContext {
             peers: vec![self.dashd.addr.to_string()],
             ..Default::default()
         }
+    }
+}
+
+impl Drop for BackendTestContext {
+    fn drop(&mut self) {
+        retain_test_dir(self.storage_dir.path(), "wallets");
     }
 }
 
