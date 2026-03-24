@@ -136,7 +136,6 @@ async fn native_full_sync_with_wallet() {
     assert!(!backend.is_running());
 }
 
-#[ignore] // TODO: fix SIGSEGV, see #78
 #[tokio::test]
 async fn native_send_transaction() {
     let ctx = match BackendTestContext::new(TestChain::Full).await {
@@ -280,7 +279,6 @@ async fn native_send_transaction() {
     backend.stop().await.unwrap();
 }
 
-#[ignore] // TODO: fix SIGSEGV, see #78
 #[tokio::test]
 async fn native_transaction_status_lifecycle() {
     let ctx = match BackendTestContext::new(TestChain::Full).await {
