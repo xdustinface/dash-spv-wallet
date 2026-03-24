@@ -13,8 +13,8 @@ pub struct BackendTestContext {
 impl BackendTestContext {
     /// Create a new test context for the given chain variant.
     ///
-    /// Returns `None` if `SKIP_DASHD_TESTS` is set. Panics if `DASHD_PATH`
-    /// or `DASHD_TEST_DATA` are missing or if dashd fails to start.
+    /// Returns `None` if `SKIP_DASHD_TESTS` is set or if dashd fails to
+    /// start. Panics if `DASHD_PATH` or `DASHD_TEST_DATA` are missing.
     pub async fn new(chain: TestChain) -> Option<Self> {
         if std::env::var("SKIP_DASHD_TESTS").is_ok() {
             eprintln!("Skipping: SKIP_DASHD_TESTS is set");
