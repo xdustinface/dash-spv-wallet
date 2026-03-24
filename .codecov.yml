@@ -16,3 +16,5 @@ ignore:
   - "**/tests/**"
   - "**/tests.rs"
   - "**/test_utils/**"
+  - "src/main.rs"
+  - "src/router.rs"

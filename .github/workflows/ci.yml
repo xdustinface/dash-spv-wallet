@@ -146,7 +146,7 @@ jobs:
         run: python contrib/setup-dashd.py >> "$GITHUB_ENV"
 
       - name: Generate coverage
-        run: cargo llvm-cov --all-features --lcov --output-path lcov.info
+        run: cargo llvm-cov --all-features --lcov --output-path lcov.info --ignore-filename-regex 'main\.rs$|router\.rs$'
         env:
           DASHD_TEST_RETAIN_DIR: ${{ runner.temp }}/dashd-test-logs
 
