@@ -407,10 +407,6 @@ mod tests {
 
     #[test]
     fn save_writes_valid_toml() {
-        let tmp = std::env::temp_dir().join("dash-spv-ui-test-save");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-
         let config = AppConfig {
             network: Network::Regtest,
             data_dir: PathBuf::from("/tmp/data"),
@@ -422,10 +418,9 @@ mod tests {
             ..Default::default()
         };
 
-        let path = tmp.join("config.toml");
-        let contents = toml::to_string_pretty(&config).unwrap();
-        std::fs::write(&path, &contents).unwrap();
+        config.save().unwrap();
 
+        let path = paths::config_file_path();
         let restored: AppConfig = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(restored.network, Network::Regtest);
         assert!(restored.dev_mode);
@@ -433,8 +428,6 @@ mod tests {
         assert_eq!(restored.window_width, 800);
         assert_eq!(restored.window_height, 600);
         assert_eq!(restored.wallet_dir, Some(PathBuf::from("/tmp/wallets")));
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
