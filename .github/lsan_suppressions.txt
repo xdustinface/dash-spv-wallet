@@ -1,0 +1,3 @@
+# Dioxus VirtualDom does not fully clean up signal allocations on drop.
+# Tracked in #84 for upstream investigation.
+leak:dioxus_core
