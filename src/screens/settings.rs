@@ -45,7 +45,7 @@ pub fn Settings() -> Element {
 
     let mut save_status = use_signal(|| None::<Result<(), String>>);
     let mut cache_state = use_signal(|| ClearCacheState::Idle);
-    let cache_size = use_signal(|| spv_backend.read().cache_size().unwrap_or(0));
+    let mut cache_size = use_signal(|| spv_backend.read().cache_size().unwrap_or(0));
     let mut cache_error = use_signal(|| None::<String>);
 
     let mut data_dir = use_signal(|| config.data_dir.display().to_string());
@@ -254,6 +254,7 @@ pub fn Settings() -> Element {
                                         cache_error.set(None);
                                         match spv_backend.read().clear_cache().await {
                                             Ok(()) => {
+                                                cache_size.set(0);
                                                 cache_state.set(ClearCacheState::Done);
                                             }
                                             Err(e) => {

@@ -867,18 +867,21 @@ impl SpvBackend for FfiBackend {
             .file_name()
             .map(|n| n.to_string_lossy().to_string());
 
-        if let Ok(entries) = std::fs::read_dir(data_dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if Some(&name) == wallet_dir_name.as_ref() || name == "config.toml" {
-                    continue;
+        let entries = std::fs::read_dir(data_dir)
+            .map_err(|e| BackendError::Storage(format!("failed to read data dir: {e}")))?;
+
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if Some(&name) == wallet_dir_name.as_ref() || name == "config.toml" {
+                continue;
+            }
+            let path = entry.path();
+            if path.is_dir() {
+                if let Err(e) = std::fs::remove_dir_all(&path) {
+                    tracing::warn!("Failed to remove cache dir {}: {e}", path.display());
                 }
-                let path = entry.path();
-                if path.is_dir() {
-                    let _ = std::fs::remove_dir_all(&path);
-                } else {
-                    let _ = std::fs::remove_file(&path);
-                }
+            } else if let Err(e) = std::fs::remove_file(&path) {
+                tracing::warn!("Failed to remove cache file {}: {e}", path.display());
             }
         }
 
