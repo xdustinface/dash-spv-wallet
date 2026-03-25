@@ -1,5 +1,7 @@
 use dioxus::prelude::*;
 
+use crate::backend::dispatch::Backend;
+use crate::backend::r#trait::SpvBackend;
 use crate::config::AppConfig;
 
 const NETWORKS: &[(&str, dashcore::Network)] = &[
@@ -11,12 +13,40 @@ const NETWORKS: &[(&str, dashcore::Network)] = &[
 
 const LOG_LEVELS: &[&str] = &["error", "warn", "info", "debug", "trace"];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClearCacheState {
+    Idle,
+    Confirming,
+    Clearing,
+    Done,
+}
+
+fn format_bytes(bytes: u64) -> String {
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let kb = bytes as f64 / 1024.0;
+    if kb < 1024.0 {
+        return format!("{kb:.1} KB");
+    }
+    let mb = kb / 1024.0;
+    if mb < 1024.0 {
+        return format!("{mb:.1} MB");
+    }
+    let gb = mb / 1024.0;
+    format!("{gb:.2} GB")
+}
+
 #[component]
 pub fn Settings() -> Element {
     let mut config_signal = use_context::<Signal<AppConfig>>();
+    let spv_backend = use_context::<Signal<Backend>>();
     let config = config_signal.read().clone();
 
     let mut save_status = use_signal(|| None::<Result<(), String>>);
+    let mut cache_state = use_signal(|| ClearCacheState::Idle);
+    let mut cache_size = use_signal(|| spv_backend.read().cache_size().unwrap_or(0));
+    let mut cache_error = use_signal(|| None::<String>);
 
     let mut data_dir = use_signal(|| config.data_dir.display().to_string());
     let mut wallet_dir = use_signal(|| {
@@ -192,6 +222,77 @@ pub fn Settings() -> Element {
                     }
                 }
 
+                // Clear Cache
+                div {
+                    label {
+                        class: "block text-muted text-sm uppercase tracking-wide mb-2",
+                        "Cache"
+                    }
+                    p {
+                        class: "text-foreground text-sm mb-2",
+                        "SPV data size: {format_bytes(cache_size())}"
+                    }
+                    match cache_state() {
+                        ClearCacheState::Idle => rsx! {
+                            button {
+                                class: "w-full bg-error hover:opacity-80 text-foreground font-medium py-2 px-4 rounded-lg transition-colors",
+                                onclick: move |_| cache_state.set(ClearCacheState::Confirming),
+                                "Clear Cache"
+                            }
+                        },
+                        ClearCacheState::Confirming => rsx! {
+                            p {
+                                class: "text-error text-sm mb-2",
+                                "This will delete all synced data and re-sync from scratch."
+                            }
+                            div {
+                                class: "flex gap-2",
+                                button {
+                                    class: "flex-1 bg-error hover:opacity-80 text-foreground font-medium py-2 px-4 rounded-lg transition-colors",
+                                    onclick: move |_| async move {
+                                        cache_state.set(ClearCacheState::Clearing);
+                                        cache_error.set(None);
+                                        match spv_backend.read().clear_cache().await {
+                                            Ok(()) => {
+                                                cache_size.set(0);
+                                                cache_state.set(ClearCacheState::Done);
+                                            }
+                                            Err(e) => {
+                                                cache_error.set(Some(e.to_string()));
+                                                cache_state.set(ClearCacheState::Idle);
+                                            }
+                                        }
+                                    },
+                                    "Confirm"
+                                }
+                                button {
+                                    class: "flex-1 bg-surface-alt hover:bg-hover text-muted font-medium py-2 px-4 rounded-lg transition-colors",
+                                    onclick: move |_| cache_state.set(ClearCacheState::Idle),
+                                    "Cancel"
+                                }
+                            }
+                        },
+                        ClearCacheState::Clearing => rsx! {
+                            p {
+                                class: "text-muted text-sm",
+                                "Clearing cache..."
+                            }
+                        },
+                        ClearCacheState::Done => rsx! {
+                            p {
+                                class: "text-success text-sm",
+                                "Cache cleared. Restart to re-sync."
+                            }
+                        },
+                    }
+                    if let Some(err) = cache_error() {
+                        p {
+                            class: "text-error text-sm mt-1",
+                            "Failed to clear cache: {err}"
+                        }
+                    }
+                }
+
                 // Save button
                 button {
                     class: "w-full bg-dash hover:bg-dash-hover text-foreground font-medium py-2 px-4 rounded-lg transition-colors",
@@ -217,5 +318,26 @@ pub fn Settings() -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_bytes_thresholds() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(512), "512 B");
+        assert_eq!(format_bytes(1023), "1023 B");
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(1536), "1.5 KB");
+        assert_eq!(format_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(format_bytes(1024 * 1024 * 500), "500.0 MB");
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.00 GB");
+        assert_eq!(
+            format_bytes(1024 * 1024 * 1024 * 2 + 1024 * 1024 * 512),
+            "2.50 GB"
+        );
     }
 }

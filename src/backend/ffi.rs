@@ -850,6 +850,49 @@ impl SpvBackend for FfiBackend {
         Ok(txid.to_byte_array())
     }
 
+    fn cache_size(&self) -> BackendResult<u64> {
+        Ok(super::dir_size_excluding(
+            &self.config.data_dir,
+            Some(&self.config.wallet_dir()),
+        ))
+    }
+
+    async fn clear_cache(&self) -> BackendResult<()> {
+        if self.is_running() {
+            self.stop().await?;
+        }
+
+        let data_dir = &self.config.data_dir;
+        let wallet_dir = self.config.wallet_dir();
+
+        let entries = std::fs::read_dir(data_dir)
+            .map_err(|e| BackendError::Storage(format!("failed to read data dir: {e}")))?;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+
+            // Skip if this path is or contains the wallet directory
+            if wallet_dir.starts_with(&path) || path.starts_with(&wallet_dir) {
+                continue;
+            }
+
+            // Skip config file
+            if path.file_name().is_some_and(|n| n == "config.toml") {
+                continue;
+            }
+
+            if path.is_dir() {
+                if let Err(e) = std::fs::remove_dir_all(&path) {
+                    tracing::warn!("Failed to remove cache dir {}: {e}", path.display());
+                }
+            } else if let Err(e) = std::fs::remove_file(&path) {
+                tracing::warn!("Failed to remove cache file {}: {e}", path.display());
+            }
+        }
+
+        Ok(())
+    }
+
     fn subscribe_events(&self) -> EventReceiver {
         self.event_tx.subscribe()
     }

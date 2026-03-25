@@ -144,6 +144,24 @@ impl SpvBackend for Backend {
         }
     }
 
+    fn cache_size(&self) -> BackendResult<u64> {
+        match self {
+            Self::Native(b) => b.cache_size(),
+            Self::Mock(b) => b.cache_size(),
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.cache_size(),
+        }
+    }
+
+    async fn clear_cache(&self) -> BackendResult<()> {
+        match self {
+            Self::Native(b) => b.clear_cache().await,
+            Self::Mock(b) => b.clear_cache().await,
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.clear_cache().await,
+        }
+    }
+
     fn subscribe_events(&self) -> EventReceiver {
         match self {
             Self::Native(b) => b.subscribe_events(),
@@ -397,5 +415,17 @@ mod tests {
 
         let txs = backend.get_transactions().unwrap();
         assert_eq!(txs.len(), 2);
+    }
+
+    #[test]
+    fn dispatch_cache_size() {
+        let backend = mock_backend(Network::Testnet);
+        assert_eq!(backend.cache_size().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn dispatch_clear_cache() {
+        let backend = mock_backend(Network::Testnet);
+        backend.clear_cache().await.unwrap();
     }
 }

@@ -257,6 +257,14 @@ impl SpvBackend for MockBackend {
         Ok(txid_bytes)
     }
 
+    fn cache_size(&self) -> BackendResult<u64> {
+        Ok(0)
+    }
+
+    async fn clear_cache(&self) -> BackendResult<()> {
+        Ok(())
+    }
+
     fn subscribe_events(&self) -> EventReceiver {
         self.event_tx.subscribe()
     }
@@ -601,5 +609,17 @@ mod tests {
         let addr1 = backend.get_receive_address().unwrap();
         let addr2 = backend.get_receive_address().unwrap();
         assert_ne!(addr1, addr2);
+    }
+
+    #[test]
+    fn cache_size_returns_zero() {
+        let backend = MockBackend::builder(Network::Testnet).build();
+        assert_eq!(backend.cache_size().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn clear_cache_is_noop() {
+        let backend = MockBackend::builder(Network::Testnet).build();
+        backend.clear_cache().await.unwrap();
     }
 }
