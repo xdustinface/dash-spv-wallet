@@ -416,4 +416,16 @@ mod tests {
         let txs = backend.get_transactions().unwrap();
         assert_eq!(txs.len(), 2);
     }
+
+    #[test]
+    fn dispatch_cache_size() {
+        let backend = mock_backend(Network::Testnet);
+        assert_eq!(backend.cache_size().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn dispatch_clear_cache() {
+        let backend = mock_backend(Network::Testnet);
+        backend.clear_cache().await.unwrap();
+    }
 }

@@ -610,4 +610,16 @@ mod tests {
         let addr2 = backend.get_receive_address().unwrap();
         assert_ne!(addr1, addr2);
     }
+
+    #[test]
+    fn cache_size_returns_zero() {
+        let backend = MockBackend::builder(Network::Testnet).build();
+        assert_eq!(backend.cache_size().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn clear_cache_is_noop() {
+        let backend = MockBackend::builder(Network::Testnet).build();
+        backend.clear_cache().await.unwrap();
+    }
 }

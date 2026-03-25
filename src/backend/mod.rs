@@ -30,3 +30,35 @@ fn dir_size_excluding(dir: &Path, exclude: &Path) -> std::io::Result<u64> {
     }
     Ok(total)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dir_size_excluding_counts_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let nonexistent = tmp.path().join("__nonexistent__");
+        std::fs::write(tmp.path().join("a.dat"), vec![0u8; 100]).unwrap();
+        std::fs::write(tmp.path().join("b.dat"), vec![0u8; 200]).unwrap();
+        assert_eq!(dir_size_excluding(tmp.path(), &nonexistent).unwrap(), 300);
+    }
+
+    #[test]
+    fn dir_size_excluding_skips_excluded_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("cache")).unwrap();
+        std::fs::write(tmp.path().join("cache/data.dat"), vec![0u8; 500]).unwrap();
+        std::fs::create_dir(tmp.path().join("wallets")).unwrap();
+        std::fs::write(tmp.path().join("wallets/wallet.mnemonic"), b"secret").unwrap();
+        let size = dir_size_excluding(tmp.path(), tmp.path().join("wallets").as_path()).unwrap();
+        assert_eq!(size, 500);
+    }
+
+    #[test]
+    fn dir_size_excluding_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let nonexistent = tmp.path().join("__nonexistent__");
+        assert_eq!(dir_size_excluding(tmp.path(), &nonexistent).unwrap(), 0);
+    }
+}
