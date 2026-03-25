@@ -26,9 +26,9 @@ pub struct AppConfig {
     /// Backend selection (CLI-only, not persisted). "native" or "ffi".
     #[serde(skip)]
     pub backend: String,
-    /// Explicit peer addresses to connect to (CLI/test-only, not persisted).
+    /// Explicit peer addresses to connect to.
     /// When non-empty, the SPV client connects exclusively to these peers.
-    #[serde(skip)]
+    #[serde(default)]
     pub peers: Vec<String>,
 }
 
@@ -90,6 +90,9 @@ impl AppConfig {
         }
         if let Some(backend) = cli.backend {
             config.backend = backend;
+        }
+        if !cli.peer.is_empty() {
+            config.peers = cli.peer;
         }
 
         // Expand tilde in paths.
@@ -153,6 +156,10 @@ struct Cli {
     /// Select backend ("native" or "ffi"). Requires --dev and the ffi feature.
     #[arg(long)]
     backend: Option<String>,
+
+    /// Explicit peer addresses (e.g., --peer 1.2.3.4:19999)
+    #[arg(long)]
+    peer: Vec<String>,
 }
 
 /// Errors that can occur during configuration loading or saving.
@@ -326,7 +333,6 @@ mod tests {
         let config = AppConfig {
             mock_mode: true,
             backend: "ffi".to_string(),
-            peers: vec!["1.2.3.4:9999".to_string()],
             ..Default::default()
         };
 
@@ -335,7 +341,31 @@ mod tests {
 
         assert!(!restored.mock_mode);
         assert!(restored.backend.is_empty());
-        assert!(restored.peers.is_empty());
+    }
+
+    #[test]
+    fn peers_roundtrip_through_toml() {
+        let config = AppConfig {
+            peers: vec!["1.2.3.4:9999".to_string(), "5.6.7.8:19999".to_string()],
+            ..Default::default()
+        };
+
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let restored: AppConfig = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(restored.peers, config.peers);
+    }
+
+    #[test]
+    fn peers_default_empty_when_omitted_from_toml() {
+        let toml_str = r#"
+            network = "testnet"
+            data_dir = "/tmp"
+            dev_mode = false
+            log_level = "info"
+        "#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.peers.is_empty());
     }
 
     #[test]
