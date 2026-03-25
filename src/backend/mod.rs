@@ -19,7 +19,7 @@ fn dir_size_excluding(dir: &Path, exclude: &Path) -> std::io::Result<u64> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path == exclude {
+        if exclude.starts_with(&path) || path.starts_with(exclude) {
             continue;
         }
         if path.is_dir() {
@@ -52,6 +52,21 @@ mod tests {
         std::fs::create_dir(tmp.path().join("wallets")).unwrap();
         std::fs::write(tmp.path().join("wallets/wallet.mnemonic"), b"secret").unwrap();
         let size = dir_size_excluding(tmp.path(), tmp.path().join("wallets").as_path()).unwrap();
+        assert_eq!(size, 500);
+    }
+
+    #[test]
+    fn dir_size_excluding_skips_nested_excluded_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("cache")).unwrap();
+        std::fs::write(tmp.path().join("cache/data.dat"), vec![0u8; 500]).unwrap();
+        let user_dir = tmp.path().join("user");
+        std::fs::create_dir(&user_dir).unwrap();
+        std::fs::write(user_dir.join("other.dat"), vec![0u8; 100]).unwrap();
+        std::fs::create_dir(user_dir.join("wallets")).unwrap();
+        std::fs::write(user_dir.join("wallets/wallet.mnemonic"), b"secret").unwrap();
+        // Excluding a nested path should skip the entire parent entry
+        let size = dir_size_excluding(tmp.path(), &tmp.path().join("user/wallets")).unwrap();
         assert_eq!(size, 500);
     }
 

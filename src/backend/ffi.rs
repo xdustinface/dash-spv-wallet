@@ -861,21 +861,24 @@ impl SpvBackend for FfiBackend {
         }
 
         let data_dir = &self.config.data_dir;
-        let wallet_dir_name = self
-            .config
-            .wallet_dir()
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string());
+        let wallet_dir = self.config.wallet_dir();
 
         let entries = std::fs::read_dir(data_dir)
             .map_err(|e| BackendError::Storage(format!("failed to read data dir: {e}")))?;
 
         for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if Some(&name) == wallet_dir_name.as_ref() || name == "config.toml" {
+            let path = entry.path();
+
+            // Skip if this path is or contains the wallet directory
+            if wallet_dir.starts_with(&path) || path.starts_with(&wallet_dir) {
                 continue;
             }
-            let path = entry.path();
+
+            // Skip config file
+            if path.file_name().is_some_and(|n| n == "config.toml") {
+                continue;
+            }
+
             if path.is_dir() {
                 if let Err(e) = std::fs::remove_dir_all(&path) {
                     tracing::warn!("Failed to remove cache dir {}: {e}", path.display());
