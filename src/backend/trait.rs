@@ -60,6 +60,15 @@ pub trait SpvBackend: Send + Sync + 'static {
         fee_rate: u32,
     ) -> impl Future<Output = BackendResult<[u8; 32]>> + Send;
 
+    // -- Cache --
+
+    /// Returns the total size in bytes of cached SPV data (headers, filters, blocks, etc.).
+    fn cache_size(&self) -> BackendResult<u64>;
+
+    /// Stops the client, deletes all cached SPV data, and prepares for a fresh sync.
+    /// Preserves wallet data (mnemonic) and configuration.
+    fn clear_cache(&self) -> impl Future<Output = BackendResult<()>> + Send;
+
     // -- Events --
 
     /// Subscribe to backend events. Multiple subscribers are supported.

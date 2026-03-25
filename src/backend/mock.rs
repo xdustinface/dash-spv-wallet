@@ -257,6 +257,14 @@ impl SpvBackend for MockBackend {
         Ok(txid_bytes)
     }
 
+    fn cache_size(&self) -> BackendResult<u64> {
+        Ok(0)
+    }
+
+    async fn clear_cache(&self) -> BackendResult<()> {
+        Ok(())
+    }
+
     fn subscribe_events(&self) -> EventReceiver {
         self.event_tx.subscribe()
     }

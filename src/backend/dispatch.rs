@@ -144,6 +144,24 @@ impl SpvBackend for Backend {
         }
     }
 
+    fn cache_size(&self) -> BackendResult<u64> {
+        match self {
+            Self::Native(b) => b.cache_size(),
+            Self::Mock(b) => b.cache_size(),
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.cache_size(),
+        }
+    }
+
+    async fn clear_cache(&self) -> BackendResult<()> {
+        match self {
+            Self::Native(b) => b.clear_cache().await,
+            Self::Mock(b) => b.clear_cache().await,
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.clear_cache().await,
+        }
+    }
+
     fn subscribe_events(&self) -> EventReceiver {
         match self {
             Self::Native(b) => b.subscribe_events(),

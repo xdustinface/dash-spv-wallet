@@ -850,6 +850,41 @@ impl SpvBackend for FfiBackend {
         Ok(txid.to_byte_array())
     }
 
+    fn cache_size(&self) -> BackendResult<u64> {
+        super::dir_size_excluding(&self.config.data_dir, &self.config.wallet_dir())
+            .map_err(|e| BackendError::Storage(e.to_string()))
+    }
+
+    async fn clear_cache(&self) -> BackendResult<()> {
+        if self.is_running() {
+            self.stop().await?;
+        }
+
+        let data_dir = &self.config.data_dir;
+        let wallet_dir_name = self
+            .config
+            .wallet_dir()
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string());
+
+        if let Ok(entries) = std::fs::read_dir(data_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if Some(&name) == wallet_dir_name.as_ref() || name == "config.toml" {
+                    continue;
+                }
+                let path = entry.path();
+                if path.is_dir() {
+                    let _ = std::fs::remove_dir_all(&path);
+                } else {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn subscribe_events(&self) -> EventReceiver {
         self.event_tx.subscribe()
     }
