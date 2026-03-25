@@ -19,7 +19,9 @@ fn dir_size_excluding(dir: &Path, exclude: Option<&Path>) -> u64 {
     for entry in entries.flatten() {
         let path = entry.path();
         // Skip the exact excluded path and anything inside it
-        if let Some(exc) = exclude && (path == exc || path.starts_with(exc)) {
+        if let Some(exc) = exclude
+            && (path == exc || path.starts_with(exc))
+        {
             continue;
         }
         if path.is_dir() {
