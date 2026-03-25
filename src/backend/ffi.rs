@@ -851,8 +851,10 @@ impl SpvBackend for FfiBackend {
     }
 
     fn cache_size(&self) -> BackendResult<u64> {
-        super::dir_size_excluding(&self.config.data_dir, &self.config.wallet_dir())
-            .map_err(|e| BackendError::Storage(e.to_string()))
+        Ok(super::dir_size_excluding(
+            &self.config.data_dir,
+            Some(&self.config.wallet_dir()),
+        ))
     }
 
     async fn clear_cache(&self) -> BackendResult<()> {
