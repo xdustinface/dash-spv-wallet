@@ -18,7 +18,6 @@ enum ClearCacheState {
     Idle,
     Confirming,
     Clearing,
-    Done,
 }
 
 fn format_bytes(bytes: u64) -> String {
@@ -45,7 +44,7 @@ pub fn Settings() -> Element {
 
     let mut save_status = use_signal(|| None::<Result<(), String>>);
     let mut cache_state = use_signal(|| ClearCacheState::Idle);
-    let mut cache_size = use_signal(|| spv_backend.read().cache_size().unwrap_or(0));
+    let cache_size = use_signal(|| spv_backend.read().cache_size().unwrap_or(0));
     let mut cache_error = use_signal(|| None::<String>);
 
     let mut data_dir = use_signal(|| config.data_dir.display().to_string());
@@ -243,7 +242,7 @@ pub fn Settings() -> Element {
                         ClearCacheState::Confirming => rsx! {
                             p {
                                 class: "text-error text-sm mb-2",
-                                "This will delete all synced data and re-sync from scratch."
+                                "This will shut down the wallet and clear all sync data. The app will close and re-sync from scratch on next launch. Your wallet and settings will be preserved."
                             }
                             div {
                                 class: "flex gap-2",
@@ -254,8 +253,7 @@ pub fn Settings() -> Element {
                                         cache_error.set(None);
                                         match spv_backend.read().clear_cache().await {
                                             Ok(()) => {
-                                                cache_size.set(0);
-                                                cache_state.set(ClearCacheState::Done);
+                                                std::process::exit(0);
                                             }
                                             Err(e) => {
                                                 cache_error.set(Some(e.to_string()));
@@ -276,12 +274,6 @@ pub fn Settings() -> Element {
                             p {
                                 class: "text-muted text-sm",
                                 "Clearing cache..."
-                            }
-                        },
-                        ClearCacheState::Done => rsx! {
-                            p {
-                                class: "text-success text-sm",
-                                "Cache cleared. Restart to re-sync."
                             }
                         },
                     }
