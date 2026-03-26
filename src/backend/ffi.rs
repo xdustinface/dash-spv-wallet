@@ -37,15 +37,24 @@ use dash_spv_ffi::types::{
 use dashcore::hashes::Hash;
 use key_wallet::DerivationPathBuilder;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
+use key_wallet::manager::WalletManager;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
+use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
+use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet_ffi::error::FFIError as WalletFFIError;
+use key_wallet_ffi::managed_account::{
+    FFITransactionRecord, managed_core_account_free, managed_core_account_free_transactions,
+    managed_core_account_get_transactions, managed_wallet_get_account,
+};
 use key_wallet_ffi::managed_wallet::{
     managed_wallet_get_next_bip44_change_address, managed_wallet_info_free,
 };
 use key_wallet_ffi::mnemonic::{mnemonic_free, mnemonic_generate};
-use key_wallet_ffi::types::FFINetwork;
+use key_wallet_ffi::types::FFIAccountType;
+use key_wallet_ffi::types::{FFINetwork, FFITransactionContext};
 use key_wallet_ffi::utxo::{managed_wallet_get_utxos, utxo_array_free};
 use key_wallet_ffi::wallet::wallet_free_const;
 use key_wallet_ffi::wallet_manager::{
@@ -53,12 +62,13 @@ use key_wallet_ffi::wallet_manager::{
     wallet_manager_get_managed_wallet_info, wallet_manager_get_wallet,
     wallet_manager_get_wallet_balance, wallet_manager_get_wallet_ids,
 };
-use key_wallet_manager::{FeeRate, SelectionStrategy, TransactionBuilder, WalletManager};
 
 use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent, event_channel};
 use super::r#trait::SpvBackend;
-use super::types::{Network, SyncProgress, TransactionInfo, WalletCoreBalance};
+use super::types::{
+    Network, SyncProgress, TransactionDirection, TransactionInfo, WalletCoreBalance,
+};
 use crate::config::AppConfig;
 
 /// Context passed as `user_data` to all FFI callbacks.
@@ -505,9 +515,143 @@ impl SpvBackend for FfiBackend {
     }
 
     fn get_transactions(&self) -> BackendResult<Vec<TransactionInfo>> {
-        Err(BackendError::Internal(
-            "transaction history not yet implemented via FFI".to_string(),
-        ))
+        let client_usize = *self.client_ptr.lock().unwrap() as usize;
+        if client_usize == 0 {
+            return Err(BackendError::NotRunning);
+        }
+
+        std::thread::spawn(move || {
+            let client_ptr = client_usize as *mut FFIDashSpvClient;
+
+            // Safety: client_ptr was cast from a valid pointer.
+            let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
+            if wm.is_null() {
+                return Err(BackendError::Internal(get_last_ffi_error()));
+            }
+            let wm_typed = wm as *const key_wallet_ffi::FFIWalletManager;
+
+            let mut wallet_ids_ptr: *mut u8 = std::ptr::null_mut();
+            let mut count: usize = 0;
+            let mut error = WalletFFIError::success();
+
+            let ok = unsafe {
+                wallet_manager_get_wallet_ids(wm_typed, &mut wallet_ids_ptr, &mut count, &mut error)
+            };
+
+            if !ok || count == 0 {
+                unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+                return Err(BackendError::NoWallet);
+            }
+
+            let mut wallet_id = [0u8; 32];
+            unsafe {
+                std::ptr::copy_nonoverlapping(wallet_ids_ptr, wallet_id.as_mut_ptr(), 32);
+                wallet_manager_free_wallet_ids(wallet_ids_ptr, count);
+            }
+
+            // Get BIP44 account (index 0) to access transaction records
+            let account_result = unsafe {
+                managed_wallet_get_account(
+                    wm_typed,
+                    wallet_id.as_ptr(),
+                    0,
+                    FFIAccountType::StandardBIP44,
+                )
+            };
+
+            if account_result.account.is_null() {
+                unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+                return Err(BackendError::Internal(
+                    "failed to get standard account".to_string(),
+                ));
+            }
+
+            let account_ptr = account_result.account;
+
+            let mut txs_ptr: *mut FFITransactionRecord = std::ptr::null_mut();
+            let mut tx_count: usize = 0;
+
+            // Safety: account_ptr is valid (returned by managed_wallet_get_account).
+            let ok = unsafe {
+                managed_core_account_get_transactions(account_ptr, &mut txs_ptr, &mut tx_count)
+            };
+
+            if !ok {
+                unsafe {
+                    managed_core_account_free(account_ptr);
+                    dash_spv_ffi_wallet_manager_free(wm);
+                }
+                return Err(BackendError::Internal(
+                    "failed to get transactions".to_string(),
+                ));
+            }
+
+            let mut transactions = Vec::with_capacity(tx_count);
+
+            if !txs_ptr.is_null() && tx_count > 0 {
+                // Safety: txs_ptr and tx_count were returned by
+                // managed_core_account_get_transactions.
+                let records = unsafe { std::slice::from_raw_parts(txs_ptr, tx_count) };
+
+                for record in records {
+                    let direction = if record.net_amount >= 0 {
+                        TransactionDirection::Received
+                    } else {
+                        TransactionDirection::Sent
+                    };
+
+                    let txid = dashcore::Txid::from_byte_array(record.txid);
+                    let height = if record.height > 0 {
+                        Some(record.height)
+                    } else {
+                        None
+                    };
+                    let block_hash = if record.block_hash != [0u8; 32] {
+                        Some(dashcore::BlockHash::from_byte_array(record.block_hash))
+                    } else {
+                        None
+                    };
+                    let fee = if record.fee > 0 {
+                        Some(record.fee)
+                    } else {
+                        None
+                    };
+
+                    transactions.push(TransactionInfo {
+                        txid,
+                        amount: record.net_amount,
+                        direction,
+                        timestamp: record.timestamp,
+                        height,
+                        fee,
+                        addresses: Vec::new(),
+                        block_hash,
+                        is_instant_send: false,
+                        is_chain_locked: false,
+                    });
+                }
+
+                // Safety: txs_ptr and tx_count were returned by
+                // managed_core_account_get_transactions.
+                unsafe { managed_core_account_free_transactions(txs_ptr, tx_count) };
+            }
+
+            unsafe {
+                managed_core_account_free(account_ptr);
+                dash_spv_ffi_wallet_manager_free(wm);
+            }
+
+            // Sort: unconfirmed first, then by timestamp descending
+            transactions.sort_by(|a, b| match (a.height.is_some(), b.height.is_some()) {
+                (false, true) => std::cmp::Ordering::Less,
+                (true, false) => std::cmp::Ordering::Greater,
+                _ => b.timestamp.cmp(&a.timestamp),
+            });
+
+            Ok(transactions)
+        })
+        .join()
+        .map_err(|_| BackendError::Internal("FFI thread panicked".into()))?
     }
 
     fn estimate_fee(&self, _address: &str, _amount: u64, fee_rate: u32) -> BackendResult<u64> {
@@ -1336,7 +1480,7 @@ extern "C" fn on_peers_updated(connected_count: u32, best_height: u32, user_data
 
 extern "C" fn on_transaction_received(
     _wallet_id: *const c_char,
-    _status: key_wallet_ffi::types::FFITransactionContext,
+    status: FFITransactionContext,
     _account_index: u32,
     txid: *const [u8; 32],
     amount: i64,
@@ -1367,6 +1511,8 @@ extern "C" fn on_transaction_received(
             .collect()
     };
 
+    let (is_instant_send, is_chain_locked) = ffi_transaction_context_flags(status);
+
     let _ = ctx.event_tx.send(SpvEvent::TransactionReceived {
         txid: txid_bytes,
         amount,
@@ -1374,8 +1520,8 @@ extern "C" fn on_transaction_received(
         height: None,
         timestamp: None,
         block_hash: None,
-        is_instant_send: false,
-        is_chain_locked: false,
+        is_instant_send,
+        is_chain_locked,
     });
 }
 
@@ -1430,4 +1576,13 @@ extern "C" fn on_client_error(error: *const c_char, user_data: *mut c_void) {
             .into_owned()
     };
     let _ = ctx.event_tx.send(SpvEvent::Error(msg));
+}
+
+/// Extract `(is_instant_send, is_chain_locked)` from an `FFITransactionContext`.
+fn ffi_transaction_context_flags(status: FFITransactionContext) -> (bool, bool) {
+    match status {
+        FFITransactionContext::InstantSend => (true, false),
+        FFITransactionContext::InChainLockedBlock => (false, true),
+        FFITransactionContext::Mempool | FFITransactionContext::InBlock => (false, false),
+    }
 }
