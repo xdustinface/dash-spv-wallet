@@ -18,8 +18,7 @@ path = "src/main.rs"
 [dependencies]
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", features = ["serde"] }
 dash-spv = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", features = ["manager"] }
 
 dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", optional = true }
 key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", optional = true }
@@ -48,7 +47,6 @@ tempfile = "3"
 dashcore = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
 dash-spv = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
 key-wallet = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
-key-wallet-manager = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
 dash-spv-ffi = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
 key-wallet-ffi = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
 

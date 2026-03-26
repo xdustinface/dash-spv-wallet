@@ -6,6 +6,7 @@ use std::sync::{Arc, RwLock};
 
 use std::path::PathBuf;
 
+use dash_spv::client::EventHandler;
 use dash_spv::network::NetworkEvent;
 use dash_spv::network::manager::PeerNetworkManager;
 use dash_spv::storage::DiskStorageManager;
@@ -13,18 +14,18 @@ use dash_spv::sync::SyncEvent;
 use dash_spv::{ClientConfig, DashSpvClient, MempoolStrategy};
 use dashcore::hashes::Hash;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
+use key_wallet::manager::{WalletEvent, WalletManager};
 use key_wallet::mnemonic::Language;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
+use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
+use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
+use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::{DerivationPathBuilder, Mnemonic};
-use key_wallet_manager::{
-    FeeRate, SelectionStrategy, TransactionBuilder, WalletEvent, WalletManager,
-};
-use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use super::error::{BackendError, BackendResult};
@@ -35,8 +36,47 @@ use super::types::{
 };
 use crate::config::AppConfig;
 
-type SpvClient =
-    DashSpvClient<WalletManager<ManagedWalletInfo>, PeerNetworkManager, DiskStorageManager>;
+type SpvClient = DashSpvClient<
+    WalletManager<ManagedWalletInfo>,
+    PeerNetworkManager,
+    DiskStorageManager,
+    NativeEventHandler,
+>;
+
+/// Implements `EventHandler` to bridge SPV client events into the UI event channel.
+struct NativeEventHandler {
+    event_tx: EventSender,
+    progress: Arc<RwLock<SyncProgress>>,
+}
+
+impl EventHandler for NativeEventHandler {
+    fn on_sync_event(&self, event: &SyncEvent) {
+        if let Some(e) = map_sync_event(event.clone()) {
+            let _ = self.event_tx.send(e);
+        }
+    }
+
+    fn on_network_event(&self, event: &NetworkEvent) {
+        let _ = self.event_tx.send(map_network_event(event.clone()));
+    }
+
+    fn on_progress(&self, progress: &SyncProgress) {
+        if let Ok(mut guard) = self.progress.write() {
+            *guard = progress.clone();
+        }
+        let _ = self
+            .event_tx
+            .send(SpvEvent::SyncProgressUpdated(Box::new(progress.clone())));
+    }
+
+    fn on_wallet_event(&self, event: &WalletEvent) {
+        let _ = self.event_tx.send(map_wallet_event(event.clone()));
+    }
+
+    fn on_error(&self, error: &str) {
+        let _ = self.event_tx.send(SpvEvent::Error(error.to_string()));
+    }
+}
 
 pub struct NativeBackend {
     config: AppConfig,
@@ -46,7 +86,6 @@ pub struct NativeBackend {
     progress: Arc<RwLock<SyncProgress>>,
     shutdown_token: tokio::sync::Mutex<Option<CancellationToken>>,
     client_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    bridge_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     client: tokio::sync::Mutex<Option<Arc<SpvClient>>>,
 }
 
@@ -64,7 +103,6 @@ impl NativeBackend {
             progress: Arc::new(RwLock::new(SyncProgress::default())),
             shutdown_token: tokio::sync::Mutex::new(None),
             client_task: tokio::sync::Mutex::new(None),
-            bridge_task: tokio::sync::Mutex::new(None),
             client: tokio::sync::Mutex::new(None),
         }
     }
@@ -137,37 +175,24 @@ impl SpvBackend for NativeBackend {
             .await
             .map_err(|e| BackendError::Storage(e.to_string()))?;
 
+        let event_handler = Arc::new(NativeEventHandler {
+            event_tx: self.event_tx.clone(),
+            progress: self.progress.clone(),
+        });
+
         let client = Arc::new(
             SpvClient::new(
                 client_config,
                 network_manager,
                 storage_manager,
                 self.wallet.clone(),
+                event_handler,
             )
             .await
             .map_err(|e| BackendError::Internal(e.to_string()))?,
         );
 
-        let progress_rx = client.subscribe_progress().await;
-        let sync_rx = client.subscribe_sync_events().await;
-        let network_rx = client.subscribe_network_events().await;
-        let wallet_rx = self.wallet.read().await.subscribe_events();
-
         let token = CancellationToken::new();
-
-        // Spawn event bridge task
-        let bridge_token = token.clone();
-        let event_tx = self.event_tx.clone();
-        let cached_progress = self.progress.clone();
-        let bridge_handle = tokio::spawn(event_bridge(
-            bridge_token,
-            progress_rx,
-            sync_rx,
-            network_rx,
-            wallet_rx,
-            event_tx,
-            cached_progress,
-        ));
 
         // Spawn client run task
         let run_token = token.clone();
@@ -181,7 +206,6 @@ impl SpvBackend for NativeBackend {
         *self.client.lock().await = Some(client);
         *self.shutdown_token.lock().await = Some(token);
         *self.client_task.lock().await = Some(client_handle);
-        *self.bridge_task.lock().await = Some(bridge_handle);
         self.running.store(true, Ordering::Relaxed);
 
         Ok(())
@@ -197,10 +221,6 @@ impl SpvBackend for NativeBackend {
         }
 
         if let Some(handle) = self.client_task.lock().await.take() {
-            let _ = handle.await;
-        }
-
-        if let Some(handle) = self.bridge_task.lock().await.take() {
             let _ = handle.await;
         }
 
@@ -254,10 +274,10 @@ impl SpvBackend for NativeBackend {
                 ),
             )
             .map_err(|e| match e {
-                key_wallet_manager::WalletError::InvalidMnemonic(msg) => {
+                key_wallet::manager::WalletError::InvalidMnemonic(msg) => {
                     BackendError::InvalidMnemonic(msg)
                 }
-                key_wallet_manager::WalletError::WalletExists(_) => {
+                key_wallet::manager::WalletError::WalletExists(_) => {
                     BackendError::WalletAlreadyExists
                 }
                 other => BackendError::Internal(other.to_string()),
@@ -434,71 +454,70 @@ impl SpvBackend for NativeBackend {
         let accounts = info.accounts();
 
         // Build the key provider closure that derives private keys for UTXOs
-        let key_provider =
-            |utxo: &key_wallet_manager::Utxo| -> Option<dashcore::secp256k1::SecretKey> {
-                // Search BIP44 accounts first, then BIP32
-                for (account_index, account) in &accounts.standard_bip44_accounts {
-                    if let ManagedAccountType::Standard {
-                        external_addresses,
-                        internal_addresses,
-                        ..
-                    } = &account.account_type
-                    {
-                        // Check external (receive) addresses
-                        if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
-                            let path = DerivationPathBuilder::new()
-                                .coin_type(coin_type_for_network(network))
-                                .account(*account_index)
-                                .change(0)
-                                .address_index(addr_idx)
-                                .bip44()
-                                .ok()?;
-                            return wallet.derive_private_key(&path).ok();
-                        }
-                        // Check internal (change) addresses
-                        if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
-                            let path = DerivationPathBuilder::new()
-                                .coin_type(coin_type_for_network(network))
-                                .account(*account_index)
-                                .change(1)
-                                .address_index(addr_idx)
-                                .bip44()
-                                .ok()?;
-                            return wallet.derive_private_key(&path).ok();
-                        }
+        let key_provider = |utxo: &key_wallet::Utxo| -> Option<dashcore::secp256k1::SecretKey> {
+            // Search BIP44 accounts first, then BIP32
+            for (account_index, account) in &accounts.standard_bip44_accounts {
+                if let ManagedAccountType::Standard {
+                    external_addresses,
+                    internal_addresses,
+                    ..
+                } = &account.account_type
+                {
+                    // Check external (receive) addresses
+                    if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
+                        let path = DerivationPathBuilder::new()
+                            .coin_type(coin_type_for_network(network))
+                            .account(*account_index)
+                            .change(0)
+                            .address_index(addr_idx)
+                            .bip44()
+                            .ok()?;
+                        return wallet.derive_private_key(&path).ok();
+                    }
+                    // Check internal (change) addresses
+                    if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
+                        let path = DerivationPathBuilder::new()
+                            .coin_type(coin_type_for_network(network))
+                            .account(*account_index)
+                            .change(1)
+                            .address_index(addr_idx)
+                            .bip44()
+                            .ok()?;
+                        return wallet.derive_private_key(&path).ok();
                     }
                 }
+            }
 
-                for (account_index, account) in &accounts.standard_bip32_accounts {
-                    if let ManagedAccountType::Standard {
-                        external_addresses,
-                        internal_addresses,
-                        ..
-                    } = &account.account_type
-                    {
-                        if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
-                            let path = DerivationPathBuilder::new()
-                                .account(*account_index)
-                                .change(0)
-                                .address_index(addr_idx)
-                                .build()
-                                .ok()?;
-                            return wallet.derive_private_key(&path).ok();
-                        }
-                        if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
-                            let path = DerivationPathBuilder::new()
-                                .account(*account_index)
-                                .change(1)
-                                .address_index(addr_idx)
-                                .build()
-                                .ok()?;
-                            return wallet.derive_private_key(&path).ok();
-                        }
+            for (account_index, account) in &accounts.standard_bip32_accounts {
+                if let ManagedAccountType::Standard {
+                    external_addresses,
+                    internal_addresses,
+                    ..
+                } = &account.account_type
+                {
+                    if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
+                        let path = DerivationPathBuilder::new()
+                            .account(*account_index)
+                            .change(0)
+                            .address_index(addr_idx)
+                            .build()
+                            .ok()?;
+                        return wallet.derive_private_key(&path).ok();
+                    }
+                    if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
+                        let path = DerivationPathBuilder::new()
+                            .account(*account_index)
+                            .change(1)
+                            .address_index(addr_idx)
+                            .build()
+                            .ok()?;
+                        return wallet.derive_private_key(&path).ok();
                     }
                 }
+            }
 
-                None
-            };
+            None
+        };
 
         // Build the transaction
         let fee = FeeRate::new(fee_rate as u64);
@@ -611,64 +630,6 @@ fn coin_type_for_network(network: Network) -> u32 {
     match network {
         Network::Mainnet => 5,
         _ => 1,
-    }
-}
-
-async fn event_bridge(
-    token: CancellationToken,
-    mut progress_rx: tokio::sync::watch::Receiver<SyncProgress>,
-    mut sync_rx: broadcast::Receiver<SyncEvent>,
-    mut network_rx: broadcast::Receiver<NetworkEvent>,
-    mut wallet_rx: broadcast::Receiver<WalletEvent>,
-    event_tx: EventSender,
-    cached_progress: Arc<RwLock<SyncProgress>>,
-) {
-    loop {
-        tokio::select! {
-            Ok(()) = progress_rx.changed() => {
-                let p = progress_rx.borrow_and_update().clone();
-                if let Ok(mut guard) = cached_progress.write() {
-                    *guard = p.clone();
-                }
-                let _ = event_tx.send(SpvEvent::SyncProgressUpdated(Box::new(p)));
-            }
-            result = sync_rx.recv() => {
-                match result {
-                    Ok(event) => {
-                        if let Some(e) = map_sync_event(event) {
-                            let _ = event_tx.send(e);
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        tracing::warn!("Sync events lagged by {n}");
-                    }
-                    Err(_) => break,
-                }
-            }
-            result = network_rx.recv() => {
-                match result {
-                    Ok(event) => {
-                        let _ = event_tx.send(map_network_event(event));
-                    }
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        tracing::warn!("Network events lagged by {n}");
-                    }
-                    Err(_) => break,
-                }
-            }
-            result = wallet_rx.recv() => {
-                match result {
-                    Ok(event) => {
-                        let _ = event_tx.send(map_wallet_event(event));
-                    }
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        tracing::warn!("Wallet events lagged by {n}");
-                    }
-                    Err(_) => break,
-                }
-            }
-            _ = token.cancelled() => break,
-        }
     }
 }
 
@@ -799,25 +760,17 @@ fn extract_context_fields(
     match ctx {
         TransactionContext::Mempool => (None, None, None, false, false),
         TransactionContext::InstantSend => (None, None, None, true, false),
-        TransactionContext::InBlock {
-            height,
-            timestamp,
-            block_hash,
-        } => (
-            Some(*height),
-            timestamp.map(|t| t as u64),
-            block_hash.map(|h| h.to_byte_array()),
+        TransactionContext::InBlock(info) => (
+            Some(info.height()),
+            Some(info.timestamp() as u64),
+            Some(info.block_hash().to_byte_array()),
             false,
             false,
         ),
-        TransactionContext::InChainLockedBlock {
-            height,
-            timestamp,
-            block_hash,
-        } => (
-            Some(*height),
-            timestamp.map(|t| t as u64),
-            block_hash.map(|h| h.to_byte_array()),
+        TransactionContext::InChainLockedBlock(info) => (
+            Some(info.height()),
+            Some(info.timestamp() as u64),
+            Some(info.block_hash().to_byte_array()),
             false,
             true,
         ),
@@ -835,8 +788,9 @@ mod tests {
     use dashcore::ephemerealdata::instant_lock::InstantLock;
     use dashcore::hashes::Hash;
     use dashcore::{Address, BlockHash, PublicKey, Txid};
+    use key_wallet::manager::WalletEvent;
     use key_wallet::transaction_checking::TransactionContext;
-    use key_wallet_manager::WalletEvent;
+    use key_wallet::transaction_checking::transaction_context::BlockInfo;
 
     use super::*;
 
@@ -887,11 +841,7 @@ mod tests {
     #[test]
     fn extract_context_in_block() {
         let hash = BlockHash::all_zeros();
-        let ctx = TransactionContext::InBlock {
-            height: 1000,
-            timestamp: Some(1700000000),
-            block_hash: Some(hash),
-        };
+        let ctx = TransactionContext::InBlock(BlockInfo::new(1000, hash, 1700000000));
         let (height, timestamp, block_hash, is, cl) = extract_context_fields(&ctx);
         assert_eq!(height, Some(1000));
         assert_eq!(timestamp, Some(1700000000));
@@ -901,28 +851,9 @@ mod tests {
     }
 
     #[test]
-    fn extract_context_in_block_none_optionals() {
-        let ctx = TransactionContext::InBlock {
-            height: 500,
-            timestamp: None,
-            block_hash: None,
-        };
-        let (height, timestamp, block_hash, is, cl) = extract_context_fields(&ctx);
-        assert_eq!(height, Some(500));
-        assert_eq!(timestamp, None);
-        assert_eq!(block_hash, None);
-        assert!(!is);
-        assert!(!cl);
-    }
-
-    #[test]
     fn extract_context_in_chain_locked_block() {
         let hash = BlockHash::all_zeros();
-        let ctx = TransactionContext::InChainLockedBlock {
-            height: 2000,
-            timestamp: Some(1700001000),
-            block_hash: Some(hash),
-        };
+        let ctx = TransactionContext::InChainLockedBlock(BlockInfo::new(2000, hash, 1700001000));
         let (height, timestamp, block_hash, is, cl) = extract_context_fields(&ctx);
         assert_eq!(height, Some(2000));
         assert_eq!(timestamp, Some(1700001000));
@@ -1170,11 +1101,11 @@ mod tests {
         let event = WalletEvent::TransactionStatusChanged {
             wallet_id: [0; 32],
             txid,
-            status: TransactionContext::InBlock {
-                height: 300,
-                timestamp: Some(1700000000),
-                block_hash: Some(BlockHash::all_zeros()),
-            },
+            status: TransactionContext::InBlock(BlockInfo::new(
+                300,
+                BlockHash::all_zeros(),
+                1700000000,
+            )),
         };
         let mapped = map_wallet_event(event);
         match mapped {

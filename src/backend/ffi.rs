@@ -11,16 +11,13 @@ use dash_spv::sync::{
     FiltersProgress, InstantSendProgress, MasternodesProgress, MempoolProgress, SyncState,
 };
 use dash_spv_ffi::callbacks::{
-    FFIClientErrorCallback, FFINetworkEventCallbacks, FFIProgressCallback, FFISyncEventCallbacks,
-    FFIWalletEventCallbacks,
+    FFIClientErrorCallback, FFIEventCallbacks, FFINetworkEventCallbacks, FFIProgressCallback,
+    FFISyncEventCallbacks, FFIWalletEventCallbacks,
 };
 use dash_spv_ffi::client::{
     FFIDashSpvClient, dash_spv_ffi_client_broadcast_transaction, dash_spv_ffi_client_destroy,
     dash_spv_ffi_client_get_wallet_manager, dash_spv_ffi_client_new, dash_spv_ffi_client_run,
-    dash_spv_ffi_client_set_client_error_callback, dash_spv_ffi_client_set_network_event_callbacks,
-    dash_spv_ffi_client_set_progress_callback, dash_spv_ffi_client_set_sync_event_callbacks,
-    dash_spv_ffi_client_set_wallet_event_callbacks, dash_spv_ffi_client_stop,
-    dash_spv_ffi_wallet_manager_free,
+    dash_spv_ffi_client_stop, dash_spv_ffi_wallet_manager_free,
 };
 use dash_spv_ffi::config::{
     dash_spv_ffi_config_add_peer, dash_spv_ffi_config_clear_peers, dash_spv_ffi_config_destroy,
@@ -204,37 +201,30 @@ impl SpvBackend for FfiBackend {
                 };
             }
 
-            // Safety: config_ptr is a valid FFIClientConfig pointer.
-            let client_ptr = unsafe { dash_spv_ffi_client_new(config_ptr) };
+            let ctx = Box::new(CallbackContext { event_tx, progress });
+            let user_data = Box::into_raw(ctx) as *mut c_void;
+
+            let callbacks = FFIEventCallbacks {
+                sync: build_sync_callbacks(user_data),
+                network: build_network_callbacks(user_data),
+                progress: build_progress_callback(user_data),
+                wallet: build_wallet_callbacks(user_data),
+                error: build_error_callback(user_data),
+            };
+
+            // Safety: config_ptr is a valid FFIClientConfig pointer, callbacks
+            // contain valid function pointers with user_data pointing to a
+            // valid CallbackContext.
+            let client_ptr = unsafe { dash_spv_ffi_client_new(config_ptr, callbacks) };
 
             // Config is consumed by client_new; destroy it regardless.
             // Safety: config_ptr is valid.
             unsafe { dash_spv_ffi_config_destroy(config_ptr) };
 
             if client_ptr.is_null() {
+                // Safety: user_data was created by Box::into_raw above.
+                let _ = unsafe { Box::from_raw(user_data as *mut CallbackContext) };
                 return Err(BackendError::Internal(get_last_ffi_error()));
-            }
-
-            let ctx = Box::new(CallbackContext { event_tx, progress });
-            let user_data = Box::into_raw(ctx) as *mut c_void;
-
-            // Safety: client_ptr is valid (just created), user_data is a valid
-            // CallbackContext pointer.
-            unsafe {
-                let sync_cbs = build_sync_callbacks(user_data);
-                dash_spv_ffi_client_set_sync_event_callbacks(client_ptr, sync_cbs);
-
-                let net_cbs = build_network_callbacks(user_data);
-                dash_spv_ffi_client_set_network_event_callbacks(client_ptr, net_cbs);
-
-                let wallet_cbs = build_wallet_callbacks(user_data);
-                dash_spv_ffi_client_set_wallet_event_callbacks(client_ptr, wallet_cbs);
-
-                let progress_cb = build_progress_callback(user_data);
-                dash_spv_ffi_client_set_progress_callback(client_ptr, progress_cb);
-
-                let error_cb = build_error_callback(user_data);
-                dash_spv_ffi_client_set_client_error_callback(client_ptr, error_cb);
             }
 
             // Safety: client_ptr is valid, callbacks are set.
