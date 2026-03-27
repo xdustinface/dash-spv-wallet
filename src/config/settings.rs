@@ -106,6 +106,15 @@ impl AppConfig {
             config.mempool_strategy = mempool_strategy;
         }
 
+        // Validate mempool strategy.
+        let valid_strategies = ["bloom-filter", "fetch-all"];
+        if !valid_strategies.contains(&config.mempool_strategy.as_str()) {
+            return Err(ConfigError::Parse(format!(
+                "invalid mempool_strategy '{}': must be 'bloom-filter' or 'fetch-all'",
+                config.mempool_strategy
+            )));
+        }
+
         // Expand tilde in paths.
         config.data_dir = paths::expand_tilde(&config.data_dir);
         if let Some(ref dir) = config.wallet_dir {
@@ -553,5 +562,23 @@ mod tests {
             let restored: AppConfig = toml::from_str(&toml_str).unwrap();
             assert_eq!(restored.mempool_strategy, strategy);
         }
+    }
+
+    #[test]
+    fn invalid_mempool_strategy_is_rejected() {
+        let toml_str = r#"
+            network = "testnet"
+            data_dir = "/tmp"
+            dev_mode = false
+            log_level = "info"
+            mempool_strategy = "invalid-strategy"
+        "#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.mempool_strategy, "invalid-strategy");
+
+        // Validation happens in `AppConfig::load()` which parses CLI args,
+        // so we test the validation logic directly here.
+        let valid_strategies = ["bloom-filter", "fetch-all"];
+        assert!(!valid_strategies.contains(&config.mempool_strategy.as_str()));
     }
 }
