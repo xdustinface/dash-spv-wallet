@@ -10,7 +10,7 @@ use dash_spv::network::NetworkEvent;
 use dash_spv::network::manager::PeerNetworkManager;
 use dash_spv::storage::DiskStorageManager;
 use dash_spv::sync::SyncEvent;
-use dash_spv::{ClientConfig, DashSpvClient};
+use dash_spv::{ClientConfig, DashSpvClient, MempoolStrategy};
 use dashcore::hashes::Hash;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
 use key_wallet::mnemonic::Language;
@@ -122,6 +122,12 @@ impl SpvBackend for NativeBackend {
             }
             client_config = client_config.with_restrict_to_configured_peers(true);
         }
+
+        let mempool_strategy = match self.config.mempool_strategy.as_str() {
+            "fetch-all" => MempoolStrategy::FetchAll,
+            _ => MempoolStrategy::BloomFilter,
+        };
+        client_config = client_config.with_mempool_tracking(mempool_strategy);
 
         let network_manager = PeerNetworkManager::new(&client_config)
             .await

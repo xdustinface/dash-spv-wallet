@@ -30,6 +30,9 @@ pub struct AppConfig {
     /// When non-empty, the SPV client connects exclusively to these peers.
     #[serde(default)]
     pub peers: Vec<String>,
+    /// Mempool strategy: "fetch-all" or "bloom-filter".
+    #[serde(default = "default_mempool_strategy")]
+    pub mempool_strategy: String,
 }
 
 fn default_window_width() -> u32 {
@@ -38,6 +41,10 @@ fn default_window_width() -> u32 {
 
 fn default_window_height() -> u32 {
     768
+}
+
+fn default_mempool_strategy() -> String {
+    "bloom-filter".to_string()
 }
 
 impl Default for AppConfig {
@@ -53,6 +60,7 @@ impl Default for AppConfig {
             mock_mode: false,
             backend: "native".to_string(),
             peers: Vec::new(),
+            mempool_strategy: default_mempool_strategy(),
         }
     }
 }
@@ -93,6 +101,9 @@ impl AppConfig {
         }
         if !cli.peer.is_empty() {
             config.peers = cli.peer;
+        }
+        if let Some(mempool_strategy) = cli.mempool_strategy {
+            config.mempool_strategy = mempool_strategy;
         }
 
         // Expand tilde in paths.
@@ -160,6 +171,10 @@ struct Cli {
     /// Explicit peer addresses (e.g., --peer 1.2.3.4:19999)
     #[arg(long)]
     peer: Vec<String>,
+
+    /// Mempool strategy: "fetch-all" or "bloom-filter"
+    #[arg(long)]
+    mempool_strategy: Option<String>,
 }
 
 /// Errors that can occur during configuration loading or saving.
@@ -192,6 +207,7 @@ mod tests {
         assert_eq!(config.log_level, "info");
         assert!(config.wallet_dir.is_none());
         assert!(config.data_dir.components().count() > 0);
+        assert_eq!(config.mempool_strategy, "bloom-filter");
     }
 
     #[test]
@@ -213,6 +229,7 @@ mod tests {
         assert_eq!(restored.wallet_dir, config.wallet_dir);
         assert_eq!(restored.dev_mode, config.dev_mode);
         assert_eq!(restored.log_level, config.log_level);
+        assert_eq!(restored.mempool_strategy, config.mempool_strategy);
     }
 
     #[test]
@@ -387,6 +404,7 @@ mod tests {
         assert_eq!(config.network, Network::Mainnet);
         assert!(config.wallet_dir.is_none());
         assert_eq!(config.window_width, 1024);
+        assert_eq!(config.mempool_strategy, "bloom-filter");
     }
 
     #[test]
@@ -522,5 +540,18 @@ mod tests {
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let restored: AppConfig = toml::from_str(&toml_str).unwrap();
         assert_eq!(restored.network, Network::Devnet);
+    }
+
+    #[test]
+    fn mempool_strategy_roundtrip() {
+        for strategy in ["bloom-filter", "fetch-all"] {
+            let config = AppConfig {
+                mempool_strategy: strategy.to_string(),
+                ..Default::default()
+            };
+            let toml_str = toml::to_string_pretty(&config).unwrap();
+            let restored: AppConfig = toml::from_str(&toml_str).unwrap();
+            assert_eq!(restored.mempool_strategy, strategy);
+        }
     }
 }

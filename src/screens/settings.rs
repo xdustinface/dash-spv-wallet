@@ -13,6 +13,9 @@ const NETWORKS: &[(&str, dashcore::Network)] = &[
 
 const LOG_LEVELS: &[&str] = &["error", "warn", "info", "debug", "trace"];
 
+const MEMPOOL_STRATEGIES: &[(&str, &str)] =
+    &[("Bloom Filter", "bloom-filter"), ("Fetch All", "fetch-all")];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ClearCacheState {
     Idle,
@@ -58,6 +61,7 @@ pub fn Settings() -> Element {
     let mut network = use_signal(|| config.network);
     let mut dev_mode = use_signal(|| config.dev_mode);
     let mut log_level = use_signal(|| config.log_level.clone());
+    let mut mempool_strategy = use_signal(|| config.mempool_strategy.clone());
 
     let backends: &[&str] = if cfg!(feature = "ffi") {
         &["native", "ffi"]
@@ -77,6 +81,7 @@ pub fn Settings() -> Element {
         };
         cfg.dev_mode = dev_mode();
         cfg.log_level = log_level();
+        cfg.mempool_strategy = mempool_strategy();
 
         match cfg.save() {
             Ok(()) => save_status.set(Some(Ok(()))),
@@ -190,6 +195,32 @@ pub fn Settings() -> Element {
                                 "{level}"
                             }
                         }
+                    }
+                }
+
+                // Mempool strategy selector
+                div {
+                    label {
+                        class: "block text-muted text-sm uppercase tracking-wide mb-2",
+                        "Mempool Strategy"
+                    }
+                    div {
+                        class: "flex gap-2",
+                        for &(label, value) in MEMPOOL_STRATEGIES {
+                            button {
+                                class: if mempool_strategy() == value {
+                                    "px-3 py-1 rounded-lg bg-dash text-foreground text-sm font-medium"
+                                } else {
+                                    "px-3 py-1 rounded-lg bg-surface-alt text-muted text-sm hover:bg-hover transition-colors"
+                                },
+                                onclick: move |_| mempool_strategy.set(value.to_string()),
+                                "{label}"
+                            }
+                        }
+                    }
+                    p {
+                        class: "text-muted text-xs mt-1",
+                        "Requires restart."
                     }
                 }
 
