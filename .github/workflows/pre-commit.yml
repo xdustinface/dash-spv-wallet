@@ -29,9 +29,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install Linux dependencies
+      - uses: awalsh128/cache-apt-pkgs-action@latest
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libudev-dev libxdo-dev
+        with:
+          packages: libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libudev-dev libxdo-dev
       - run: npm install
       - name: Install Dioxus CLI (Linux)
         if: runner.os == 'Linux'
