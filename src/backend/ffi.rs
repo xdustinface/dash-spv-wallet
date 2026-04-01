@@ -34,7 +34,6 @@ use dash_spv_ffi::types::{
 use dashcore::hashes::Hash;
 use key_wallet::DerivationPathBuilder;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
-use key_wallet::manager::WalletManager;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
@@ -59,6 +58,7 @@ use key_wallet_ffi::wallet_manager::{
     wallet_manager_get_managed_wallet_info, wallet_manager_get_wallet,
     wallet_manager_get_wallet_balance, wallet_manager_get_wallet_ids,
 };
+use key_wallet_manager::WalletManager;
 
 use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent, event_channel};
@@ -591,33 +591,46 @@ impl SpvBackend for FfiBackend {
                     };
 
                     let txid = dashcore::Txid::from_byte_array(record.txid);
-                    let height = if record.height > 0 {
-                        Some(record.height)
-                    } else {
-                        None
-                    };
-                    let block_hash = if record.block_hash != [0u8; 32] {
-                        Some(dashcore::BlockHash::from_byte_array(record.block_hash))
-                    } else {
-                        None
-                    };
                     let fee = if record.fee > 0 {
                         Some(record.fee)
                     } else {
                         None
                     };
 
+                    let block_info = &record.context.block_info;
+                    let has_block = block_info.block_hash != [0u8; 32] || block_info.timestamp != 0;
+                    let is_instant_send = matches!(
+                        record.context.context_type,
+                        FFITransactionContext::InstantSend
+                    );
+                    let is_chain_locked = matches!(
+                        record.context.context_type,
+                        FFITransactionContext::InChainLockedBlock
+                    );
+
                     transactions.push(TransactionInfo {
                         txid,
                         amount: record.net_amount,
                         direction,
-                        timestamp: record.timestamp,
-                        height,
+                        timestamp: if has_block {
+                            block_info.timestamp as u64
+                        } else {
+                            0
+                        },
+                        height: if has_block {
+                            Some(block_info.height)
+                        } else {
+                            None
+                        },
                         fee,
                         addresses: Vec::new(),
-                        block_hash,
-                        is_instant_send: false,
-                        is_chain_locked: false,
+                        block_hash: if has_block {
+                            Some(dashcore::BlockHash::from_byte_array(block_info.block_hash))
+                        } else {
+                            None
+                        },
+                        is_instant_send,
+                        is_chain_locked,
                     });
                 }
 

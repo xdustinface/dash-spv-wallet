@@ -14,7 +14,6 @@ use dash_spv::sync::SyncEvent;
 use dash_spv::{ClientConfig, DashSpvClient, MempoolStrategy};
 use dashcore::hashes::Hash;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
-use key_wallet::manager::{WalletEvent, WalletManager};
 use key_wallet::mnemonic::Language;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -26,6 +25,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBui
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::{DerivationPathBuilder, Mnemonic};
+use key_wallet_manager::{WalletEvent, WalletManager};
 use tokio_util::sync::CancellationToken;
 
 use super::error::{BackendError, BackendResult};
@@ -274,10 +274,10 @@ impl SpvBackend for NativeBackend {
                 ),
             )
             .map_err(|e| match e {
-                key_wallet::manager::WalletError::InvalidMnemonic(msg) => {
+                key_wallet_manager::WalletError::InvalidMnemonic(msg) => {
                     BackendError::InvalidMnemonic(msg)
                 }
-                key_wallet::manager::WalletError::WalletExists(_) => {
+                key_wallet_manager::WalletError::WalletExists(_) => {
                     BackendError::WalletAlreadyExists
                 }
                 other => BackendError::Internal(other.to_string()),
@@ -373,17 +373,22 @@ impl SpvBackend for NativeBackend {
                 } else {
                     TransactionDirection::Sent
                 };
+                use key_wallet::transaction_checking::TransactionContext;
+                let block_info = r.context.block_info();
+                let is_instant_send = r.context == TransactionContext::InstantSend;
+                let is_chain_locked =
+                    matches!(r.context, TransactionContext::InChainLockedBlock(_));
                 TransactionInfo {
                     txid: r.txid,
                     amount: r.net_amount,
                     direction,
-                    timestamp: r.timestamp,
-                    height: r.height,
+                    timestamp: block_info.map_or(0, |i| i.timestamp() as u64),
+                    height: block_info.map(|i| i.height()),
                     fee: r.fee,
                     addresses: Vec::new(),
-                    block_hash: r.block_hash,
-                    is_instant_send: false,
-                    is_chain_locked: false,
+                    block_hash: block_info.map(|i| i.block_hash()),
+                    is_instant_send,
+                    is_chain_locked,
                 }
             })
             .collect();
@@ -788,9 +793,9 @@ mod tests {
     use dashcore::ephemerealdata::instant_lock::InstantLock;
     use dashcore::hashes::Hash;
     use dashcore::{Address, BlockHash, PublicKey, Txid};
-    use key_wallet::manager::WalletEvent;
     use key_wallet::transaction_checking::TransactionContext;
     use key_wallet::transaction_checking::transaction_context::BlockInfo;
+    use key_wallet_manager::WalletEvent;
 
     use super::*;
 
