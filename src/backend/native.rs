@@ -15,6 +15,7 @@ use dash_spv::{ClientConfig, DashSpvClient, MempoolStrategy};
 use dashcore::hashes::Hash;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
 use key_wallet::mnemonic::Language;
+use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
@@ -373,7 +374,6 @@ impl SpvBackend for NativeBackend {
                 } else {
                     TransactionDirection::Sent
                 };
-                use key_wallet::transaction_checking::TransactionContext;
                 let block_info = r.context.block_info();
                 let is_instant_send = r.context == TransactionContext::InstantSend;
                 let is_chain_locked =
@@ -758,10 +758,9 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
 
 /// Extract UI-relevant fields from a `TransactionContext`.
 fn extract_context_fields(
-    ctx: &key_wallet::transaction_checking::TransactionContext,
+    ctx: &TransactionContext,
 ) -> (Option<u32>, Option<u64>, Option<[u8; 32]>, bool, bool) {
     use dashcore::hashes::Hash;
-    use key_wallet::transaction_checking::TransactionContext;
     match ctx {
         TransactionContext::Mempool => (None, None, None, false, false),
         TransactionContext::InstantSend => (None, None, None, true, false),
