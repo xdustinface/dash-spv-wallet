@@ -67,19 +67,9 @@ pub fn Settings() -> Element {
     // reflects the correct per-network value.
     use_effect(move || {
         let selected = network();
-        let cfg = config_signal.read();
-        let strategy = cfg
-            .networks
-            .get(AppConfig::network_key(selected))
-            .map(|nc| {
-                if nc.mempool_strategy.is_empty() {
-                    "bloom-filter"
-                } else {
-                    nc.mempool_strategy.as_str()
-                }
-            })
-            .unwrap_or("bloom-filter");
-        mempool_strategy.set(strategy.to_string());
+        let mut cfg = config_signal.read().clone();
+        cfg.network = selected;
+        mempool_strategy.set(cfg.mempool_strategy().to_string());
     });
 
     let backends: &[&str] = if cfg!(feature = "ffi") {

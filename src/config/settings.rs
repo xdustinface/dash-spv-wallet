@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::{fmt, fs, io};
 
 use clap::Parser;
@@ -185,10 +186,7 @@ impl AppConfig {
 
     /// Returns the active network's configuration.
     pub fn network_config(&self) -> &NetworkConfig {
-        static DEFAULT: NetworkConfig = NetworkConfig {
-            peers: Vec::new(),
-            mempool_strategy: String::new(),
-        };
+        static DEFAULT: LazyLock<NetworkConfig> = LazyLock::new(NetworkConfig::default);
         self.networks
             .get(Self::network_key(self.network))
             .unwrap_or(&DEFAULT)
