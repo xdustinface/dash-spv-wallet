@@ -152,9 +152,9 @@ impl SpvBackend for NativeBackend {
             client_config = client_config.without_masternodes();
         }
 
-        if !self.config.peers.is_empty() {
+        if !self.config.peers().is_empty() {
             client_config.peers.clear();
-            for peer in &self.config.peers {
+            for peer in self.config.peers() {
                 if let Ok(addr) = peer.parse::<SocketAddr>() {
                     client_config.add_peer(addr);
                 }
@@ -162,7 +162,7 @@ impl SpvBackend for NativeBackend {
             client_config = client_config.with_restrict_to_configured_peers(true);
         }
 
-        let mempool_strategy = match self.config.mempool_strategy.as_str() {
+        let mempool_strategy = match self.config.mempool_strategy() {
             "fetch-all" => MempoolStrategy::FetchAll,
             _ => MempoolStrategy::BloomFilter,
         };

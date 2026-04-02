@@ -61,7 +61,16 @@ pub fn Settings() -> Element {
     let mut network = use_signal(|| config.network);
     let mut dev_mode = use_signal(|| config.dev_mode);
     let mut log_level = use_signal(|| config.log_level.clone());
-    let mut mempool_strategy = use_signal(|| config.mempool_strategy.clone());
+    let mut mempool_strategy = use_signal(|| config.mempool_strategy().to_string());
+
+    // Reset mempool_strategy when the selected network changes so the UI
+    // reflects the correct per-network value.
+    use_effect(move || {
+        let selected = network();
+        let mut cfg = config_signal.read().clone();
+        cfg.network = selected;
+        mempool_strategy.set(cfg.mempool_strategy().to_string());
+    });
 
     let backends: &[&str] = if cfg!(feature = "ffi") {
         &["native", "ffi"]
@@ -81,7 +90,7 @@ pub fn Settings() -> Element {
         };
         cfg.dev_mode = dev_mode();
         cfg.log_level = log_level();
-        cfg.mempool_strategy = mempool_strategy();
+        cfg.network_config_mut().mempool_strategy = mempool_strategy();
 
         match cfg.save() {
             Ok(()) => save_status.set(Some(Ok(()))),
@@ -90,32 +99,21 @@ pub fn Settings() -> Element {
     };
 
     rsx! {
-        div {
-            class: "text-foreground p-6",
+        div { class: "text-foreground p-6",
 
-            h1 {
-                class: "text-2xl font-bold mb-6",
-                "Settings"
-            }
+            h1 { class: "text-2xl font-bold mb-6", "Settings" }
 
-            div {
-                class: "bg-card rounded-lg p-6 max-w-lg space-y-6",
+            div { class: "bg-card rounded-lg p-6 max-w-lg space-y-6",
 
                 // Network selector
                 div {
-                    label {
-                        class: "block text-muted text-sm uppercase tracking-wide mb-2",
+                    label { class: "block text-muted text-sm uppercase tracking-wide mb-2",
                         "Network"
                     }
-                    div {
-                        class: "flex gap-2",
-                        for &(name, net) in NETWORKS {
+                    div { class: "flex gap-2",
+                        for & (name , net) in NETWORKS {
                             button {
-                                class: if network() == net {
-                                    "px-4 py-2 rounded-lg bg-dash text-foreground font-medium"
-                                } else {
-                                    "px-4 py-2 rounded-lg bg-surface-alt text-muted hover:bg-hover transition-colors"
-                                },
+                                class: if network() == net { "px-4 py-2 rounded-lg bg-dash text-foreground font-medium" } else { "px-4 py-2 rounded-lg bg-surface-alt text-muted hover:bg-hover transition-colors" },
                                 onclick: move |_| network.set(net),
                                 "{name}"
                             }
@@ -125,8 +123,7 @@ pub fn Settings() -> Element {
 
                 // Data directory
                 div {
-                    label {
-                        class: "block text-muted text-sm uppercase tracking-wide mb-2",
+                    label { class: "block text-muted text-sm uppercase tracking-wide mb-2",
                         "Data Directory"
                     }
                     input {
@@ -139,8 +136,7 @@ pub fn Settings() -> Element {
 
                 // Wallet directory
                 div {
-                    label {
-                        class: "block text-muted text-sm uppercase tracking-wide mb-2",
+                    label { class: "block text-muted text-sm uppercase tracking-wide mb-2",
                         "Wallet Directory"
                     }
                     input {
@@ -153,44 +149,24 @@ pub fn Settings() -> Element {
                 }
 
                 // Dev mode toggle
-                div {
-                    class: "flex items-center justify-between",
-                    label {
-                        class: "text-muted text-sm uppercase tracking-wide",
-                        "Developer Mode"
-                    }
+                div { class: "flex items-center justify-between",
+                    label { class: "text-muted text-sm uppercase tracking-wide", "Developer Mode" }
                     button {
-                        class: if dev_mode() {
-                            "w-12 h-6 rounded-full bg-dash transition-colors relative"
-                        } else {
-                            "w-12 h-6 rounded-full bg-surface-alt transition-colors relative"
-                        },
+                        class: if dev_mode() { "w-12 h-6 rounded-full bg-dash transition-colors relative" } else { "w-12 h-6 rounded-full bg-surface-alt transition-colors relative" },
                         onclick: move |_| dev_mode.set(!dev_mode()),
-                        div {
-                            class: if dev_mode() {
-                                "w-5 h-5 rounded-full bg-foreground absolute top-0.5 right-0.5 transition-all"
-                            } else {
-                                "w-5 h-5 rounded-full bg-muted absolute top-0.5 left-0.5 transition-all"
-                            },
-                        }
+                        div { class: if dev_mode() { "w-5 h-5 rounded-full bg-foreground absolute top-0.5 right-0.5 transition-all" } else { "w-5 h-5 rounded-full bg-muted absolute top-0.5 left-0.5 transition-all" } }
                     }
                 }
 
                 // Log level selector
                 div {
-                    label {
-                        class: "block text-muted text-sm uppercase tracking-wide mb-2",
+                    label { class: "block text-muted text-sm uppercase tracking-wide mb-2",
                         "Log Level"
                     }
-                    div {
-                        class: "flex gap-2",
-                        for &level in LOG_LEVELS {
+                    div { class: "flex gap-2",
+                        for & level in LOG_LEVELS {
                             button {
-                                class: if log_level() == level {
-                                    "px-3 py-1 rounded-lg bg-dash text-foreground text-sm font-medium"
-                                } else {
-                                    "px-3 py-1 rounded-lg bg-surface-alt text-muted text-sm hover:bg-hover transition-colors"
-                                },
+                                class: if log_level() == level { "px-3 py-1 rounded-lg bg-dash text-foreground text-sm font-medium" } else { "px-3 py-1 rounded-lg bg-surface-alt text-muted text-sm hover:bg-hover transition-colors" },
                                 onclick: move |_| log_level.set(level.to_string()),
                                 "{level}"
                             }
@@ -200,53 +176,37 @@ pub fn Settings() -> Element {
 
                 // Mempool strategy selector
                 div {
-                    label {
-                        class: "block text-muted text-sm uppercase tracking-wide mb-2",
+                    label { class: "block text-muted text-sm uppercase tracking-wide mb-2",
                         "Mempool Strategy"
                     }
-                    div {
-                        class: "flex gap-2",
-                        for &(label, value) in MEMPOOL_STRATEGIES {
+                    div { class: "flex gap-2",
+                        for & (label , value) in MEMPOOL_STRATEGIES {
                             button {
-                                class: if mempool_strategy() == value {
-                                    "px-3 py-1 rounded-lg bg-dash text-foreground text-sm font-medium"
-                                } else {
-                                    "px-3 py-1 rounded-lg bg-surface-alt text-muted text-sm hover:bg-hover transition-colors"
-                                },
+                                class: if mempool_strategy() == value { "px-3 py-1 rounded-lg bg-dash text-foreground text-sm font-medium" } else { "px-3 py-1 rounded-lg bg-surface-alt text-muted text-sm hover:bg-hover transition-colors" },
                                 onclick: move |_| mempool_strategy.set(value.to_string()),
                                 "{label}"
                             }
                         }
                     }
-                    p {
-                        class: "text-muted text-xs mt-1",
-                        "Requires restart."
-                    }
+                    p { class: "text-muted text-xs mt-1", "Requires restart." }
                 }
 
                 // Backend selector (dev mode only)
                 if dev_mode() {
                     div {
-                        label {
-                            class: "block text-muted text-sm uppercase tracking-wide mb-2",
+                        label { class: "block text-muted text-sm uppercase tracking-wide mb-2",
                             "Backend"
                         }
-                        div {
-                            class: "flex gap-2",
-                            for &name in backends.iter() {
+                        div { class: "flex gap-2",
+                            for & name in backends.iter() {
                                 button {
-                                    class: if backend() == name {
-                                        "px-3 py-1 rounded-lg bg-dash text-foreground text-sm font-medium"
-                                    } else {
-                                        "px-3 py-1 rounded-lg bg-surface-alt text-muted text-sm hover:bg-hover transition-colors"
-                                    },
+                                    class: if backend() == name { "px-3 py-1 rounded-lg bg-dash text-foreground text-sm font-medium" } else { "px-3 py-1 rounded-lg bg-surface-alt text-muted text-sm hover:bg-hover transition-colors" },
                                     onclick: move |_| backend.set(name.to_string()),
                                     "{name}"
                                 }
                             }
                         }
-                        p {
-                            class: "text-muted text-xs mt-1",
+                        p { class: "text-muted text-xs mt-1",
                             "Requires restart. Use --backend flag at launch."
                         }
                     }
@@ -254,12 +214,10 @@ pub fn Settings() -> Element {
 
                 // Clear Cache
                 div {
-                    label {
-                        class: "block text-muted text-sm uppercase tracking-wide mb-2",
+                    label { class: "block text-muted text-sm uppercase tracking-wide mb-2",
                         "Cache"
                     }
-                    p {
-                        class: "text-foreground text-sm mb-2",
+                    p { class: "text-foreground text-sm mb-2",
                         "SPV data size: {format_bytes(cache_size())}"
                     }
                     match cache_state() {
@@ -271,12 +229,10 @@ pub fn Settings() -> Element {
                             }
                         },
                         ClearCacheState::Confirming => rsx! {
-                            p {
-                                class: "text-error text-sm mb-2",
+                            p { class: "text-error text-sm mb-2",
                                 "This will shut down the wallet and clear all sync data. The app will close and re-sync from scratch on next launch. Your wallet and settings will be preserved."
                             }
-                            div {
-                                class: "flex gap-2",
+                            div { class: "flex gap-2",
                                 button {
                                     class: "flex-1 bg-error hover:opacity-80 text-foreground font-medium py-2 px-4 rounded-lg transition-colors",
                                     onclick: move |_| async move {
@@ -302,17 +258,11 @@ pub fn Settings() -> Element {
                             }
                         },
                         ClearCacheState::Clearing => rsx! {
-                            p {
-                                class: "text-muted text-sm",
-                                "Clearing cache..."
-                            }
+                            p { class: "text-muted text-sm", "Clearing cache..." }
                         },
                     }
                     if let Some(err) = cache_error() {
-                        p {
-                            class: "text-error text-sm mt-1",
-                            "Failed to clear cache: {err}"
-                        }
+                        p { class: "text-error text-sm mt-1", "Failed to clear cache: {err}" }
                     }
                 }
 
@@ -326,16 +276,10 @@ pub fn Settings() -> Element {
                 // Status message
                 match save_status() {
                     Some(Ok(())) => rsx! {
-                        p {
-                            class: "text-success text-sm",
-                            "Saved. Restart to apply changes."
-                        }
+                        p { class: "text-success text-sm", "Saved. Restart to apply changes." }
                     },
                     Some(Err(e)) => rsx! {
-                        p {
-                            class: "text-error text-sm",
-                            "Failed to save: {e}"
-                        }
+                        p { class: "text-error text-sm", "Failed to save: {e}" }
                     },
                     None => rsx! {},
                 }

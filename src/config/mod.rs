@@ -1,4 +1,4 @@
 mod paths;
 mod settings;
 
-pub use settings::AppConfig;
+pub use settings::{AppConfig, NetworkConfig};

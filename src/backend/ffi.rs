@@ -139,7 +139,7 @@ impl SpvBackend for FfiBackend {
         let app_network = self.config.network;
         let network = network_to_ffi(app_network);
         let data_dir = self.config.network_data_dir().display().to_string();
-        let peers = self.config.peers.clone();
+        let peers = self.config.peers().to_vec();
         let event_tx = self.event_tx.clone();
         let progress = self.progress.clone();
 
