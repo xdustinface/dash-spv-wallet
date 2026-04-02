@@ -630,6 +630,88 @@ mod tests {
     }
 
     #[test]
+    fn clear_network_data_dir_removes_and_recreates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let network_dir = tmp.path().join("testnet");
+        fs::create_dir_all(&network_dir).unwrap();
+        fs::write(network_dir.join("some_file.dat"), b"data").unwrap();
+
+        let config = AppConfig {
+            data_dir: tmp.path().to_path_buf(),
+            network: Network::Testnet,
+            wallet_dir: Some(tmp.path().join("wallets")),
+            ..Default::default()
+        };
+
+        config.clear_network_data_dir().unwrap();
+
+        assert!(network_dir.exists(), "network dir should be recreated");
+        assert!(
+            !network_dir.join("some_file.dat").exists(),
+            "old contents should be removed"
+        );
+        assert!(
+            fs::read_dir(&network_dir).unwrap().next().is_none(),
+            "recreated dir should be empty"
+        );
+    }
+
+    #[test]
+    fn clear_network_data_dir_when_dir_does_not_exist() {
+        let tmp = tempfile::tempdir().unwrap();
+        let network_dir = tmp.path().join("testnet");
+        assert!(!network_dir.exists());
+
+        let config = AppConfig {
+            data_dir: tmp.path().to_path_buf(),
+            network: Network::Testnet,
+            wallet_dir: Some(tmp.path().join("wallets")),
+            ..Default::default()
+        };
+
+        config.clear_network_data_dir().unwrap();
+
+        assert!(network_dir.exists(), "network dir should be created");
+    }
+
+    #[test]
+    fn clear_network_data_dir_rejects_wallet_inside_network_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let network_dir = tmp.path().join("testnet");
+        fs::create_dir_all(&network_dir).unwrap();
+
+        let config = AppConfig {
+            data_dir: tmp.path().to_path_buf(),
+            network: Network::Testnet,
+            wallet_dir: Some(network_dir.join("wallets")),
+            ..Default::default()
+        };
+
+        let err = config.clear_network_data_dir().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("wallet dir is inside network data dir"),
+            "expected wallet protection error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn clear_network_data_dir_allows_default_wallet_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Default wallet_dir is <data_dir>/wallets, which is a sibling of the
+        // network dir, not inside it.
+        let config = AppConfig {
+            data_dir: tmp.path().to_path_buf(),
+            network: Network::Testnet,
+            wallet_dir: None,
+            ..Default::default()
+        };
+
+        config.clear_network_data_dir().unwrap();
+        assert!(config.network_data_dir().exists());
+    }
+
+    #[test]
     fn invalid_mempool_strategy_is_rejected() {
         let toml_str = r#"
             network = "testnet"
