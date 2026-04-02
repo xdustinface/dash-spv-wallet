@@ -723,7 +723,10 @@ mod tests {
             fs::read_dir(&testnet_dir).unwrap().next().is_none(),
             "testnet dir should be empty"
         );
-        assert!(mainnet_dir.exists(), "sibling mainnet dir must not be removed");
+        assert!(
+            mainnet_dir.exists(),
+            "sibling mainnet dir must not be removed"
+        );
         assert!(
             mainnet_dir.join("blocks.dat").exists(),
             "sibling mainnet files must not be removed"
