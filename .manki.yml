@@ -1,0 +1,34 @@
+model: claude-opus-4-6
+models:
+  reviewer: claude-sonnet-4-6
+  judge: claude-opus-4-6
+
+auto_review: true
+auto_approve: true
+review_passes: 1
+
+exclude_paths:
+  - "*.lock"
+  - "target/"
+
+max_diff_lines: 10000
+
+instructions: |
+  This is dash-spv-wallet -- a cross-platform Dash SPV wallet GUI built with Dioxus 0.7 and Tailwind CSS v4.
+
+  Architecture layers:
+  - Dioxus components (RSX+TW): thin, no logic, renders state
+  - View models / state: pure Rust structs, formatting, state machines
+  - SpvBackend trait: async trait with NativeBackend (dash-spv) and FfiBackend (dash-spv-ffi)
+
+  Focus on:
+  - Rust ownership and borrowing correctness
+  - Layer boundary enforcement (no business logic in components, no Dioxus in state/backend)
+  - Error handling (no unwrap in production code)
+  - Visibility (prefer pub(crate) over pub)
+  - No inline imports -- always use top-level use statements
+  - unsafe code only permitted in backend/ffi.rs
+
+memory:
+  enabled: true
+  repo: "xdustinface/review-memory"
