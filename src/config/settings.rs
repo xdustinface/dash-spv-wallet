@@ -8,11 +8,17 @@ use serde::{Deserialize, Serialize};
 
 use super::paths;
 
-/// Known network names used as TOML section keys.
-const NETWORK_KEYS: &[&str] = &["mainnet", "testnet", "devnet", "regtest"];
+/// Known network variants and their TOML section key names.
+/// Single source of truth for the network-to-key mapping.
+const NETWORK_ENTRIES: &[(Network, &str)] = &[
+    (Network::Mainnet, "mainnet"),
+    (Network::Testnet, "testnet"),
+    (Network::Devnet, "devnet"),
+    (Network::Regtest, "regtest"),
+];
 
 /// Per-network configuration for settings that vary by network.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NetworkConfig {
     /// Explicit peer addresses to connect to.
     /// When non-empty, the SPV client connects exclusively to these peers.
@@ -42,7 +48,7 @@ pub struct AppConfig {
     /// Backend selection (CLI-only, not persisted). "native" or "ffi".
     pub backend: String,
     /// Per-network configuration sections (e.g., `[testnet]`, `[mainnet]`).
-    pub networks: BTreeMap<String, NetworkConfig>,
+    pub(crate) networks: BTreeMap<String, NetworkConfig>,
 }
 
 /// Helper struct for serde that handles only the flat (non-network) fields.
@@ -70,6 +76,15 @@ fn default_window_height() -> u32 {
 
 fn default_mempool_strategy() -> String {
     "bloom-filter".to_string()
+}
+
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        Self {
+            peers: Vec::new(),
+            mempool_strategy: default_mempool_strategy(),
+        }
+    }
 }
 
 impl Default for AppConfig {
@@ -127,7 +142,7 @@ impl<'de> Deserialize<'de> for AppConfig {
 
         // Extract network sections before deserializing the flat fields.
         let mut networks = BTreeMap::new();
-        for &key in NETWORK_KEYS {
+        for &(_, key) in NETWORK_ENTRIES {
             if let Some(val) = table.remove(key) {
                 let net_cfg: NetworkConfig = val.try_into().map_err(serde::de::Error::custom)?;
                 networks.insert(key.to_string(), net_cfg);
@@ -160,13 +175,12 @@ impl<'de> Deserialize<'de> for AppConfig {
 
 impl AppConfig {
     /// Returns the TOML section key for the given network.
-    fn network_key(network: Network) -> &'static str {
-        match network {
-            Network::Mainnet => "mainnet",
-            Network::Testnet => "testnet",
-            Network::Regtest => "regtest",
-            _ => "devnet",
-        }
+    pub(crate) fn network_key(network: Network) -> &'static str {
+        NETWORK_ENTRIES
+            .iter()
+            .find(|(n, _)| *n == network)
+            .map(|(_, key)| *key)
+            .unwrap_or("devnet")
     }
 
     /// Returns the active network's configuration.
@@ -276,7 +290,8 @@ impl AppConfig {
 
     /// Migrate old flat `peers` and `mempool_strategy` fields into the
     /// active network's section. Only applies when the raw TOML contains
-    /// these keys at the top level.
+    /// these keys at the top level and the active network does not already
+    /// have an explicit section in the file.
     fn migrate_legacy_fields(raw_toml: &str, config: &mut Self) {
         let table: toml::Table = match raw_toml.parse() {
             Ok(t) => t,
@@ -287,6 +302,13 @@ impl AppConfig {
         let has_legacy_strategy = table.get("mempool_strategy").is_some();
 
         if !has_legacy_peers && !has_legacy_strategy {
+            return;
+        }
+
+        // If the active network already has an explicit section in the raw
+        // TOML, don't overwrite it with legacy values.
+        let key = Self::network_key(config.network);
+        if table.get(key).is_some() {
             return;
         }
 
@@ -1049,6 +1071,41 @@ mod tests {
     }
 
     #[test]
+    fn network_config_mut_serializes_with_sensible_mempool_default() {
+        let mut config = AppConfig::default();
+        config.network_config_mut().peers = vec!["1.2.3.4:9999".to_string()];
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        assert!(
+            !toml_str.contains("mempool_strategy = \"\""),
+            "unexpected empty mempool_strategy in TOML: {toml_str}"
+        );
+        let restored: AppConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(restored.mempool_strategy(), "bloom-filter");
+    }
+
+    #[test]
+    fn legacy_migration_does_not_overwrite_per_network_values() {
+        let toml_str = r#"
+            network = "testnet"
+            data_dir = "/tmp"
+            dev_mode = false
+            log_level = "info"
+            peers = ["legacy-peer:19999"]
+            mempool_strategy = "fetch-all"
+
+            [testnet]
+            peers = ["explicit-peer:19999"]
+            mempool_strategy = "bloom-filter"
+        "#;
+
+        let mut config: AppConfig = toml::from_str(toml_str).unwrap();
+        AppConfig::migrate_legacy_fields(toml_str, &mut config);
+
+        assert_eq!(config.peers(), &["explicit-peer:19999"]);
+        assert_eq!(config.mempool_strategy(), "bloom-filter");
+    }
+
+    #[test]
     fn legacy_flat_config_migrates_to_per_network() {
         let toml_str = r#"
             network = "testnet"
@@ -1095,15 +1152,13 @@ mod tests {
             ..Default::default()
         };
         config.network_config_mut().mempool_strategy = "fetch-all".to_string();
-        config
-            .networks
-            .entry("testnet".to_string())
-            .or_default()
-            .mempool_strategy = "bloom-filter".to_string();
-
-        assert_eq!(config.mempool_strategy(), "fetch-all");
 
         config.network = Network::Testnet;
+        config.network_config_mut().mempool_strategy = "bloom-filter".to_string();
+
         assert_eq!(config.mempool_strategy(), "bloom-filter");
+
+        config.network = Network::Mainnet;
+        assert_eq!(config.mempool_strategy(), "fetch-all");
     }
 }
