@@ -54,6 +54,7 @@ pub struct AppConfig {
 
 /// Helper struct for serde that handles only the flat (non-network) fields.
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AppConfigFlat {
     network: Network,
     data_dir: PathBuf,
@@ -147,40 +148,6 @@ impl<'de> Deserialize<'de> for AppConfig {
             if let Some(val) = table.remove(key) {
                 let net_cfg: NetworkConfig = val.try_into().map_err(serde::de::Error::custom)?;
                 networks.insert(key.to_string(), net_cfg);
-            }
-        }
-
-        // Reject unknown top-level keys (anything that isn't a known network
-        // section or a flat config field).
-        let known_flat_keys: &[&str] = &[
-            "network",
-            "data_dir",
-            "wallet_dir",
-            "dev_mode",
-            "log_level",
-            "window_width",
-            "window_height",
-        ];
-        for key in table.keys() {
-            let is_network = NETWORK_ENTRIES.iter().any(|(_, k)| *k == key);
-            let is_flat = known_flat_keys.contains(&key.as_str());
-            if !is_network && !is_flat {
-                return Err(serde::de::Error::unknown_field(
-                    key,
-                    &[
-                        "network",
-                        "data_dir",
-                        "wallet_dir",
-                        "dev_mode",
-                        "log_level",
-                        "window_width",
-                        "window_height",
-                        "mainnet",
-                        "testnet",
-                        "devnet",
-                        "regtest",
-                    ],
-                ));
             }
         }
 
