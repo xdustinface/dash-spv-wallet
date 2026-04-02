@@ -696,6 +696,41 @@ mod tests {
     }
 
     #[test]
+    fn clear_network_data_dir_leaves_sibling_networks_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let testnet_dir = tmp.path().join("testnet");
+        let mainnet_dir = tmp.path().join("mainnet");
+        fs::create_dir_all(&testnet_dir).unwrap();
+        fs::create_dir_all(&mainnet_dir).unwrap();
+        fs::write(testnet_dir.join("blocks.dat"), b"testnet data").unwrap();
+        fs::write(mainnet_dir.join("blocks.dat"), b"mainnet data").unwrap();
+
+        let config = AppConfig {
+            data_dir: tmp.path().to_path_buf(),
+            network: Network::Testnet,
+            wallet_dir: Some(tmp.path().join("wallets")),
+            ..Default::default()
+        };
+
+        config.clear_network_data_dir().unwrap();
+
+        assert!(testnet_dir.exists(), "testnet dir should be recreated");
+        assert!(
+            !testnet_dir.join("blocks.dat").exists(),
+            "testnet contents should be cleared"
+        );
+        assert!(
+            fs::read_dir(&testnet_dir).unwrap().next().is_none(),
+            "testnet dir should be empty"
+        );
+        assert!(mainnet_dir.exists(), "sibling mainnet dir must not be removed");
+        assert!(
+            mainnet_dir.join("blocks.dat").exists(),
+            "sibling mainnet files must not be removed"
+        );
+    }
+
+    #[test]
     fn clear_network_data_dir_allows_default_wallet_dir() {
         let tmp = tempfile::tempdir().unwrap();
         // Default wallet_dir is <data_dir>/wallets, which is a sibling of the
