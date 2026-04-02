@@ -70,9 +70,12 @@ impl AppConfig {
     ///
     /// Priority: CLI args > TOML file > defaults.
     pub fn load() -> Result<Self, ConfigError> {
-        let cli = Cli::parse();
+        Self::load_with_cli(Cli::parse(), &paths::config_file_path())
+    }
 
-        let mut config = match fs::read_to_string(paths::config_file_path()) {
+    /// Load configuration from `config_path`, applying CLI overrides from `cli`.
+    fn load_with_cli(cli: Cli, config_path: &std::path::Path) -> Result<Self, ConfigError> {
+        let mut config = match fs::read_to_string(config_path) {
             Ok(contents) => toml::from_str::<AppConfig>(&contents)
                 .map_err(|e| ConfigError::Parse(e.to_string()))?,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -157,7 +160,7 @@ impl AppConfig {
 
 /// CLI argument parser. Fields are all optional so they only override
 /// when explicitly provided.
-#[derive(Parser)]
+#[derive(Parser, Default)]
 #[command(name = "dash-spv-ui", about = "Dash SPV Wallet")]
 struct Cli {
     /// Select network
@@ -571,77 +574,98 @@ mod tests {
         }
     }
 
+    /// Write TOML content to a temporary config file and return its path.
+    fn write_temp_config(name: &str, toml_str: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("dash-spv-ui-test-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        std::fs::write(&path, toml_str).unwrap();
+        path
+    }
+
     #[test]
     fn cli_data_dir_overrides_toml_value() {
-        let toml_str = r#"
-            network = "testnet"
-            data_dir = "/toml/data"
-            dev_mode = false
-            log_level = "info"
-        "#;
-        let mut config: AppConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.data_dir, PathBuf::from("/toml/data"));
+        let config_path = write_temp_config(
+            "cli-override",
+            r#"
+                network = "testnet"
+                data_dir = "/toml/data"
+                dev_mode = false
+                log_level = "info"
+            "#,
+        );
+        let cli = Cli {
+            data_dir: Some(PathBuf::from("/cli/data")),
+            ..Default::default()
+        };
 
-        // Simulate CLI override.
-        let cli_data_dir = Some(PathBuf::from("/cli/data"));
-        if let Some(data_dir) = cli_data_dir {
-            config.data_dir = data_dir;
-        }
-        config.data_dir = paths::expand_tilde(&config.data_dir);
-
+        let config = AppConfig::load_with_cli(cli, &config_path).unwrap();
         assert_eq!(config.data_dir, PathBuf::from("/cli/data"));
+
+        let _ = std::fs::remove_dir_all(config_path.parent().unwrap());
     }
 
     #[test]
     fn cli_data_dir_tilde_expansion() {
-        let mut config = AppConfig {
-            data_dir: PathBuf::from("/original"),
+        let config_path = write_temp_config(
+            "cli-tilde",
+            r#"
+                network = "testnet"
+                data_dir = "/original"
+                dev_mode = false
+                log_level = "info"
+            "#,
+        );
+        let cli = Cli {
+            data_dir: Some(PathBuf::from("~/custom-dir")),
             ..Default::default()
         };
 
-        let cli_data_dir = Some(PathBuf::from("~/custom-dir"));
-        if let Some(data_dir) = cli_data_dir {
-            config.data_dir = data_dir;
-        }
-        config.data_dir = paths::expand_tilde(&config.data_dir);
-
+        let config = AppConfig::load_with_cli(cli, &config_path).unwrap();
         assert!(!config.data_dir.starts_with("~"));
         assert!(config.data_dir.ends_with("custom-dir"));
+
+        let _ = std::fs::remove_dir_all(config_path.parent().unwrap());
     }
 
     #[test]
     fn cli_data_dir_none_preserves_toml_value() {
-        let toml_str = r#"
-            network = "testnet"
-            data_dir = "/toml/data"
-            dev_mode = false
-            log_level = "info"
-        "#;
-        let mut config: AppConfig = toml::from_str(toml_str).unwrap();
+        let config_path = write_temp_config(
+            "cli-none",
+            r#"
+                network = "testnet"
+                data_dir = "/toml/data"
+                dev_mode = false
+                log_level = "info"
+            "#,
+        );
+        let cli = Cli::default();
 
-        let cli_data_dir: Option<PathBuf> = None;
-        if let Some(data_dir) = cli_data_dir {
-            config.data_dir = data_dir;
-        }
-
+        let config = AppConfig::load_with_cli(cli, &config_path).unwrap();
         assert_eq!(config.data_dir, PathBuf::from("/toml/data"));
+
+        let _ = std::fs::remove_dir_all(config_path.parent().unwrap());
     }
 
     #[test]
     fn invalid_mempool_strategy_is_rejected() {
-        let toml_str = r#"
-            network = "testnet"
-            data_dir = "/tmp"
-            dev_mode = false
-            log_level = "info"
-            mempool_strategy = "invalid-strategy"
-        "#;
-        let config: AppConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.mempool_strategy, "invalid-strategy");
+        let config_path = write_temp_config(
+            "invalid-mempool",
+            r#"
+                network = "testnet"
+                data_dir = "/tmp"
+                dev_mode = false
+                log_level = "info"
+                mempool_strategy = "invalid-strategy"
+            "#,
+        );
 
-        // Validation happens in `AppConfig::load()` which parses CLI args,
-        // so we test the validation logic directly here.
-        let valid_strategies = ["bloom-filter", "fetch-all"];
-        assert!(!valid_strategies.contains(&config.mempool_strategy.as_str()));
+        let result = AppConfig::load_with_cli(Cli::default(), &config_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("invalid mempool_strategy"));
+
+        let _ = std::fs::remove_dir_all(config_path.parent().unwrap());
     }
 }
