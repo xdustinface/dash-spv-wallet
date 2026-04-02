@@ -143,9 +143,24 @@ impl AppConfig {
             .unwrap_or_else(|| self.data_dir.join("wallets"))
     }
 
-    /// Create all required directories (data, wallet, config).
+    /// Returns the network-specific data directory (e.g., `<data_dir>/testnet/`).
+    pub fn network_data_dir(&self) -> PathBuf {
+        self.data_dir.join(self.network_dir_name())
+    }
+
+    fn network_dir_name(&self) -> &str {
+        match self.network {
+            Network::Mainnet => "mainnet",
+            Network::Testnet => "testnet",
+            Network::Regtest => "regtest",
+            _ => "devnet",
+        }
+    }
+
+    /// Create all required directories (data, network-specific, wallet, config).
     pub fn ensure_dirs(&self) -> Result<(), ConfigError> {
         fs::create_dir_all(&self.data_dir).map_err(ConfigError::Io)?;
+        fs::create_dir_all(self.network_data_dir()).map_err(ConfigError::Io)?;
         fs::create_dir_all(self.wallet_dir()).map_err(ConfigError::Io)?;
         fs::create_dir_all(paths::config_dir()).map_err(ConfigError::Io)?;
         Ok(())
@@ -427,6 +442,34 @@ mod tests {
     }
 
     #[test]
+    fn network_data_dir_uses_network_name() {
+        let config = AppConfig {
+            data_dir: PathBuf::from("/data"),
+            network: Network::Testnet,
+            ..Default::default()
+        };
+        assert_eq!(config.network_data_dir(), PathBuf::from("/data/testnet"));
+
+        let config = AppConfig {
+            network: Network::Mainnet,
+            ..config
+        };
+        assert_eq!(config.network_data_dir(), PathBuf::from("/data/mainnet"));
+
+        let config = AppConfig {
+            network: Network::Regtest,
+            ..config
+        };
+        assert_eq!(config.network_data_dir(), PathBuf::from("/data/regtest"));
+
+        let config = AppConfig {
+            network: Network::Devnet,
+            ..config
+        };
+        assert_eq!(config.network_data_dir(), PathBuf::from("/data/devnet"));
+    }
+
+    #[test]
     fn ensure_dirs_creates_directories() {
         let tmp = std::env::temp_dir().join("dash-spv-ui-test-ensure-dirs");
         let _ = std::fs::remove_dir_all(&tmp);
@@ -439,6 +482,7 @@ mod tests {
         config.ensure_dirs().unwrap();
 
         assert!(config.data_dir.exists());
+        assert!(config.network_data_dir().exists());
         assert!(config.wallet_dir().exists());
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -457,6 +501,7 @@ mod tests {
         config.ensure_dirs().unwrap();
 
         assert!(config.data_dir.exists());
+        assert!(config.network_data_dir().exists());
         assert!(tmp.join("data").join("wallets").exists());
 
         let _ = std::fs::remove_dir_all(&tmp);
