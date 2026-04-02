@@ -105,6 +105,9 @@ impl AppConfig {
         if let Some(mempool_strategy) = cli.mempool_strategy {
             config.mempool_strategy = mempool_strategy;
         }
+        if let Some(data_dir) = cli.data_dir {
+            config.data_dir = data_dir;
+        }
 
         // Validate mempool strategy.
         let valid_strategies = ["bloom-filter", "fetch-all"];
@@ -184,6 +187,10 @@ struct Cli {
     /// Mempool strategy: "fetch-all" or "bloom-filter"
     #[arg(long)]
     mempool_strategy: Option<String>,
+
+    /// Override the data directory path
+    #[arg(long)]
+    data_dir: Option<PathBuf>,
 }
 
 /// Errors that can occur during configuration loading or saving.
@@ -562,6 +569,62 @@ mod tests {
             let restored: AppConfig = toml::from_str(&toml_str).unwrap();
             assert_eq!(restored.mempool_strategy, strategy);
         }
+    }
+
+    #[test]
+    fn cli_data_dir_overrides_toml_value() {
+        let toml_str = r#"
+            network = "testnet"
+            data_dir = "/toml/data"
+            dev_mode = false
+            log_level = "info"
+        "#;
+        let mut config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.data_dir, PathBuf::from("/toml/data"));
+
+        // Simulate CLI override.
+        let cli_data_dir = Some(PathBuf::from("/cli/data"));
+        if let Some(data_dir) = cli_data_dir {
+            config.data_dir = data_dir;
+        }
+        config.data_dir = paths::expand_tilde(&config.data_dir);
+
+        assert_eq!(config.data_dir, PathBuf::from("/cli/data"));
+    }
+
+    #[test]
+    fn cli_data_dir_tilde_expansion() {
+        let mut config = AppConfig {
+            data_dir: PathBuf::from("/original"),
+            ..Default::default()
+        };
+
+        let cli_data_dir = Some(PathBuf::from("~/custom-dir"));
+        if let Some(data_dir) = cli_data_dir {
+            config.data_dir = data_dir;
+        }
+        config.data_dir = paths::expand_tilde(&config.data_dir);
+
+        assert!(!config.data_dir.starts_with("~"));
+        assert!(config.data_dir.ends_with("custom-dir"));
+    }
+
+    #[test]
+    fn cli_data_dir_none_preserves_toml_value() {
+        let toml_str = r#"
+            network = "testnet"
+            data_dir = "/toml/data"
+            dev_mode = false
+            log_level = "info"
+        "#;
+        let mut config: AppConfig = toml::from_str(toml_str).unwrap();
+
+        let cli_data_dir: Option<PathBuf> = None;
+        if let Some(data_dir) = cli_data_dir {
+            config.data_dir = data_dir;
+        }
+
+        assert_eq!(config.data_dir, PathBuf::from("/toml/data"));
     }
 
     #[test]
