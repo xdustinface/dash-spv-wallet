@@ -54,6 +54,7 @@ pub struct AppConfig {
 
 /// Helper struct for serde that handles only the flat (non-network) fields.
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AppConfigFlat {
     network: Network,
     data_dir: PathBuf,
@@ -150,11 +151,6 @@ impl<'de> Deserialize<'de> for AppConfig {
             }
         }
 
-        // Remove legacy top-level fields that are no longer part of the flat struct.
-        // They will be migrated in `load()`.
-        table.remove("peers");
-        table.remove("mempool_strategy");
-
         let flat: AppConfigFlat = toml::Value::Table(table)
             .try_into()
             .map_err(serde::de::Error::custom)?;
@@ -225,20 +221,8 @@ impl AppConfig {
     /// Load configuration from `config_path`, applying CLI overrides from `cli`.
     fn load_with_cli(cli: Cli, config_path: &std::path::Path) -> Result<Self, ConfigError> {
         let mut config = match fs::read_to_string(config_path) {
-            Ok(contents) => {
-                let table: toml::Table = contents
-                    .parse()
-                    .map_err(|e: toml::de::Error| ConfigError::Parse(e.to_string()))?;
-
-                let mut cfg: AppConfig = toml::Value::Table(table.clone())
-                    .try_into()
-                    .map_err(|e: toml::de::Error| ConfigError::Parse(e.to_string()))?;
-
-                // Migrate legacy flat fields into the per-network section.
-                Self::migrate_legacy_fields(&table, &mut cfg);
-
-                cfg
-            }
+            Ok(contents) => toml::from_str(&contents)
+                .map_err(|e: toml::de::Error| ConfigError::Parse(e.to_string()))?,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 let default_config = Self::default();
                 let _ = default_config.save();
@@ -289,39 +273,6 @@ impl AppConfig {
         }
 
         Ok(config)
-    }
-
-    /// Migrate old flat `peers` and `mempool_strategy` fields into the
-    /// active network's section. Only applies when the parsed TOML contains
-    /// these keys at the top level and the active network does not already
-    /// have an explicit section in the file.
-    fn migrate_legacy_fields(table: &toml::Table, config: &mut Self) {
-        let has_legacy_peers = table.get("peers").is_some();
-        let has_legacy_strategy = table.get("mempool_strategy").is_some();
-
-        if !has_legacy_peers && !has_legacy_strategy {
-            return;
-        }
-
-        // If the active network already has an explicit section in the raw
-        // TOML, don't overwrite it with legacy values.
-        let key = Self::network_key(config.network);
-        if table.get(key).is_some() {
-            return;
-        }
-
-        let net_cfg = config.network_config_mut();
-
-        if let Some(toml::Value::Array(arr)) = table.get("peers") {
-            net_cfg.peers = arr
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect();
-        }
-
-        if let Some(toml::Value::String(s)) = table.get("mempool_strategy") {
-            net_cfg.mempool_strategy = s.clone();
-        }
     }
 
     /// Save the current configuration to the TOML file.
@@ -1082,45 +1033,32 @@ mod tests {
     }
 
     #[test]
-    fn legacy_migration_does_not_overwrite_per_network_values() {
-        let toml_str = r#"
-            network = "testnet"
-            data_dir = "/tmp"
-            dev_mode = false
-            log_level = "info"
-            peers = ["legacy-peer:19999"]
-            mempool_strategy = "fetch-all"
-
-            [testnet]
-            peers = ["explicit-peer:19999"]
-            mempool_strategy = "bloom-filter"
-        "#;
-
-        let table: toml::Table = toml_str.parse().unwrap();
-        let mut config: AppConfig = toml::from_str(toml_str).unwrap();
-        AppConfig::migrate_legacy_fields(&table, &mut config);
-
-        assert_eq!(config.peers(), &["explicit-peer:19999"]);
-        assert_eq!(config.mempool_strategy(), "bloom-filter");
-    }
-
-    #[test]
-    fn legacy_flat_config_migrates_to_per_network() {
+    fn legacy_flat_peers_rejected_as_unknown_field() {
         let toml_str = r#"
             network = "testnet"
             data_dir = "/tmp"
             dev_mode = false
             log_level = "info"
             peers = ["1.2.3.4:19999"]
+        "#;
+        let result = toml::from_str::<AppConfig>(toml_str);
+        assert!(result.is_err(), "top-level `peers` should be rejected");
+    }
+
+    #[test]
+    fn legacy_flat_mempool_strategy_rejected_as_unknown_field() {
+        let toml_str = r#"
+            network = "testnet"
+            data_dir = "/tmp"
+            dev_mode = false
+            log_level = "info"
             mempool_strategy = "fetch-all"
         "#;
-
-        let table: toml::Table = toml_str.parse().unwrap();
-        let mut config: AppConfig = toml::from_str(toml_str).unwrap();
-        AppConfig::migrate_legacy_fields(&table, &mut config);
-
-        assert_eq!(config.peers(), &["1.2.3.4:19999"]);
-        assert_eq!(config.mempool_strategy(), "fetch-all");
+        let result = toml::from_str::<AppConfig>(toml_str);
+        assert!(
+            result.is_err(),
+            "top-level `mempool_strategy` should be rejected"
+        );
     }
 
     #[test]
