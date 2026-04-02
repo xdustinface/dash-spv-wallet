@@ -158,6 +158,25 @@ impl AppConfig {
         }
     }
 
+    /// Remove and recreate the network-specific data directory.
+    ///
+    /// Returns an error if the wallet directory is inside the network data directory
+    /// to prevent accidental deletion of wallet data.
+    pub(crate) fn clear_network_data_dir(&self) -> Result<(), ConfigError> {
+        let network_dir = self.network_data_dir();
+        let wallet_dir = self.wallet_dir();
+        if wallet_dir.starts_with(&network_dir) {
+            return Err(ConfigError::Parse(
+                "wallet dir is inside network data dir; refusing to clear cache".to_string(),
+            ));
+        }
+        if network_dir.exists() {
+            fs::remove_dir_all(&network_dir).map_err(ConfigError::Io)?;
+        }
+        fs::create_dir_all(&network_dir).map_err(ConfigError::Io)?;
+        Ok(())
+    }
+
     /// Create all required directories (data, network-specific, wallet, config).
     pub fn ensure_dirs(&self) -> Result<(), ConfigError> {
         fs::create_dir_all(&self.data_dir).map_err(ConfigError::Io)?;

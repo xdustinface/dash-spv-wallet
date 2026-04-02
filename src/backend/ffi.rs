@@ -1006,25 +1006,9 @@ impl SpvBackend for FfiBackend {
             self.stop().await?;
         }
 
-        let network_dir = self.config.network_data_dir();
-        let wallet_dir = self.config.wallet_dir();
-        if wallet_dir.starts_with(&network_dir) {
-            return Err(BackendError::Storage(
-                "wallet dir is inside network data dir; refusing to clear cache".to_string(),
-            ));
-        }
-
-        if network_dir.exists() {
-            std::fs::remove_dir_all(&network_dir).map_err(|e| {
-                BackendError::Storage(format!("failed to remove {}: {e}", network_dir.display()))
-            })?;
-        }
-
-        std::fs::create_dir_all(&network_dir).map_err(|e| {
-            BackendError::Storage(format!("failed to recreate {}: {e}", network_dir.display()))
-        })?;
-
-        Ok(())
+        self.config
+            .clear_network_data_dir()
+            .map_err(|e| BackendError::Storage(e.to_string()))
     }
 
     fn subscribe_events(&self) -> EventReceiver {
