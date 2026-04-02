@@ -228,11 +228,16 @@ impl AppConfig {
     fn load_with_cli(cli: Cli, config_path: &std::path::Path) -> Result<Self, ConfigError> {
         let mut config = match fs::read_to_string(config_path) {
             Ok(contents) => {
-                let mut cfg = toml::from_str::<AppConfig>(&contents)
-                    .map_err(|e| ConfigError::Parse(e.to_string()))?;
+                let table: toml::Table = contents
+                    .parse()
+                    .map_err(|e: toml::de::Error| ConfigError::Parse(e.to_string()))?;
+
+                let mut cfg: AppConfig = toml::Value::Table(table.clone())
+                    .try_into()
+                    .map_err(|e: toml::de::Error| ConfigError::Parse(e.to_string()))?;
 
                 // Migrate legacy flat fields into the per-network section.
-                Self::migrate_legacy_fields(&contents, &mut cfg);
+                Self::migrate_legacy_fields(&table, &mut cfg);
 
                 cfg
             }
@@ -289,15 +294,10 @@ impl AppConfig {
     }
 
     /// Migrate old flat `peers` and `mempool_strategy` fields into the
-    /// active network's section. Only applies when the raw TOML contains
+    /// active network's section. Only applies when the parsed TOML contains
     /// these keys at the top level and the active network does not already
     /// have an explicit section in the file.
-    fn migrate_legacy_fields(raw_toml: &str, config: &mut Self) {
-        let table: toml::Table = match raw_toml.parse() {
-            Ok(t) => t,
-            Err(_) => return,
-        };
-
+    fn migrate_legacy_fields(table: &toml::Table, config: &mut Self) {
         let has_legacy_peers = table.get("peers").is_some();
         let has_legacy_strategy = table.get("mempool_strategy").is_some();
 
@@ -1098,8 +1098,9 @@ mod tests {
             mempool_strategy = "bloom-filter"
         "#;
 
+        let table: toml::Table = toml_str.parse().unwrap();
         let mut config: AppConfig = toml::from_str(toml_str).unwrap();
-        AppConfig::migrate_legacy_fields(toml_str, &mut config);
+        AppConfig::migrate_legacy_fields(&table, &mut config);
 
         assert_eq!(config.peers(), &["explicit-peer:19999"]);
         assert_eq!(config.mempool_strategy(), "bloom-filter");
@@ -1116,8 +1117,9 @@ mod tests {
             mempool_strategy = "fetch-all"
         "#;
 
+        let table: toml::Table = toml_str.parse().unwrap();
         let mut config: AppConfig = toml::from_str(toml_str).unwrap();
-        AppConfig::migrate_legacy_fields(toml_str, &mut config);
+        AppConfig::migrate_legacy_fields(&table, &mut config);
 
         assert_eq!(config.peers(), &["1.2.3.4:19999"]);
         assert_eq!(config.mempool_strategy(), "fetch-all");
@@ -1143,6 +1145,14 @@ mod tests {
         let config: AppConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.peers(), &["1.2.3.4:19999"]);
         assert_eq!(config.mempool_strategy(), "fetch-all");
+    }
+
+    #[test]
+    fn network_key_maps_all_variants() {
+        assert_eq!(AppConfig::network_key(Network::Mainnet), "mainnet");
+        assert_eq!(AppConfig::network_key(Network::Testnet), "testnet");
+        assert_eq!(AppConfig::network_key(Network::Devnet), "devnet");
+        assert_eq!(AppConfig::network_key(Network::Regtest), "regtest");
     }
 
     #[test]
