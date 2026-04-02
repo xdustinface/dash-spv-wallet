@@ -153,6 +153,7 @@ impl AppConfig {
             Network::Mainnet => "mainnet",
             Network::Testnet => "testnet",
             Network::Regtest => "regtest",
+            Network::Devnet => "devnet",
             _ => "devnet",
         }
     }
