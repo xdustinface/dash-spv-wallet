@@ -3,3 +3,16 @@ name = "Dash SPV Wallet"
 default_platform = "desktop"
 out_dir = "dist"
 asset_dir = "assets"
+
+[bundle]
+identifier = "org.dash.spv-wallet"
+publisher = "Dash Core Group"
+icon = ["assets/icons/AppIcon.icns", "assets/icons/AppIcon.ico", "assets/icons/icon_256x256.png"]
+short_description = "Cross-platform Dash SPV wallet"
+copyright = "Dash Core Group"
+
+[bundle.macos]
+minimum_system_version = "11.0"
+
+[bundle.deb]
+depends = ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
