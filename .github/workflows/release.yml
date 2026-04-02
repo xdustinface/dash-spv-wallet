@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   check-nightly:
@@ -106,10 +106,14 @@ jobs:
               curl -fsSL -o "$RUNNER_TEMP/dx.zip" "https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/${DX_ARCHIVE}"
               unzip -o "$RUNNER_TEMP/dx.zip" -d "$HOME/.cargo/bin"
               ;;
+            *)
+              echo "Unsupported target: ${{ matrix.target }}" >&2
+              exit 1
+              ;;
           esac
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - run: npm install
+      - run: npm ci
 
       - name: Bundle application
         shell: bash
@@ -120,9 +124,11 @@ jobs:
         shell: bash
         run: |
           BINARY=$(find dist/bundle -type f -executable -name "dash-spv-wallet" 2>/dev/null || find target/release -maxdepth 1 -type f -executable -name "dash-spv-wallet" 2>/dev/null)
-          if [ -n "$BINARY" ]; then
-            tar -czf dist/bundle/dash-spv-wallet-linux-x86_64.tar.gz -C "$(dirname "$BINARY")" "$(basename "$BINARY")"
+          if [ -z "$BINARY" ]; then
+            echo "Error: could not locate dash-spv-wallet binary" >&2
+            exit 1
           fi
+          tar -czf dist/bundle/dash-spv-wallet-linux-x86_64.tar.gz -C "$(dirname "$BINARY")" "$(basename "$BINARY")"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -159,6 +165,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Update nightly tag
+        run: |
+          git tag -f nightly
+          git push origin nightly --force
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
