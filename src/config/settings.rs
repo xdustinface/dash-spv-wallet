@@ -630,6 +630,26 @@ mod tests {
     }
 
     #[test]
+    fn toml_data_dir_tilde_expansion() {
+        let config_path = write_temp_config(
+            "toml-tilde",
+            r#"
+                network = "testnet"
+                data_dir = "~/some/path"
+                dev_mode = false
+                log_level = "info"
+            "#,
+        );
+        let cli = Cli::default();
+
+        let config = AppConfig::load_with_cli(cli, &config_path).unwrap();
+        assert!(!config.data_dir.starts_with("~"));
+        assert!(config.data_dir.ends_with("some/path"));
+
+        let _ = std::fs::remove_dir_all(config_path.parent().unwrap());
+    }
+
+    #[test]
     fn cli_data_dir_none_preserves_toml_value() {
         let config_path = write_temp_config(
             "cli-none",
