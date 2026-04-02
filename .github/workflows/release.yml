@@ -42,10 +42,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-apple-darwin
-            runner: macos-latest
-            package_types: dmg
-            artifact_name: dash-spv-wallet-macos-x86_64
+          # x86_64-apple-darwin is not supported — dx bundle cannot cross-compile
+          # and macos-latest runners are arm64. Requires a native x86_64 runner.
           - target: aarch64-apple-darwin
             runner: macos-latest
             package_types: dmg
@@ -82,35 +80,32 @@ jobs:
         run: |
           DX_VERSION="0.7.4"
           mkdir -p "$HOME/.cargo/bin"
-          case "${{ matrix.target }}" in
-            x86_64-unknown-linux-gnu)
+          case "$RUNNER_OS-$RUNNER_ARCH" in
+            Linux-X64)
               DX_ARCHIVE="dx-x86_64-unknown-linux-gnu.tar.gz"
-              curl -fsSL "https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/${DX_ARCHIVE}" \
-                | tar -xz -C "$HOME/.cargo/bin"
-              chmod +x "$HOME/.cargo/bin/dx"
               ;;
-            x86_64-apple-darwin)
-              DX_ARCHIVE="dx-x86_64-apple-darwin.tar.gz"
-              curl -fsSL "https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/${DX_ARCHIVE}" \
-                | tar -xz -C "$HOME/.cargo/bin"
-              chmod +x "$HOME/.cargo/bin/dx"
-              ;;
-            aarch64-apple-darwin)
+            macOS-ARM64)
               DX_ARCHIVE="dx-aarch64-apple-darwin.tar.gz"
-              curl -fsSL "https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/${DX_ARCHIVE}" \
-                | tar -xz -C "$HOME/.cargo/bin"
-              chmod +x "$HOME/.cargo/bin/dx"
               ;;
-            x86_64-pc-windows-msvc)
+            macOS-X64)
+              DX_ARCHIVE="dx-x86_64-apple-darwin.tar.gz"
+              ;;
+            Windows-X64)
               DX_ARCHIVE="dx-x86_64-pc-windows-msvc.zip"
-              curl -fsSL -o "$RUNNER_TEMP/dx.zip" "https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/${DX_ARCHIVE}"
-              unzip -o "$RUNNER_TEMP/dx.zip" -d "$HOME/.cargo/bin"
               ;;
             *)
-              echo "Unsupported target: ${{ matrix.target }}" >&2
+              echo "Unsupported runner: $RUNNER_OS-$RUNNER_ARCH" >&2
               exit 1
               ;;
           esac
+          if [[ "$DX_ARCHIVE" == *.zip ]]; then
+            curl -fsSL -o "$RUNNER_TEMP/dx.zip" "https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/${DX_ARCHIVE}"
+            unzip -o "$RUNNER_TEMP/dx.zip" -d "$HOME/.cargo/bin"
+          else
+            curl -fsSL "https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/${DX_ARCHIVE}" \
+              | tar -xz -C "$HOME/.cargo/bin"
+            chmod +x "$HOME/.cargo/bin/dx"
+          fi
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - run: npm ci
@@ -123,8 +118,10 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          BINARY=$(find target/dx -type f -executable -name "dash-spv-wallet" 2>/dev/null \
-                   || find target/release -maxdepth 1 -type f -executable -name "dash-spv-wallet" 2>/dev/null)
+          BINARY=$(find target/dx -type f -executable -name "dash-spv-wallet" 2>/dev/null | head -1)
+          if [ -z "$BINARY" ]; then
+            BINARY=$(find target/release -maxdepth 1 -type f -executable -name "dash-spv-wallet" 2>/dev/null | head -1)
+          fi
           if [ -z "$BINARY" ]; then
             echo "Error: could not locate dash-spv-wallet binary" >&2
             find target/dx -type f -executable 2>/dev/null || true
