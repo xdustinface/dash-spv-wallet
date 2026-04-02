@@ -61,7 +61,7 @@ pub fn Settings() -> Element {
     let mut network = use_signal(|| config.network);
     let mut dev_mode = use_signal(|| config.dev_mode);
     let mut log_level = use_signal(|| config.log_level.clone());
-    let mut mempool_strategy = use_signal(|| config.mempool_strategy.clone());
+    let mut mempool_strategy = use_signal(|| config.mempool_strategy().to_string());
 
     let backends: &[&str] = if cfg!(feature = "ffi") {
         &["native", "ffi"]
@@ -81,7 +81,7 @@ pub fn Settings() -> Element {
         };
         cfg.dev_mode = dev_mode();
         cfg.log_level = log_level();
-        cfg.mempool_strategy = mempool_strategy();
+        cfg.network_config_mut().mempool_strategy = mempool_strategy();
 
         match cfg.save() {
             Ok(()) => save_status.set(Some(Ok(()))),

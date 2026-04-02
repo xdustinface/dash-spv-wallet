@@ -56,15 +56,16 @@ impl BackendTestContext {
         std::fs::create_dir_all(&data_dir).expect("failed to create data dir");
         std::fs::create_dir_all(&wallet_dir).expect("failed to create wallet dir");
 
-        AppConfig {
+        let mut config = AppConfig {
             network: Network::Regtest,
             data_dir,
             wallet_dir: Some(wallet_dir),
             dev_mode: true,
             log_level: "debug".to_string(),
-            peers: vec![self.dashd.addr.to_string()],
             ..Default::default()
-        }
+        };
+        config.network_config_mut().peers = vec![self.dashd.addr.to_string()];
+        config
     }
 }
 
