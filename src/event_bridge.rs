@@ -48,7 +48,9 @@ pub fn use_event_bridge() {
 #[cfg(test)]
 mod tests {
     use crate::backend::events::{SpvEvent, event_channel};
-    use crate::backend::types::{ManagerIdentifier, WalletCoreBalance};
+    use crate::backend::types::{
+        ManagerIdentifier, TransactionDirection, TransactionType, WalletCoreBalance,
+    };
     use crate::state::connection::ConnectionState;
     use crate::state::dev_log::{DevLog, EventCategory};
     use crate::state::network::NetworkInfo;
@@ -110,12 +112,15 @@ mod tests {
         let event = SpvEvent::TransactionReceived {
             txid: [0xAA; 32],
             amount: 500_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             addresses: vec!["Xaddr1".into()],
             height: Some(1000),
             timestamp: Some(1700000000),
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: true,
+            label: None,
         };
 
         dispatch_event(&event, &mut conn, &mut wallet, &mut net, &mut log);
@@ -362,12 +367,15 @@ mod tests {
             SpvEvent::TransactionReceived {
                 txid: [1; 32],
                 amount: 1_000_000,
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
                 addresses: vec!["Xaddr".into()],
                 height: Some(9999),
                 timestamp: Some(1700000000),
                 block_hash: None,
                 is_instant_send: true,
                 is_chain_locked: false,
+                label: None,
             },
             SpvEvent::BalanceUpdated(WalletCoreBalance::new(1_000_000, 0, 0, 0)),
             SpvEvent::SyncComplete {

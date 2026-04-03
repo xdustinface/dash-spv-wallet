@@ -72,7 +72,7 @@ pub fn Dashboard() -> Element {
                         for (i , tx) in transactions.iter().take(DASHBOARD_TX_LIMIT).enumerate() {
                             {
                                 let view = format_transaction(tx, current_height, unit);
-                                let is_sent = tx.direction == TransactionDirection::Sent;
+                                let is_sent = tx.direction == TransactionDirection::Outgoing;
                                 let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
                                 let border = if is_sent { "border-error" } else { "border-success" };
                                 let is_expanded = *expanded_txid.read() == Some(tx.txid);

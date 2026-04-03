@@ -10,7 +10,8 @@ use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent};
 use super::r#trait::SpvBackend;
 use super::types::{
-    Network, SyncProgress, TransactionDirection, TransactionInfo, WalletCoreBalance,
+    Network, SyncProgress, TransactionDirection, TransactionInfo, TransactionType,
+    WalletCoreBalance,
 };
 
 /// Builder for configuring a `MockBackend` instance.
@@ -231,7 +232,8 @@ impl SpvBackend for MockBackend {
         let record = TransactionInfo {
             txid: dashcore::Txid::from_byte_array(txid_bytes),
             amount: -(amount as i64),
-            direction: TransactionDirection::Sent,
+            direction: TransactionDirection::Outgoing,
+            transaction_type: TransactionType::Standard,
             timestamp: 1700000000,
             height: None,
             fee: None,
@@ -239,6 +241,7 @@ impl SpvBackend for MockBackend {
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         };
 
         self.transactions.lock().unwrap().push(record);
@@ -246,12 +249,15 @@ impl SpvBackend for MockBackend {
         self.emit(SpvEvent::TransactionReceived {
             txid: txid_bytes,
             amount: -(amount as i64),
+            direction: TransactionDirection::Outgoing,
+            transaction_type: TransactionType::Standard,
             addresses: vec![address.to_string()],
             height: None,
             timestamp: None,
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         });
 
         Ok(txid_bytes)
@@ -290,10 +296,11 @@ pub fn mock_transaction(
     TransactionInfo {
         txid: dashcore::Txid::from_byte_array(mock_txid(index)),
         amount: match direction {
-            TransactionDirection::Sent => -(amount as i64),
-            TransactionDirection::Received => amount as i64,
+            TransactionDirection::Outgoing => -(amount as i64),
+            _ => amount as i64,
         },
         direction,
+        transaction_type: TransactionType::Standard,
         timestamp: 1700000000 + (index as u64 * 600),
         height: Some(1000 + index),
         fee: None,
@@ -301,6 +308,7 @@ pub fn mock_transaction(
         block_hash: None,
         is_instant_send: false,
         is_chain_locked: false,
+        label: None,
     }
 }
 
@@ -430,7 +438,7 @@ mod tests {
 
         let txs = backend.get_transactions().unwrap();
         assert_eq!(txs.len(), 1);
-        assert_eq!(txs[0].direction, TransactionDirection::Sent);
+        assert_eq!(txs[0].direction, TransactionDirection::Outgoing);
         assert_eq!(txs[0].amount, -250_000);
     }
 
@@ -573,8 +581,8 @@ mod tests {
     #[tokio::test]
     async fn builder_with_transactions() {
         let txs = vec![
-            mock_transaction(0, TransactionDirection::Received, 100_000),
-            mock_transaction(1, TransactionDirection::Sent, 50_000),
+            mock_transaction(0, TransactionDirection::Incoming, 100_000),
+            mock_transaction(1, TransactionDirection::Outgoing, 50_000),
         ];
         let backend = MockBackend::builder(Network::Mainnet)
             .with_transactions(txs.clone())
@@ -583,8 +591,8 @@ mod tests {
 
         let result = backend.get_transactions().unwrap();
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0].direction, TransactionDirection::Received);
-        assert_eq!(result[1].direction, TransactionDirection::Sent);
+        assert_eq!(result[0].direction, TransactionDirection::Incoming);
+        assert_eq!(result[1].direction, TransactionDirection::Outgoing);
     }
 
     #[tokio::test]

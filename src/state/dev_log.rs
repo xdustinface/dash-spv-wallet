@@ -163,7 +163,7 @@ fn sync_state_label(state: SyncState) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::types::WalletCoreBalance;
+    use crate::backend::types::{TransactionDirection, TransactionType, WalletCoreBalance};
 
     #[test]
     fn push_and_retrieve() {
@@ -270,12 +270,15 @@ mod tests {
                 SpvEvent::TransactionReceived {
                     txid: [0; 32],
                     amount: 0,
+                    direction: TransactionDirection::Incoming,
+                    transaction_type: TransactionType::Standard,
                     addresses: vec![],
                     height: None,
                     timestamp: None,
                     block_hash: None,
                     is_instant_send: false,
                     is_chain_locked: false,
+                    label: None,
                 },
                 EventCategory::Wallet,
             ),

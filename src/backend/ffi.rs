@@ -49,8 +49,10 @@ use key_wallet_ffi::managed_wallet::{
     managed_wallet_get_next_bip44_change_address, managed_wallet_info_free,
 };
 use key_wallet_ffi::mnemonic::{mnemonic_free, mnemonic_generate};
-use key_wallet_ffi::types::FFIAccountType;
-use key_wallet_ffi::types::{FFINetwork, FFITransactionContextType};
+use key_wallet_ffi::types::{
+    FFIAccountType, FFINetwork, FFITransactionContextType, FFITransactionDirection,
+    FFITransactionType,
+};
 use key_wallet_ffi::utxo::{managed_wallet_get_utxos, utxo_array_free};
 use key_wallet_ffi::wallet::wallet_free_const;
 use key_wallet_ffi::wallet_manager::{
@@ -64,7 +66,8 @@ use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent, event_channel};
 use super::r#trait::SpvBackend;
 use super::types::{
-    Network, SyncProgress, TransactionDirection, TransactionInfo, WalletCoreBalance,
+    Network, SyncProgress, TransactionDirection, TransactionInfo, TransactionType,
+    WalletCoreBalance,
 };
 use crate::config::AppConfig;
 
@@ -584,12 +587,6 @@ impl SpvBackend for FfiBackend {
                 let records = unsafe { std::slice::from_raw_parts(txs_ptr, tx_count) };
 
                 for record in records {
-                    let direction = if record.net_amount >= 0 {
-                        TransactionDirection::Received
-                    } else {
-                        TransactionDirection::Sent
-                    };
-
                     let txid = dashcore::Txid::from_byte_array(record.txid);
                     let fee = if record.fee > 0 {
                         Some(record.fee)
@@ -608,10 +605,21 @@ impl SpvBackend for FfiBackend {
                         FFITransactionContextType::InChainLockedBlock
                     );
 
+                    let label = if record.label.is_null() {
+                        None
+                    } else {
+                        // Safety: label is a valid C string for the lifetime of the record.
+                        let s = unsafe { CStr::from_ptr(record.label) }
+                            .to_string_lossy()
+                            .into_owned();
+                        if s.is_empty() { None } else { Some(s) }
+                    };
+
                     transactions.push(TransactionInfo {
                         txid,
                         amount: record.net_amount,
-                        direction,
+                        direction: ffi_direction_to_direction(record.direction),
+                        transaction_type: ffi_type_to_type(record.transaction_type),
                         timestamp: if has_block {
                             block_info.timestamp as u64
                         } else {
@@ -631,6 +639,7 @@ impl SpvBackend for FfiBackend {
                         },
                         is_instant_send,
                         is_chain_locked,
+                        label,
                     });
                 }
 
@@ -1475,9 +1484,21 @@ extern "C" fn on_transaction_received(
 
     let addresses = extract_ffi_input_addresses(r);
 
+    let label = if r.label.is_null() {
+        None
+    } else {
+        // Safety: label is a valid C string for the duration of the callback.
+        let s = unsafe { CStr::from_ptr(r.label) }
+            .to_string_lossy()
+            .into_owned();
+        if s.is_empty() { None } else { Some(s) }
+    };
+
     let _ = ctx.event_tx.send(SpvEvent::TransactionReceived {
         txid: r.txid,
         amount: r.net_amount,
+        direction: ffi_direction_to_direction(r.direction),
+        transaction_type: ffi_type_to_type(r.transaction_type),
         addresses,
         height: if has_block {
             Some(block_info.height)
@@ -1496,6 +1517,7 @@ extern "C" fn on_transaction_received(
         },
         is_instant_send,
         is_chain_locked,
+        label,
     });
 }
 
@@ -1558,6 +1580,30 @@ fn ffi_transaction_context_flags(ctx_type: FFITransactionContextType) -> (bool, 
         FFITransactionContextType::InstantSend => (true, false),
         FFITransactionContextType::InChainLockedBlock => (false, true),
         FFITransactionContextType::Mempool | FFITransactionContextType::InBlock => (false, false),
+    }
+}
+
+fn ffi_direction_to_direction(dir: FFITransactionDirection) -> TransactionDirection {
+    match dir {
+        FFITransactionDirection::Incoming => TransactionDirection::Incoming,
+        FFITransactionDirection::Outgoing => TransactionDirection::Outgoing,
+        FFITransactionDirection::Internal => TransactionDirection::Internal,
+        FFITransactionDirection::CoinJoin => TransactionDirection::CoinJoin,
+    }
+}
+
+fn ffi_type_to_type(tt: FFITransactionType) -> TransactionType {
+    match tt {
+        FFITransactionType::Standard => TransactionType::Standard,
+        FFITransactionType::CoinJoin => TransactionType::CoinJoin,
+        FFITransactionType::ProviderRegistration => TransactionType::ProviderRegistration,
+        FFITransactionType::ProviderUpdateRegistrar => TransactionType::ProviderUpdateRegistrar,
+        FFITransactionType::ProviderUpdateService => TransactionType::ProviderUpdateService,
+        FFITransactionType::ProviderUpdateRevocation => TransactionType::ProviderUpdateRevocation,
+        FFITransactionType::AssetLock => TransactionType::AssetLock,
+        FFITransactionType::AssetUnlock => TransactionType::AssetUnlock,
+        FFITransactionType::Coinbase => TransactionType::Coinbase,
+        FFITransactionType::Ignored => TransactionType::Ignored,
     }
 }
 

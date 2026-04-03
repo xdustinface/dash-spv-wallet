@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use dashcore::hashes::Hash;
 
 use crate::backend::events::SpvEvent;
-use crate::backend::types::{TransactionDirection, TransactionInfo, WalletCoreBalance};
+use crate::backend::types::{TransactionInfo, WalletCoreBalance};
 
 /// Wallet state tracked by the UI.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -36,12 +36,15 @@ impl WalletState {
             SpvEvent::TransactionReceived {
                 txid,
                 amount,
+                direction,
+                transaction_type,
                 addresses,
                 height,
                 timestamp,
                 block_hash,
                 is_instant_send,
                 is_chain_locked,
+                label,
             } => {
                 let txid_parsed = dashcore::Txid::from_byte_array(*txid);
 
@@ -57,20 +60,17 @@ impl WalletState {
                     }
                     existing.is_instant_send = *is_instant_send;
                     existing.is_chain_locked = *is_chain_locked;
-                    // Update amount/addresses if this is a full event (not a status-only update)
+                    // Update amount/addresses/direction if this is a full event (not a status-only update)
                     if *amount != 0 {
                         existing.amount = *amount;
+                        existing.direction = *direction;
+                        existing.transaction_type = *transaction_type;
                         existing.addresses.clone_from(addresses);
+                        existing.label.clone_from(label);
                     }
                     sort_transactions(&mut self.transactions);
                     return;
                 }
-
-                let direction = if *amount >= 0 {
-                    TransactionDirection::Received
-                } else {
-                    TransactionDirection::Sent
-                };
 
                 let fallback_timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -80,7 +80,8 @@ impl WalletState {
                 let record = TransactionInfo {
                     txid: txid_parsed,
                     amount: *amount,
-                    direction,
+                    direction: *direction,
+                    transaction_type: *transaction_type,
                     timestamp: timestamp.unwrap_or(fallback_timestamp),
                     height: *height,
                     fee: None,
@@ -88,6 +89,7 @@ impl WalletState {
                     block_hash: block_hash.map(dashcore::BlockHash::from_byte_array),
                     is_instant_send: *is_instant_send,
                     is_chain_locked: *is_chain_locked,
+                    label: label.clone(),
                 };
 
                 self.transactions.push(record);
@@ -106,6 +108,8 @@ impl WalletState {
 
 #[cfg(test)]
 mod tests {
+    use crate::backend::types::{TransactionDirection, TransactionType};
+
     use super::*;
 
     #[test]
@@ -131,28 +135,34 @@ mod tests {
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [1u8; 32],
             amount: 100_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             addresses: vec!["Xaddr1".into()],
             height: None,
             timestamp: Some(1000),
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         });
         assert_eq!(state.transactions.len(), 1);
         assert_eq!(
             state.transactions[0].direction,
-            TransactionDirection::Received
+            TransactionDirection::Incoming
         );
 
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [2u8; 32],
             amount: -50_000,
+            direction: TransactionDirection::Outgoing,
+            transaction_type: TransactionType::Standard,
             addresses: vec!["Xaddr2".into()],
             height: None,
             timestamp: Some(2000),
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         });
         assert_eq!(state.transactions.len(), 2);
         // Newer unconfirmed tx sorts first
@@ -160,7 +170,10 @@ mod tests {
             state.transactions[0].txid,
             dashcore::Txid::from_byte_array([2u8; 32])
         );
-        assert_eq!(state.transactions[0].direction, TransactionDirection::Sent);
+        assert_eq!(
+            state.transactions[0].direction,
+            TransactionDirection::Outgoing
+        );
     }
 
     #[test]
@@ -170,12 +183,15 @@ mod tests {
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [3u8; 32],
             amount: 200_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             addresses: vec!["Xaddr3".into()],
             height: Some(1000),
             timestamp: Some(1700000000),
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: true,
+            label: None,
         });
 
         assert_eq!(state.transactions.len(), 1);
@@ -193,12 +209,15 @@ mod tests {
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [4u8; 32],
             amount: 50_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             addresses: vec!["Xaddr4".into()],
             height: None,
             timestamp: None,
             block_hash: None,
             is_instant_send: true,
             is_chain_locked: false,
+            label: None,
         });
 
         assert_eq!(state.transactions.len(), 1);
@@ -215,12 +234,15 @@ mod tests {
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [5u8; 32],
             amount: 100_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             addresses: vec!["Xaddr5".into()],
             height: None,
             timestamp: None,
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         });
         assert_eq!(state.transactions.len(), 1);
         assert_eq!(state.transactions[0].height, None);
@@ -230,12 +252,15 @@ mod tests {
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [5u8; 32],
             amount: 0,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             addresses: Vec::new(),
             height: Some(2000),
             timestamp: Some(1700001000),
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: true,
+            label: None,
         });
 
         // Should still be one transaction, not two
@@ -256,7 +281,8 @@ mod tests {
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([1u8; 32]),
                 amount: 100,
-                direction: TransactionDirection::Received,
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
                 timestamp: 1000,
                 height: Some(500),
                 fee: None,
@@ -264,11 +290,13 @@ mod tests {
                 block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
+                label: None,
             },
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([2u8; 32]),
                 amount: 200,
-                direction: TransactionDirection::Received,
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
                 timestamp: 2000,
                 height: Some(600),
                 fee: None,
@@ -276,6 +304,7 @@ mod tests {
                 block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
+                label: None,
             },
         ];
         state.set_transactions(txs);
@@ -298,7 +327,8 @@ mod tests {
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([1u8; 32]),
                 amount: 100,
-                direction: TransactionDirection::Received,
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
                 timestamp: 5000,
                 height: Some(500),
                 fee: None,
@@ -306,11 +336,13 @@ mod tests {
                 block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
+                label: None,
             },
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([2u8; 32]),
                 amount: 200,
-                direction: TransactionDirection::Received,
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
                 timestamp: 1000,
                 height: None,
                 fee: None,
@@ -318,6 +350,7 @@ mod tests {
                 block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
+                label: None,
             },
         ];
         state.set_transactions(txs);
@@ -334,24 +367,30 @@ mod tests {
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [1u8; 32],
             amount: 100_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             addresses: vec!["Xaddr1".into()],
             height: Some(1000),
             timestamp: Some(5000),
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         });
 
         // Add an unconfirmed tx with an older timestamp
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [2u8; 32],
             amount: 50_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             addresses: vec!["Xaddr2".into()],
             height: None,
             timestamp: Some(1000),
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         });
 
         assert_eq!(state.transactions.len(), 2);
@@ -369,7 +408,8 @@ mod tests {
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([1u8; 32]),
                 amount: 100,
-                direction: TransactionDirection::Received,
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
                 timestamp: 3000,
                 height: Some(300),
                 fee: None,
@@ -377,11 +417,13 @@ mod tests {
                 block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
+                label: None,
             },
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([2u8; 32]),
                 amount: 200,
-                direction: TransactionDirection::Received,
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
                 timestamp: 4000,
                 height: Some(400),
                 fee: None,
@@ -389,6 +431,7 @@ mod tests {
                 block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
+                label: None,
             },
         ];
         state.set_transactions(txs);
@@ -399,12 +442,15 @@ mod tests {
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [3u8; 32],
             amount: 50_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             addresses: vec!["Xaddr3".into()],
             height: None,
             timestamp: Some(2000),
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         });
 
         // Unconfirmed tx sorts to front despite older timestamp
@@ -423,24 +469,30 @@ mod tests {
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [1u8; 32],
             amount: 100_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             addresses: vec!["Xaddr1".into()],
             height: Some(500),
             timestamp: Some(3000),
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         });
 
         // Unconfirmed tx (sorts first)
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [2u8; 32],
             amount: 50_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             addresses: vec!["Xaddr2".into()],
             height: None,
             timestamp: Some(4000),
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         });
         assert_eq!(state.transactions[0].height, None);
 
@@ -448,12 +500,15 @@ mod tests {
         state.apply_event(&SpvEvent::TransactionReceived {
             txid: [2u8; 32],
             amount: 0,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             addresses: Vec::new(),
             height: Some(600),
             timestamp: Some(4000),
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: true,
+            label: None,
         });
 
         // Both confirmed now, sorted by timestamp descending

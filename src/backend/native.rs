@@ -33,7 +33,8 @@ use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent, event_channel};
 use super::r#trait::SpvBackend;
 use super::types::{
-    Network, SyncProgress, TransactionDirection, TransactionInfo, WalletCoreBalance,
+    Network, SyncProgress, TransactionDirection, TransactionInfo, TransactionType,
+    WalletCoreBalance,
 };
 use crate::config::AppConfig;
 
@@ -369,11 +370,6 @@ impl SpvBackend for NativeBackend {
         let mut transactions: Vec<TransactionInfo> = records
             .into_iter()
             .map(|r| {
-                let direction = if r.net_amount >= 0 {
-                    TransactionDirection::Received
-                } else {
-                    TransactionDirection::Sent
-                };
                 let block_info = r.context.block_info();
                 let is_instant_send = matches!(r.context, TransactionContext::InstantSend(_));
                 let is_chain_locked =
@@ -382,7 +378,8 @@ impl SpvBackend for NativeBackend {
                 TransactionInfo {
                     txid: r.txid,
                     amount: r.net_amount,
-                    direction,
+                    direction: r.direction,
+                    transaction_type: r.transaction_type,
                     timestamp: block_info.map_or(0, |i| i.timestamp() as u64),
                     height: block_info.map(|i| i.height()),
                     fee: r.fee,
@@ -390,6 +387,7 @@ impl SpvBackend for NativeBackend {
                     block_hash: block_info.map(|i| i.block_hash()),
                     is_instant_send,
                     is_chain_locked,
+                    label: r.label.clone(),
                 }
             })
             .collect();
@@ -685,12 +683,15 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             SpvEvent::TransactionReceived {
                 txid: record.txid.to_byte_array(),
                 amount: record.net_amount,
+                direction: record.direction,
+                transaction_type: record.transaction_type,
                 addresses,
                 height,
                 timestamp,
                 block_hash,
                 is_instant_send,
                 is_chain_locked,
+                label: record.label,
             }
         }
         WalletEvent::TransactionStatusChanged { txid, status, .. } => {
@@ -699,12 +700,15 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             SpvEvent::TransactionReceived {
                 txid: txid.to_byte_array(),
                 amount: 0,
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
                 addresses: Vec::new(),
                 height,
                 timestamp,
                 block_hash,
                 is_instant_send,
                 is_chain_locked,
+                label: None,
             }
         }
         WalletEvent::BalanceUpdated {
@@ -772,9 +776,7 @@ mod tests {
     use dashcore::ephemerealdata::instant_lock::InstantLock;
     use dashcore::hashes::Hash;
     use dashcore::{Address, BlockHash, PublicKey, Txid};
-    use key_wallet::managed_account::transaction_record::{
-        InputDetail, TransactionDirection as RecordDirection, TransactionRecord,
-    };
+    use key_wallet::managed_account::transaction_record::{InputDetail, TransactionRecord};
     use key_wallet::transaction_checking::TransactionContext;
     use key_wallet::transaction_checking::transaction_context::BlockInfo;
     use key_wallet::transaction_checking::transaction_router::TransactionType;
@@ -1059,7 +1061,7 @@ mod tests {
             tx,
             TransactionContext::Mempool,
             TransactionType::Standard,
-            RecordDirection::Incoming,
+            TransactionDirection::Incoming,
             Vec::new(),
             Vec::new(),
             50000,
@@ -1177,7 +1179,7 @@ mod tests {
             tx,
             TransactionContext::Mempool,
             TransactionType::Standard,
-            RecordDirection::Incoming,
+            TransactionDirection::Incoming,
             input_details,
             Vec::new(),
             10000,

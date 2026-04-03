@@ -230,8 +230,8 @@ async fn native_send_transaction() {
     assert_tx_unconfirmed(sent_tx_before, "sent tx before mining");
     assert_eq!(
         sent_tx_before.direction,
-        TransactionDirection::Sent,
-        "Sent tx should have Sent direction"
+        TransactionDirection::Outgoing,
+        "Sent tx should have Outgoing direction"
     );
     assert!(
         sent_tx_before.amount < 0,
@@ -267,8 +267,8 @@ async fn native_send_transaction() {
     );
     assert_eq!(
         sent_tx.direction,
-        TransactionDirection::Sent,
-        "Direction should remain Sent after confirmation"
+        TransactionDirection::Outgoing,
+        "Direction should remain Outgoing after confirmation"
     );
 
     // Verify no duplicate txids after confirmation.
