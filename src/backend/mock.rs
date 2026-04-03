@@ -244,22 +244,9 @@ impl SpvBackend for MockBackend {
             label: None,
         };
 
-        self.transactions.lock().unwrap().push(record);
+        self.transactions.lock().unwrap().push(record.clone());
         self.emit(SpvEvent::BalanceUpdated(new_balance));
-        self.emit(SpvEvent::TransactionReceived(Box::new(TransactionInfo {
-            txid: dashcore::Txid::from_byte_array(txid_bytes),
-            amount: -(amount as i64),
-            direction: TransactionDirection::Outgoing,
-            transaction_type: TransactionType::Standard,
-            timestamp: 1700000000,
-            height: None,
-            fee: None,
-            addresses: vec![address.to_string()],
-            block_hash: None,
-            is_instant_send: false,
-            is_chain_locked: false,
-            label: None,
-        })));
+        self.emit(SpvEvent::TransactionReceived(Box::new(record)));
 
         Ok(txid_bytes)
     }

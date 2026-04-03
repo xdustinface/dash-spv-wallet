@@ -605,15 +605,8 @@ impl SpvBackend for FfiBackend {
                         FFITransactionContextType::InChainLockedBlock
                     );
 
-                    let label = if record.label.is_null() {
-                        None
-                    } else {
-                        // Safety: label is a valid C string for the lifetime of the record.
-                        let s = unsafe { CStr::from_ptr(record.label) }
-                            .to_string_lossy()
-                            .into_owned();
-                        if s.is_empty() { None } else { Some(s) }
-                    };
+                    // Safety: label is a valid C string for the lifetime of the record.
+                    let label = unsafe { extract_ffi_label(record.label) };
 
                     transactions.push(TransactionInfo {
                         txid,
@@ -1484,15 +1477,8 @@ extern "C" fn on_transaction_received(
 
     let addresses = extract_ffi_input_addresses(r);
 
-    let label = if r.label.is_null() {
-        None
-    } else {
-        // Safety: label is a valid C string for the duration of the callback.
-        let s = unsafe { CStr::from_ptr(r.label) }
-            .to_string_lossy()
-            .into_owned();
-        if s.is_empty() { None } else { Some(s) }
-    };
+    // Safety: label is a valid C string for the duration of the callback.
+    let label = unsafe { extract_ffi_label(r.label) };
 
     let fallback_timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1613,6 +1599,20 @@ fn ffi_type_to_type(tt: FFITransactionType) -> TransactionType {
         FFITransactionType::Coinbase => TransactionType::Coinbase,
         FFITransactionType::Ignored => TransactionType::Ignored,
     }
+}
+
+/// Extract an optional label string from a C string pointer.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to a valid, nul-terminated C string for the
+/// duration of the call.
+unsafe fn extract_ffi_label(ptr: *const c_char) -> Option<String> {
+    if ptr.is_null() {
+        return None;
+    }
+    let s = CStr::from_ptr(ptr).to_string_lossy().into_owned();
+    if s.is_empty() { None } else { Some(s) }
 }
 
 /// Extract addresses from an `FFITransactionRecord`'s input details.
