@@ -11,40 +11,35 @@ use crate::state::wallet::WalletState;
 
 const PAGE_SIZE: usize = 50;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TxFilter {
-    All,
-    Incoming,
-    Outgoing,
-    Internal,
-    CoinJoin,
-}
+/// Filter tabs: `None` means "All", `Some(dir)` filters to that direction.
+const FILTER_TABS: [Option<TransactionDirection>; 5] = [
+    None,
+    Some(TransactionDirection::Incoming),
+    Some(TransactionDirection::Outgoing),
+    Some(TransactionDirection::Internal),
+    Some(TransactionDirection::CoinJoin),
+];
 
-impl TxFilter {
-    fn label(self) -> &'static str {
-        match self {
-            Self::All => "All",
-            Self::Incoming => "Received",
-            Self::Outgoing => "Sent",
-            Self::Internal => "Internal",
-            Self::CoinJoin => "CoinJoin",
-        }
+fn filter_label(filter: Option<TransactionDirection>) -> &'static str {
+    match filter {
+        None => "All",
+        Some(TransactionDirection::Incoming) => "Received",
+        Some(TransactionDirection::Outgoing) => "Sent",
+        Some(TransactionDirection::Internal) => "Internal",
+        Some(TransactionDirection::CoinJoin) => "CoinJoin",
     }
 }
 
 fn apply_filters<'a>(
     txs: &'a [TransactionInfo],
-    filter: TxFilter,
+    filter: Option<TransactionDirection>,
     search: &str,
     unit: &str,
 ) -> Vec<&'a TransactionInfo> {
     txs.iter()
         .filter(|tx| match filter {
-            TxFilter::All => true,
-            TxFilter::Incoming => tx.direction == TransactionDirection::Incoming,
-            TxFilter::Outgoing => tx.direction == TransactionDirection::Outgoing,
-            TxFilter::Internal => tx.direction == TransactionDirection::Internal,
-            TxFilter::CoinJoin => tx.direction == TransactionDirection::CoinJoin,
+            None => true,
+            Some(dir) => tx.direction == dir,
         })
         .filter(|tx| matches_search(tx, search, unit))
         .collect()
@@ -57,7 +52,7 @@ pub fn Transactions() -> Element {
     let config = use_context::<Signal<AppConfig>>();
 
     let mut search_query = use_signal(String::new);
-    let mut active_filter = use_signal(|| TxFilter::All);
+    let mut active_filter = use_signal(|| None::<TransactionDirection>);
     let mut visible_count = use_signal(|| PAGE_SIZE);
     let mut expanded_txid = use_signal(|| None::<dashcore::Txid>);
 
@@ -110,7 +105,7 @@ pub fn Transactions() -> Element {
 
             // Filter tabs
             div { class: "flex gap-2 mb-6",
-                for filter in [TxFilter::All, TxFilter::Incoming, TxFilter::Outgoing, TxFilter::Internal, TxFilter::CoinJoin] {
+                for filter in FILTER_TABS {
                     {
                         let is_active = *active_filter.read() == filter;
                         let class = if is_active {
@@ -118,6 +113,7 @@ pub fn Transactions() -> Element {
                         } else {
                             "px-4 py-2 rounded-lg bg-card text-muted hover:bg-hover transition-colors"
                         };
+                        let label = filter_label(filter);
                         rsx! {
                             button {
                                 class,
@@ -125,7 +121,7 @@ pub fn Transactions() -> Element {
                                     active_filter.set(filter);
                                     visible_count.set(PAGE_SIZE);
                                 },
-                                "{filter.label()}"
+                                "{label}"
                             }
                         }
                     }
@@ -348,14 +344,14 @@ mod tests {
     #[test]
     fn apply_filters_all() {
         let txs = sample_txs();
-        let result = apply_filters(&txs, TxFilter::All, "", "DASH");
+        let result = apply_filters(&txs, None, "", "DASH");
         assert_eq!(result.len(), 3);
     }
 
     #[test]
     fn apply_filters_received_only() {
         let txs = sample_txs();
-        let result = apply_filters(&txs, TxFilter::Incoming, "", "DASH");
+        let result = apply_filters(&txs, Some(TransactionDirection::Incoming), "", "DASH");
         assert_eq!(result.len(), 2);
         assert!(
             result
@@ -367,7 +363,7 @@ mod tests {
     #[test]
     fn apply_filters_sent_only() {
         let txs = sample_txs();
-        let result = apply_filters(&txs, TxFilter::Outgoing, "", "DASH");
+        let result = apply_filters(&txs, Some(TransactionDirection::Outgoing), "", "DASH");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].direction, TransactionDirection::Outgoing);
     }
@@ -375,7 +371,7 @@ mod tests {
     #[test]
     fn apply_filters_with_search() {
         let txs = sample_txs();
-        let result = apply_filters(&txs, TxFilter::All, "yAddr2", "DASH");
+        let result = apply_filters(&txs, None, "yAddr2", "DASH");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].addresses[0], "yAddr2");
     }
@@ -383,14 +379,14 @@ mod tests {
     #[test]
     fn apply_filters_no_match() {
         let txs = sample_txs();
-        let result = apply_filters(&txs, TxFilter::All, "zzz_nonexistent", "DASH");
+        let result = apply_filters(&txs, None, "zzz_nonexistent", "DASH");
         assert!(result.is_empty());
     }
 
     #[test]
     fn apply_filters_combined_filter_and_search() {
         let txs = sample_txs();
-        let result = apply_filters(&txs, TxFilter::Incoming, "yAddr3", "DASH");
+        let result = apply_filters(&txs, Some(TransactionDirection::Incoming), "yAddr3", "DASH");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].addresses[0], "yAddr3");
     }
@@ -398,16 +394,25 @@ mod tests {
     #[test]
     fn apply_filters_empty_transactions() {
         let txs: Vec<TransactionInfo> = vec![];
-        let result = apply_filters(&txs, TxFilter::All, "", "DASH");
+        let result = apply_filters(&txs, None, "", "DASH");
         assert!(result.is_empty());
     }
 
     #[test]
-    fn tx_filter_labels() {
-        assert_eq!(TxFilter::All.label(), "All");
-        assert_eq!(TxFilter::Incoming.label(), "Received");
-        assert_eq!(TxFilter::Outgoing.label(), "Sent");
-        assert_eq!(TxFilter::Internal.label(), "Internal");
-        assert_eq!(TxFilter::CoinJoin.label(), "CoinJoin");
+    fn filter_labels() {
+        assert_eq!(filter_label(None), "All");
+        assert_eq!(
+            filter_label(Some(TransactionDirection::Incoming)),
+            "Received"
+        );
+        assert_eq!(filter_label(Some(TransactionDirection::Outgoing)), "Sent");
+        assert_eq!(
+            filter_label(Some(TransactionDirection::Internal)),
+            "Internal"
+        );
+        assert_eq!(
+            filter_label(Some(TransactionDirection::CoinJoin)),
+            "CoinJoin"
+        );
     }
 }
