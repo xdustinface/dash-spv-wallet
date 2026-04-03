@@ -1502,7 +1502,7 @@ extern "C" fn on_transaction_received(
             } else {
                 None
             },
-            fee: None,
+            fee: if r.fee > 0 { Some(r.fee) } else { None },
             addresses,
             block_hash: if has_block {
                 Some(dashcore::BlockHash::from_byte_array(block_info.block_hash))

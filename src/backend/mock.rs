@@ -284,8 +284,8 @@ pub fn mock_transaction(
     TransactionInfo {
         txid: dashcore::Txid::from_byte_array(mock_txid(index)),
         amount: match direction {
-            TransactionDirection::Outgoing => -(amount as i64),
-            _ => amount as i64,
+            TransactionDirection::Outgoing | TransactionDirection::CoinJoin => -(amount as i64),
+            TransactionDirection::Incoming | TransactionDirection::Internal => amount as i64,
         },
         direction,
         transaction_type: TransactionType::Standard,

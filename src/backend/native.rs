@@ -1097,6 +1097,8 @@ mod tests {
         match mapped {
             SpvEvent::TransactionReceived(info) => {
                 assert_eq!(info.amount, 0);
+                assert_eq!(info.direction, TransactionDirection::Incoming);
+                assert_eq!(info.transaction_type, TransactionType::Standard);
                 assert_eq!(info.height, Some(300));
                 assert_eq!(info.timestamp, 1700000000);
                 assert!(!info.is_chain_locked);
