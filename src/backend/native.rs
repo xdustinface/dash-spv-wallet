@@ -1151,6 +1151,27 @@ mod tests {
 
         assert_eq!(info.timestamp, 1700000000);
         assert_eq!(info.height, Some(500));
+        assert_eq!(info.direction, TransactionDirection::Incoming);
+        assert_eq!(info.transaction_type, TransactionType::Standard);
+    }
+
+    #[test]
+    fn from_record_mempool_uses_fallback_timestamp() {
+        let tx = Transaction::dummy_empty();
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            10000,
+        );
+
+        let info = TransactionInfo::from_record(&record, 0);
+
+        assert_eq!(info.timestamp, 0);
+        assert_eq!(info.height, None);
     }
 
     #[test]
