@@ -1150,10 +1150,26 @@ mod tests {
         let addr_b = Address::p2pkh(&pk_b, Network::Testnet);
 
         let input_details = vec![
-            InputDetail { index: 0, value: 1000, address: addr_a.clone() },
-            InputDetail { index: 1, value: 2000, address: addr_a.clone() },
-            InputDetail { index: 2, value: 3000, address: addr_b.clone() },
-            InputDetail { index: 3, value: 4000, address: addr_b.clone() },
+            InputDetail {
+                index: 0,
+                value: 1000,
+                address: addr_a.clone(),
+            },
+            InputDetail {
+                index: 1,
+                value: 2000,
+                address: addr_a.clone(),
+            },
+            InputDetail {
+                index: 2,
+                value: 3000,
+                address: addr_b.clone(),
+            },
+            InputDetail {
+                index: 3,
+                value: 4000,
+                address: addr_b.clone(),
+            },
         ];
 
         let tx = Transaction::dummy_empty();
