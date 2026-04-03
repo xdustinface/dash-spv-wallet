@@ -1494,31 +1494,39 @@ extern "C" fn on_transaction_received(
         if s.is_empty() { None } else { Some(s) }
     };
 
-    let _ = ctx.event_tx.send(SpvEvent::TransactionReceived {
-        txid: r.txid,
-        amount: r.net_amount,
-        direction: ffi_direction_to_direction(r.direction),
-        transaction_type: ffi_type_to_type(r.transaction_type),
-        addresses,
-        height: if has_block {
-            Some(block_info.height)
-        } else {
-            None
-        },
-        timestamp: if has_block {
-            Some(block_info.timestamp as u64)
-        } else {
-            None
-        },
-        block_hash: if has_block {
-            Some(block_info.block_hash)
-        } else {
-            None
-        },
-        is_instant_send,
-        is_chain_locked,
-        label,
-    });
+    let fallback_timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let _ = ctx
+        .event_tx
+        .send(SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+            txid: dashcore::Txid::from_byte_array(r.txid),
+            amount: r.net_amount,
+            direction: ffi_direction_to_direction(r.direction),
+            transaction_type: ffi_type_to_type(r.transaction_type),
+            timestamp: if has_block {
+                block_info.timestamp as u64
+            } else {
+                fallback_timestamp
+            },
+            height: if has_block {
+                Some(block_info.height)
+            } else {
+                None
+            },
+            fee: None,
+            addresses,
+            block_hash: if has_block {
+                Some(dashcore::BlockHash::from_byte_array(block_info.block_hash))
+            } else {
+                None
+            },
+            is_instant_send,
+            is_chain_locked,
+            label,
+        })));
 }
 
 extern "C" fn on_balance_updated(

@@ -114,17 +114,16 @@ fn categorize_event(event: &SpvEvent) -> (EventCategory, String) {
             EventCategory::Network,
             format!("Peers: {count}, best height: {best_height}"),
         ),
-        SpvEvent::TransactionReceived {
-            txid,
-            amount,
-            addresses,
-            ..
-        } => {
-            let txid_short = hex::encode(&txid[..4]);
-            let addr = addresses.first().map(|a| a.as_str()).unwrap_or("unknown");
+        SpvEvent::TransactionReceived(info) => {
+            let txid_short = &info.txid.to_string()[..8];
+            let addr = info
+                .addresses
+                .first()
+                .map(|a| a.as_str())
+                .unwrap_or("unknown");
             (
                 EventCategory::Wallet,
-                format!("Transaction {txid_short}...: {amount} sat ({addr})"),
+                format!("Transaction {txid_short}...: {} sat ({addr})", info.amount),
             )
         }
         SpvEvent::BalanceUpdated(b) => (
@@ -162,8 +161,12 @@ fn sync_state_label(state: SyncState) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use dashcore::hashes::Hash;
+
     use super::*;
-    use crate::backend::types::{TransactionDirection, TransactionType, WalletCoreBalance};
+    use crate::backend::types::{
+        TransactionDirection, TransactionInfo, TransactionType, WalletCoreBalance,
+    };
 
     #[test]
     fn push_and_retrieve() {
@@ -267,19 +270,20 @@ mod tests {
                 EventCategory::Wallet,
             ),
             (
-                SpvEvent::TransactionReceived {
-                    txid: [0; 32],
+                SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+                    txid: dashcore::Txid::from_byte_array([0; 32]),
                     amount: 0,
                     direction: TransactionDirection::Incoming,
                     transaction_type: TransactionType::Standard,
-                    addresses: vec![],
+                    timestamp: 0,
                     height: None,
-                    timestamp: None,
+                    fee: None,
+                    addresses: vec![],
                     block_hash: None,
                     is_instant_send: false,
                     is_chain_locked: false,
                     label: None,
-                },
+                })),
                 EventCategory::Wallet,
             ),
             (SpvEvent::Error("e".into()), EventCategory::Error),

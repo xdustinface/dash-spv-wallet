@@ -399,6 +399,52 @@ mod tests {
     }
 
     #[test]
+    fn apply_filters_internal_only() {
+        let mut txs = sample_txs();
+        txs.push(TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xDD; 32]),
+            amount: 10_000,
+            direction: TransactionDirection::Internal,
+            transaction_type: TransactionType::Standard,
+            timestamp: 1700003000,
+            height: Some(103),
+            fee: None,
+            addresses: vec!["yAddr4".into()],
+            block_hash: None,
+            is_instant_send: false,
+            is_chain_locked: false,
+            label: None,
+        });
+
+        let result = apply_filters(&txs, Some(TransactionDirection::Internal), "", "DASH");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].direction, TransactionDirection::Internal);
+    }
+
+    #[test]
+    fn apply_filters_coinjoin_only() {
+        let mut txs = sample_txs();
+        txs.push(TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xEE; 32]),
+            amount: -25_000_000,
+            direction: TransactionDirection::CoinJoin,
+            transaction_type: TransactionType::CoinJoin,
+            timestamp: 1700004000,
+            height: Some(104),
+            fee: Some(100),
+            addresses: vec!["yAddr5".into()],
+            block_hash: None,
+            is_instant_send: false,
+            is_chain_locked: false,
+            label: None,
+        });
+
+        let result = apply_filters(&txs, Some(TransactionDirection::CoinJoin), "", "DASH");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].direction, TransactionDirection::CoinJoin);
+    }
+
+    #[test]
     fn filter_labels() {
         assert_eq!(filter_label(None), "All");
         assert_eq!(

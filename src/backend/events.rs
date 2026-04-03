@@ -1,65 +1,30 @@
 use tokio::sync::broadcast;
 
-use super::types::{
-    ManagerIdentifier, SyncProgress, TransactionDirection, TransactionType, WalletCoreBalance,
-};
+use super::types::{ManagerIdentifier, SyncProgress, TransactionInfo, WalletCoreBalance};
 
 /// Events emitted by the SPV backend.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpvEvent {
     // Sync events
     SyncProgressUpdated(Box<SyncProgress>),
-    SyncStarted {
-        manager: ManagerIdentifier,
-    },
-    HeadersSynced {
-        tip_height: u32,
-    },
-    FiltersSynced {
-        tip_height: u32,
-    },
-    BlockProcessed {
-        height: u32,
-        new_addresses: u32,
-    },
-    SyncComplete {
-        tip_height: u32,
-        cycle: u32,
-    },
+    SyncStarted { manager: ManagerIdentifier },
+    HeadersSynced { tip_height: u32 },
+    FiltersSynced { tip_height: u32 },
+    BlockProcessed { height: u32, new_addresses: u32 },
+    SyncComplete { tip_height: u32, cycle: u32 },
 
     // Network events
     PeerConnected(String),
     PeerDisconnected(String),
-    PeersUpdated {
-        count: u32,
-        best_height: u32,
-    },
+    PeersUpdated { count: u32, best_height: u32 },
 
     // Wallet events
-    TransactionReceived {
-        txid: [u8; 32],
-        amount: i64,
-        direction: TransactionDirection,
-        transaction_type: TransactionType,
-        addresses: Vec<String>,
-        height: Option<u32>,
-        timestamp: Option<u64>,
-        block_hash: Option<[u8; 32]>,
-        is_instant_send: bool,
-        is_chain_locked: bool,
-        label: Option<String>,
-    },
+    TransactionReceived(Box<TransactionInfo>),
     BalanceUpdated(WalletCoreBalance),
 
     // Validation events
-    ChainLockReceived {
-        height: u32,
-        validated: bool,
-    },
-    InstantLockReceived {
-        txid: [u8; 32],
-        validated: bool,
-    },
+    ChainLockReceived { height: u32, validated: bool },
+    InstantLockReceived { txid: [u8; 32], validated: bool },
 
     // Errors
     Error(String),

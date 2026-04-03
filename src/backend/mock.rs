@@ -246,19 +246,20 @@ impl SpvBackend for MockBackend {
 
         self.transactions.lock().unwrap().push(record);
         self.emit(SpvEvent::BalanceUpdated(new_balance));
-        self.emit(SpvEvent::TransactionReceived {
-            txid: txid_bytes,
+        self.emit(SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+            txid: dashcore::Txid::from_byte_array(txid_bytes),
             amount: -(amount as i64),
             direction: TransactionDirection::Outgoing,
             transaction_type: TransactionType::Standard,
-            addresses: vec![address.to_string()],
+            timestamp: 1700000000,
             height: None,
-            timestamp: None,
+            fee: None,
+            addresses: vec![address.to_string()],
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
-        });
+        })));
 
         Ok(txid_bytes)
     }
@@ -561,7 +562,7 @@ mod tests {
         assert!(matches!(event1, SpvEvent::BalanceUpdated(_)));
 
         let event2 = rx.try_recv().unwrap();
-        assert!(matches!(event2, SpvEvent::TransactionReceived { .. }));
+        assert!(matches!(event2, SpvEvent::TransactionReceived(_)));
     }
 
     #[tokio::test]

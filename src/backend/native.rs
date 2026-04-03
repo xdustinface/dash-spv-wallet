@@ -680,36 +680,46 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
                 extract_context_fields(&record.context);
             let addresses = extract_record_addresses(&record);
-            SpvEvent::TransactionReceived {
-                txid: record.txid.to_byte_array(),
+            let fallback_timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+                txid: record.txid,
                 amount: record.net_amount,
                 direction: record.direction,
                 transaction_type: record.transaction_type,
-                addresses,
+                timestamp: timestamp.unwrap_or(fallback_timestamp),
                 height,
-                timestamp,
-                block_hash,
+                fee: None,
+                addresses,
+                block_hash: block_hash.map(dashcore::BlockHash::from_byte_array),
                 is_instant_send,
                 is_chain_locked,
                 label: record.label,
-            }
+            }))
         }
         WalletEvent::TransactionStatusChanged { txid, status, .. } => {
             let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
                 extract_context_fields(&status);
-            SpvEvent::TransactionReceived {
-                txid: txid.to_byte_array(),
+            let fallback_timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+                txid,
                 amount: 0,
                 direction: TransactionDirection::Incoming,
                 transaction_type: TransactionType::Standard,
-                addresses: Vec::new(),
+                timestamp: timestamp.unwrap_or(fallback_timestamp),
                 height,
-                timestamp,
-                block_hash,
+                fee: None,
+                addresses: Vec::new(),
+                block_hash: block_hash.map(dashcore::BlockHash::from_byte_array),
                 is_instant_send,
                 is_chain_locked,
                 label: None,
-            }
+            }))
         }
         WalletEvent::BalanceUpdated {
             spendable,
@@ -1073,21 +1083,13 @@ mod tests {
         };
         let mapped = map_wallet_event(event);
         match mapped {
-            SpvEvent::TransactionReceived {
-                txid: mapped_txid,
-                amount,
-                addresses,
-                height,
-                is_instant_send,
-                is_chain_locked,
-                ..
-            } => {
-                assert_eq!(mapped_txid, txid.to_byte_array());
-                assert_eq!(amount, 50000);
-                assert!(addresses.is_empty());
-                assert_eq!(height, None);
-                assert!(!is_instant_send);
-                assert!(!is_chain_locked);
+            SpvEvent::TransactionReceived(info) => {
+                assert_eq!(info.txid, txid);
+                assert_eq!(info.amount, 50000);
+                assert!(info.addresses.is_empty());
+                assert_eq!(info.height, None);
+                assert!(!info.is_instant_send);
+                assert!(!info.is_chain_locked);
             }
             other => panic!("expected TransactionReceived, got {:?}", other),
         }
@@ -1107,17 +1109,11 @@ mod tests {
         };
         let mapped = map_wallet_event(event);
         match mapped {
-            SpvEvent::TransactionReceived {
-                amount,
-                height,
-                timestamp,
-                is_chain_locked,
-                ..
-            } => {
-                assert_eq!(amount, 0);
-                assert_eq!(height, Some(300));
-                assert_eq!(timestamp, Some(1700000000));
-                assert!(!is_chain_locked);
+            SpvEvent::TransactionReceived(info) => {
+                assert_eq!(info.amount, 0);
+                assert_eq!(info.height, Some(300));
+                assert_eq!(info.timestamp, 1700000000);
+                assert!(!info.is_chain_locked);
             }
             other => panic!("expected TransactionReceived, got {:?}", other),
         }
