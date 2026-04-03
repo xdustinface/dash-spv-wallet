@@ -1611,7 +1611,10 @@ unsafe fn extract_ffi_label(ptr: *const c_char) -> Option<String> {
     if ptr.is_null() {
         return None;
     }
-    let s = CStr::from_ptr(ptr).to_string_lossy().into_owned();
+    // Safety: caller guarantees `ptr` is a valid, nul-terminated C string.
+    let s = unsafe { CStr::from_ptr(ptr) }
+        .to_string_lossy()
+        .into_owned();
     if s.is_empty() { None } else { Some(s) }
 }
 
@@ -1646,6 +1649,9 @@ fn extract_ffi_input_addresses(record: &FFITransactionRecord) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::CString;
+    use std::ptr;
+
     use key_wallet_ffi::types::{FFITransactionDirection, FFITransactionType};
 
     use super::*;
@@ -1712,5 +1718,25 @@ mod tests {
             ffi_type_to_type(FFITransactionType::Ignored),
             TransactionType::Ignored,
         );
+    }
+
+    #[test]
+    fn extract_ffi_label_null_returns_none() {
+        let result = unsafe { extract_ffi_label(ptr::null()) };
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn extract_ffi_label_empty_returns_none() {
+        let s = CString::new("").unwrap();
+        let result = unsafe { extract_ffi_label(s.as_ptr()) };
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn extract_ffi_label_valid_returns_some() {
+        let s = CString::new("coffee payment").unwrap();
+        let result = unsafe { extract_ffi_label(s.as_ptr()) };
+        assert_eq!(result, Some("coffee payment".to_string()));
     }
 }
