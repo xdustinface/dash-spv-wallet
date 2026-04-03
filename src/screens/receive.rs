@@ -48,46 +48,37 @@ pub fn Receive() -> Element {
     };
 
     rsx! {
-        div {
-            class: "text-foreground p-6",
+        div { class: "text-foreground p-6",
 
-            h1 {
-                class: "text-2xl font-bold mb-6",
-                "Receive"
-            }
+            h1 { class: "text-2xl font-bold mb-6", "Receive" }
 
-            div {
-                class: "bg-card rounded-lg p-6 max-w-xl",
+            div { class: "bg-card rounded-lg p-6 max-w-xl",
 
-                p {
-                    class: "text-muted text-sm mb-4",
-                    "Share this address to receive {unit}"
-                }
+                p { class: "text-muted text-sm mb-4", "Share this address to receive {unit}" }
 
                 // Address display
                 match &address {
                     Some(addr) => rsx! {
-                        div {
-                            class: "bg-surface-alt rounded-lg p-4 mb-4",
-                            p {
-                                class: "font-mono text-sm break-all text-center select-all",
-                                "{addr}"
-                            }
+
+
+
+                        div { class: "bg-surface-alt rounded-lg p-4 mb-4",
+                            p { class: "font-mono text-sm break-all text-center select-all", "{addr}" }
                         }
 
                         button {
                             class: "w-full bg-hover hover:bg-edge text-foreground font-medium py-2 px-4 rounded-lg transition-colors mb-3",
                             onclick: copy_address,
-                            if copied() { "Copied!" } else { "Copy Address" }
+                            if copied() {
+                                "Copied!"
+                            } else {
+                                "Copy Address"
+                            }
                         }
                     },
                     None => rsx! {
-                        div {
-                            class: "bg-surface-alt rounded-lg p-4 mb-4 text-center",
-                            p {
-                                class: "text-disabled",
-                                "No address generated yet"
-                            }
+                        div { class: "bg-surface-alt rounded-lg p-4 mb-4 text-center",
+                            p { class: "text-disabled", "No address generated yet" }
                         }
                     },
                 }
@@ -99,10 +90,7 @@ pub fn Receive() -> Element {
                 }
 
                 if let Some(err) = error_msg() {
-                    p {
-                        class: "text-error text-sm mt-3",
-                        "{err}"
-                    }
+                    p { class: "text-error text-sm mt-3", "{err}" }
                 }
             }
         }

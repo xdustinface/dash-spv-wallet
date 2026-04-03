@@ -68,7 +68,9 @@ mod tests {
     #[component]
     fn status_bar_disconnected_wrapper() -> Element {
         use_test_contexts();
-        rsx! { super::status_bar::StatusBar {} }
+        rsx! {
+            super::status_bar::StatusBar {}
+        }
     }
 
     #[test]
@@ -107,7 +109,10 @@ mod tests {
         });
         use_context_provider(|| Signal::new(DevLog::default()));
 
-        rsx! { super::status_bar::StatusBar {} }
+        rsx! {
+            super::status_bar::StatusBar {}
+
+        }
     }
 
     #[test]
@@ -136,7 +141,10 @@ mod tests {
         use_context_provider(|| Signal::new(ConnectionState::Synced));
         use_context_provider(|| Signal::new(DevLog::default()));
 
-        rsx! { super::status_bar::StatusBar {} }
+        rsx! {
+            super::status_bar::StatusBar {}
+
+        }
     }
 
     #[test]
@@ -151,7 +159,9 @@ mod tests {
     #[component]
     fn dev_panel_hidden_wrapper() -> Element {
         use_test_contexts();
-        rsx! { super::dev_panel::DevPanel {} }
+        rsx! {
+            super::dev_panel::DevPanel {}
+        }
     }
 
     #[test]
@@ -166,7 +176,9 @@ mod tests {
     #[component]
     fn dev_panel_visible_wrapper() -> Element {
         use_dev_mode_contexts();
-        rsx! { super::dev_panel::DevPanel {} }
+        rsx! {
+            super::dev_panel::DevPanel {}
+        }
     }
 
     #[test]
@@ -198,7 +210,10 @@ mod tests {
         log.push(&SpvEvent::Error("timeout".into()));
         use_context_provider(|| Signal::new(log));
 
-        rsx! { super::dev_panel::DevPanel {} }
+        rsx! {
+            super::dev_panel::DevPanel {}
+
+        }
     }
 
     #[test]

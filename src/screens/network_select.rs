@@ -31,20 +31,12 @@ pub fn NetworkSelect() -> Element {
     };
 
     rsx! {
-        div {
-            class: "flex flex-col items-center justify-center min-h-screen bg-surface text-foreground",
+        div { class: "flex flex-col items-center justify-center min-h-screen bg-surface text-foreground",
 
-            h1 {
-                class: "text-3xl font-bold mb-2",
-                "Dash SPV Wallet"
-            }
-            p {
-                class: "text-muted mb-10",
-                "Select a network to get started"
-            }
+            h1 { class: "text-3xl font-bold mb-2", "Dash SPV Wallet" }
+            p { class: "text-muted mb-10", "Select a network to get started" }
 
-            div {
-                class: "flex gap-6",
+            div { class: "flex gap-6",
 
                 NetworkCard {
                     name: "Mainnet",
@@ -102,17 +94,9 @@ fn NetworkCard(
             class: "flex flex-col items-center p-8 bg-card border-2 rounded-xl cursor-pointer transition-colors {border_class}",
             onclick: move |evt| onclick.call(evt),
 
-            div {
-                class: "w-4 h-4 rounded-full mb-4 {dot_class}",
-            }
-            h2 {
-                class: "text-xl font-semibold mb-1",
-                "{name}"
-            }
-            p {
-                class: "text-sm text-muted",
-                "{description}"
-            }
+            div { class: "w-4 h-4 rounded-full mb-4 {dot_class}" }
+            h2 { class: "text-xl font-semibold mb-1", "{name}" }
+            p { class: "text-sm text-muted", "{description}" }
         }
     }
 }

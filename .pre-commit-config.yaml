@@ -1,5 +1,3 @@
-default_stages: [pre-commit]
-
 exclude: |
     (?x)^(
         .*\.snap$|

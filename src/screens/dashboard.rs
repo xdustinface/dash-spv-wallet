@@ -25,53 +25,51 @@ pub fn Dashboard() -> Element {
     let unit = config.read().network.currency_unit();
 
     rsx! {
-        div {
-            class: "text-foreground p-6",
+        div { class: "text-foreground p-6",
 
             // Balance section
-            div {
-                class: "mb-6",
-                h2 {
-                    class: "text-muted text-sm uppercase tracking-wide mb-2",
-                    "Available Balance"
-                }
-                p {
-                    class: "text-4xl font-bold",
-                    "{format_balance(balance.spendable(), unit)}"
-                }
+            div { class: "mb-6",
+                h2 { class: "text-muted text-sm uppercase tracking-wide mb-2", "Available Balance" }
+                p { class: "text-4xl font-bold", "{format_balance(balance.spendable(), unit)}" }
 
                 // Breakdown cards for non-zero secondary balances
-                div {
-                    class: "flex gap-4 mt-4",
+                div { class: "flex gap-4 mt-4",
 
                     if balance.unconfirmed() > 0 {
-                        BalanceCard { label: "Pending", amount: balance.unconfirmed(), unit }
+                        BalanceCard {
+                            label: "Pending",
+                            amount: balance.unconfirmed(),
+                            unit,
+                        }
                     }
                     if balance.immature() > 0 {
-                        BalanceCard { label: "Immature", amount: balance.immature(), unit }
+                        BalanceCard {
+                            label: "Immature",
+                            amount: balance.immature(),
+                            unit,
+                        }
                     }
                     if balance.locked() > 0 {
-                        BalanceCard { label: "Locked", amount: balance.locked(), unit }
+                        BalanceCard {
+                            label: "Locked",
+                            amount: balance.locked(),
+                            unit,
+                        }
                     }
                 }
             }
 
             // Transaction history
             div {
-                h3 {
-                    class: "text-lg font-semibold mb-4",
-                    "Transactions"
-                }
+                h3 { class: "text-lg font-semibold mb-4", "Transactions" }
 
                 if transactions.is_empty() {
-                    div {
-                        class: "text-disabled text-center py-12",
+                    div { class: "text-disabled text-center py-12",
                         p { class: "text-lg", "No transactions yet" }
                     }
                 } else {
-                    div {
-                        class: "space-y-1",
-                        for (i, tx) in transactions.iter().take(DASHBOARD_TX_LIMIT).enumerate() {
+                    div { class: "space-y-1",
+                        for (i , tx) in transactions.iter().take(DASHBOARD_TX_LIMIT).enumerate() {
                             {
                                 let view = format_transaction(tx, current_height, unit);
                                 let is_sent = tx.direction == TransactionDirection::Sent;
@@ -79,9 +77,16 @@ pub fn Dashboard() -> Element {
                                 let border = if is_sent { "border-error" } else { "border-success" };
                                 let is_expanded = *expanded_txid.read() == Some(tx.txid);
                                 let txid = tx.txid;
-                                let address_short = format_address_responsive(&tx.addresses.first().cloned().unwrap_or_default(), 20);
-                                let tx = tx.clone();
+                                let address_short = format_address_responsive(
 
+                                    // Left: direction + address + time
+
+                                    // Right: amount + confirmations + badges
+
+                                    &tx.addresses.first().cloned().unwrap_or_default(),
+                                    20,
+                                );
+                                let tx = tx.clone();
                                 rsx! {
                                     div {
                                         div {
@@ -94,48 +99,34 @@ pub fn Dashboard() -> Element {
                                                 }
                                             },
 
-                                            // Left: direction + address + time
-                                            div {
-                                                class: "flex items-center gap-3 min-w-0 flex-1",
-                                                span {
-                                                    class: if is_sent { "text-error text-lg shrink-0" } else { "text-success text-lg shrink-0" },
-                                                    if is_sent { "▲" } else { "▼" }
+
+
+                                            div { class: "flex items-center gap-3 min-w-0 flex-1",
+                                                span { class: if is_sent { "text-error text-lg shrink-0" } else { "text-success text-lg shrink-0" },
+                                                    if is_sent {
+                                                        "▲"
+                                                    } else {
+                                                        "▼"
+                                                    }
                                                 }
-                                                div {
-                                                    class: "min-w-0",
-                                                    p {
-                                                        class: "font-mono text-sm truncate",
-                                                        "{address_short}"
-                                                    }
-                                                    p {
-                                                        class: "text-disabled text-xs",
-                                                        "{view.timestamp_display}"
-                                                    }
+                                                div { class: "min-w-0",
+                                                    p { class: "font-mono text-sm truncate", "{address_short}" }
+                                                    p { class: "text-disabled text-xs", "{view.timestamp_display}" }
                                                 }
                                             }
 
-                                            // Right: amount + confirmations + badges
-                                            div {
-                                                class: "text-right flex items-center gap-2",
+                                            div { class: "text-right flex items-center gap-2",
                                                 div {
-                                                    p {
-                                                        class: if is_sent { "text-error font-medium" } else { "text-success font-medium" },
+                                                    p { class: if is_sent { "text-error font-medium" } else { "text-success font-medium" },
                                                         "{view.amount_display}"
                                                     }
-                                                    p {
-                                                        class: "text-disabled text-xs",
-                                                        "{view.confirmations_display}"
-                                                    }
+                                                    p { class: "text-disabled text-xs", "{view.confirmations_display}" }
                                                 }
                                                 if view.is_instant_send {
-                                                    span {
-                                                        class: "bg-dash text-xs rounded-full px-2 py-0.5",
-                                                        "IS"
-                                                    }
+                                                    span { class: "bg-dash text-xs rounded-full px-2 py-0.5", "IS" }
                                                 }
                                                 if view.is_chain_locked {
-                                                    span {
-                                                        class: "bg-chainlock text-foreground text-xs rounded-full px-2 py-0.5",
+                                                    span { class: "bg-chainlock text-foreground text-xs rounded-full px-2 py-0.5",
                                                         "CL"
                                                     }
                                                 }
@@ -143,40 +134,34 @@ pub fn Dashboard() -> Element {
                                         }
 
                                         if is_expanded {
-                                            div {
-                                                class: "bg-surface-alt rounded-b-lg px-4 py-3 -mt-1 mb-1 border-l-4 {border} text-sm space-y-2",
+                                            div { class: "bg-surface-alt rounded-b-lg px-4 py-3 -mt-1 mb-1 border-l-4 {border} text-sm space-y-2",
 
-                                                div {
-                                                    class: "flex justify-between",
+                                                div { class: "flex justify-between",
                                                     span { class: "text-muted", "Transaction ID" }
                                                     span { class: "font-mono text-xs select-all", "{tx.txid}" }
                                                 }
 
                                                 if let Some(hash) = &tx.block_hash {
-                                                    div {
-                                                        class: "flex justify-between",
+                                                    div { class: "flex justify-between",
                                                         span { class: "text-muted", "Block Hash" }
                                                         span { class: "font-mono text-xs select-all", "{hash}" }
                                                     }
                                                 }
 
                                                 if let Some(h) = tx.height {
-                                                    div {
-                                                        class: "flex justify-between",
+                                                    div { class: "flex justify-between",
                                                         span { class: "text-muted", "Block Height" }
                                                         span { "{h}" }
                                                     }
                                                 }
 
-                                                div {
-                                                    class: "flex justify-between",
+                                                div { class: "flex justify-between",
                                                     span { class: "text-muted", "Date" }
                                                     span { "{format_timestamp_absolute(tx.timestamp)}" }
                                                 }
 
                                                 if let Some(fee) = tx.fee {
-                                                    div {
-                                                        class: "flex justify-between",
+                                                    div { class: "flex justify-between",
                                                         span { class: "text-muted", "Fee" }
                                                         span { "{format_balance(fee, unit)}" }
                                                     }
@@ -196,8 +181,7 @@ pub fn Dashboard() -> Element {
                         }
                     }
                     if transactions.len() > DASHBOARD_TX_LIMIT {
-                        div {
-                            class: "mt-4 text-center",
+                        div { class: "mt-4 text-center",
                             Link {
                                 to: Route::Transactions {},
                                 class: "inline-block w-full px-4 py-2 text-sm text-muted bg-card hover:bg-hover rounded-lg transition-colors",
@@ -214,16 +198,9 @@ pub fn Dashboard() -> Element {
 #[component]
 fn BalanceCard(label: &'static str, amount: u64, unit: &'static str) -> Element {
     rsx! {
-        div {
-            class: "bg-card rounded-lg p-4",
-            p {
-                class: "text-muted text-xs uppercase tracking-wide mb-1",
-                "{label}"
-            }
-            p {
-                class: "text-sm font-medium",
-                "{format_balance(amount, unit)}"
-            }
+        div { class: "bg-card rounded-lg p-4",
+            p { class: "text-muted text-xs uppercase tracking-wide mb-1", "{label}" }
+            p { class: "text-sm font-medium", "{format_balance(amount, unit)}" }
         }
     }
 }
