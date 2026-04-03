@@ -370,7 +370,7 @@ impl SpvBackend for NativeBackend {
 
         let mut transactions: Vec<TransactionInfo> = records
             .into_iter()
-            .map(TransactionInfo::from_record)
+            .map(|r| TransactionInfo::from_record(r, 0))
             .collect();
 
         // Sort: unconfirmed first, then by timestamp descending
@@ -657,7 +657,16 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             wallet_id: _,
             account_index: _,
             record,
-        } => SpvEvent::TransactionReceived(Box::new(TransactionInfo::from_record(&record))),
+        } => {
+            let fallback_timestamp = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            SpvEvent::TransactionReceived(Box::new(TransactionInfo::from_record(
+                &record,
+                fallback_timestamp,
+            )))
+        }
         WalletEvent::TransactionStatusChanged { txid, status, .. } => {
             let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
                 extract_context_fields(&status);
@@ -697,14 +706,15 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
 
 impl TransactionInfo {
     /// Build a `TransactionInfo` from a wallet `TransactionRecord`.
-    fn from_record(record: &TransactionRecord) -> Self {
+    ///
+    /// `fallback_timestamp` is used when the transaction context carries no
+    /// timestamp (mempool / instant-send).  Pass `0` for cold-start loads
+    /// (renders as "Pending") or the current unix time for live events
+    /// (renders as "just now").
+    fn from_record(record: &TransactionRecord, fallback_timestamp: u64) -> Self {
         let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
             extract_context_fields(&record.context);
         let addresses = extract_record_addresses(record);
-        let fallback_timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
         TransactionInfo {
             txid: record.txid,
             amount: record.net_amount,
