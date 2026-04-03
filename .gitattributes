@@ -1,0 +1,2 @@
+# Force LF line endings everywhere to prevent Windows CRLF conversion
+* text=auto eol=lf
