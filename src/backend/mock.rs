@@ -571,6 +571,8 @@ mod tests {
         let txs = vec![
             mock_transaction(0, TransactionDirection::Incoming, 100_000),
             mock_transaction(1, TransactionDirection::Outgoing, 50_000),
+            mock_transaction(2, TransactionDirection::Internal, 10_000),
+            mock_transaction(3, TransactionDirection::CoinJoin, 10_000),
         ];
         let backend = MockBackend::builder(Network::Mainnet)
             .with_transactions(txs.clone())
@@ -578,9 +580,15 @@ mod tests {
         backend.create_wallet(TEST_MNEMONIC_12).await.unwrap();
 
         let result = backend.get_transactions().unwrap();
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.len(), 4);
         assert_eq!(result[0].direction, TransactionDirection::Incoming);
+        assert_eq!(result[0].amount, 100_000);
         assert_eq!(result[1].direction, TransactionDirection::Outgoing);
+        assert_eq!(result[1].amount, -50_000);
+        assert_eq!(result[2].direction, TransactionDirection::Internal);
+        assert_eq!(result[2].amount, 10_000);
+        assert_eq!(result[3].direction, TransactionDirection::CoinJoin);
+        assert_eq!(result[3].amount, -10_000);
     }
 
     #[tokio::test]
