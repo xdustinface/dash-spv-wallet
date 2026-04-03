@@ -773,7 +773,7 @@ mod tests {
     use dashcore::hashes::Hash;
     use dashcore::{Address, BlockHash, PublicKey, Txid};
     use key_wallet::managed_account::transaction_record::{
-        TransactionDirection as RecordDirection, TransactionRecord,
+        InputDetail, TransactionDirection as RecordDirection, TransactionRecord,
     };
     use key_wallet::transaction_checking::TransactionContext;
     use key_wallet::transaction_checking::transaction_context::BlockInfo;
@@ -1135,5 +1135,41 @@ mod tests {
             mapped,
             SpvEvent::BalanceUpdated(WalletCoreBalance::new(100_000, 50_000, 25_000, 10_000))
         );
+    }
+
+    #[test]
+    fn extract_record_addresses_deduplicates() {
+        let addr_a = test_address();
+        // Create a distinct address using a different public key
+        let pk_b = PublicKey::from_slice(&[
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x02,
+        ])
+        .unwrap();
+        let addr_b = Address::p2pkh(&pk_b, Network::Testnet);
+
+        let input_details = vec![
+            InputDetail { index: 0, value: 1000, address: addr_a.clone() },
+            InputDetail { index: 1, value: 2000, address: addr_a.clone() },
+            InputDetail { index: 2, value: 3000, address: addr_b.clone() },
+            InputDetail { index: 3, value: 4000, address: addr_b.clone() },
+        ];
+
+        let tx = Transaction::dummy_empty();
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            RecordDirection::Incoming,
+            input_details,
+            Vec::new(),
+            10000,
+        );
+
+        let addresses = extract_record_addresses(&record);
+        assert_eq!(addresses.len(), 2);
+        assert!(addresses.contains(&addr_a.to_string()));
+        assert!(addresses.contains(&addr_b.to_string()));
     }
 }
