@@ -375,9 +375,10 @@ impl SpvBackend for NativeBackend {
                     TransactionDirection::Sent
                 };
                 let block_info = r.context.block_info();
-                let is_instant_send = r.context == TransactionContext::InstantSend;
+                let is_instant_send = matches!(r.context, TransactionContext::InstantSend(_));
                 let is_chain_locked =
                     matches!(r.context, TransactionContext::InChainLockedBlock(_));
+                let addresses = extract_record_addresses(r);
                 TransactionInfo {
                     txid: r.txid,
                     amount: r.net_amount,
@@ -385,7 +386,7 @@ impl SpvBackend for NativeBackend {
                     timestamp: block_info.map_or(0, |i| i.timestamp() as u64),
                     height: block_info.map(|i| i.height()),
                     fee: r.fee,
-                    addresses: Vec::new(),
+                    addresses,
                     block_hash: block_info.map(|i| i.block_hash()),
                     is_instant_send,
                     is_chain_locked,
@@ -643,13 +644,10 @@ fn map_sync_event(event: SyncEvent) -> Option<SpvEvent> {
         SyncEvent::InstantLockReceived {
             instant_lock,
             validated,
-        } => {
-            use dashcore::hashes::Hash;
-            Some(SpvEvent::InstantLockReceived {
-                txid: instant_lock.txid.to_byte_array(),
-                validated,
-            })
-        }
+        } => Some(SpvEvent::InstantLockReceived {
+            txid: instant_lock.txid.to_byte_array(),
+            validated,
+        }),
         SyncEvent::ManagerError { manager, error } => {
             Some(SpvEvent::Error(format!("{manager}: {error}")))
         }
@@ -677,19 +675,17 @@ fn map_network_event(event: NetworkEvent) -> SpvEvent {
 fn map_wallet_event(event: WalletEvent) -> SpvEvent {
     match event {
         WalletEvent::TransactionReceived {
-            txid,
-            amount,
-            addresses,
-            status,
-            ..
+            wallet_id: _,
+            account_index: _,
+            record,
         } => {
-            use dashcore::hashes::Hash;
             let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
-                extract_context_fields(&status);
+                extract_context_fields(&record.context);
+            let addresses = extract_record_addresses(&record);
             SpvEvent::TransactionReceived {
-                txid: txid.to_byte_array(),
-                amount,
-                addresses: addresses.iter().map(|a| a.to_string()).collect(),
+                txid: record.txid.to_byte_array(),
+                amount: record.net_amount,
+                addresses,
                 height,
                 timestamp,
                 block_hash,
@@ -698,7 +694,6 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             }
         }
         WalletEvent::TransactionStatusChanged { txid, status, .. } => {
-            use dashcore::hashes::Hash;
             let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
                 extract_context_fields(&status);
             SpvEvent::TransactionReceived {
@@ -727,14 +722,27 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
     }
 }
 
+/// Extract unique addresses from a transaction record's input details.
+fn extract_record_addresses(
+    record: &key_wallet::managed_account::transaction_record::TransactionRecord,
+) -> Vec<String> {
+    let mut addrs: Vec<String> = record
+        .input_details
+        .iter()
+        .map(|d| d.address.to_string())
+        .collect();
+    addrs.sort();
+    addrs.dedup();
+    addrs
+}
+
 /// Extract UI-relevant fields from a `TransactionContext`.
 fn extract_context_fields(
     ctx: &TransactionContext,
 ) -> (Option<u32>, Option<u64>, Option<[u8; 32]>, bool, bool) {
-    use dashcore::hashes::Hash;
     match ctx {
         TransactionContext::Mempool => (None, None, None, false, false),
-        TransactionContext::InstantSend => (None, None, None, true, false),
+        TransactionContext::InstantSend(_) => (None, None, None, true, false),
         TransactionContext::InBlock(info) => (
             Some(info.height()),
             Some(info.timestamp() as u64),
@@ -758,13 +766,18 @@ mod tests {
 
     use dash_spv::network::NetworkEvent;
     use dash_spv::sync::{ManagerIdentifier, SyncEvent};
+    use dashcore::blockdata::transaction::Transaction;
     use dashcore::bls_sig_utils::BLSSignature;
     use dashcore::ephemerealdata::chain_lock::ChainLock;
     use dashcore::ephemerealdata::instant_lock::InstantLock;
     use dashcore::hashes::Hash;
     use dashcore::{Address, BlockHash, PublicKey, Txid};
+    use key_wallet::managed_account::transaction_record::{
+        InputDetail, TransactionDirection as RecordDirection, TransactionRecord,
+    };
     use key_wallet::transaction_checking::TransactionContext;
     use key_wallet::transaction_checking::transaction_context::BlockInfo;
+    use key_wallet::transaction_checking::transaction_router::TransactionType;
     use key_wallet_manager::WalletEvent;
 
     use super::*;
@@ -804,8 +817,9 @@ mod tests {
 
     #[test]
     fn extract_context_instant_send() {
+        let is_lock = InstantLock::default();
         let (height, timestamp, block_hash, is, cl) =
-            extract_context_fields(&TransactionContext::InstantSend);
+            extract_context_fields(&TransactionContext::InstantSend(is_lock));
         assert_eq!(height, None);
         assert_eq!(timestamp, None);
         assert_eq!(block_hash, None);
@@ -1039,14 +1053,21 @@ mod tests {
 
     #[test]
     fn map_wallet_event_transaction_received() {
-        let txid = Txid::all_zeros();
+        let tx = Transaction::dummy_empty();
+        let txid = tx.txid();
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            RecordDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            50000,
+        );
         let event = WalletEvent::TransactionReceived {
             wallet_id: [0; 32],
-            status: TransactionContext::Mempool,
             account_index: 0,
-            txid,
-            amount: 50000,
-            addresses: vec![test_address()],
+            record: Box::new(record),
         };
         let mapped = map_wallet_event(event);
         match mapped {
@@ -1061,7 +1082,7 @@ mod tests {
             } => {
                 assert_eq!(mapped_txid, txid.to_byte_array());
                 assert_eq!(amount, 50000);
-                assert_eq!(addresses.len(), 1);
+                assert!(addresses.is_empty());
                 assert_eq!(height, None);
                 assert!(!is_instant_send);
                 assert!(!is_chain_locked);
@@ -1114,5 +1135,57 @@ mod tests {
             mapped,
             SpvEvent::BalanceUpdated(WalletCoreBalance::new(100_000, 50_000, 25_000, 10_000))
         );
+    }
+
+    #[test]
+    fn extract_record_addresses_deduplicates() {
+        let addr_a = test_address();
+        // Create a distinct address using a different public key
+        let pk_b = PublicKey::from_slice(&[
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x02,
+        ])
+        .unwrap();
+        let addr_b = Address::p2pkh(&pk_b, Network::Testnet);
+
+        let input_details = vec![
+            InputDetail {
+                index: 0,
+                value: 1000,
+                address: addr_a.clone(),
+            },
+            InputDetail {
+                index: 1,
+                value: 2000,
+                address: addr_a.clone(),
+            },
+            InputDetail {
+                index: 2,
+                value: 3000,
+                address: addr_b.clone(),
+            },
+            InputDetail {
+                index: 3,
+                value: 4000,
+                address: addr_b.clone(),
+            },
+        ];
+
+        let tx = Transaction::dummy_empty();
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            RecordDirection::Incoming,
+            input_details,
+            Vec::new(),
+            10000,
+        );
+
+        let addresses = extract_record_addresses(&record);
+        assert_eq!(addresses.len(), 2);
+        assert!(addresses.contains(&addr_a.to_string()));
+        assert!(addresses.contains(&addr_b.to_string()));
     }
 }
