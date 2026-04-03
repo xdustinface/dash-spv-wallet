@@ -70,25 +70,16 @@ pub fn Transactions() -> Element {
     let remaining = total_filtered.saturating_sub(visible);
 
     rsx! {
-        div {
-            class: "text-foreground p-6",
+        div { class: "text-foreground p-6",
 
             // Header
-            div {
-                class: "mb-6",
-                h2 {
-                    class: "text-2xl font-bold mb-1",
-                    "Transactions"
-                }
-                p {
-                    class: "text-muted text-sm",
-                    "Showing {visible} of {total_filtered} transactions"
-                }
+            div { class: "mb-6",
+                h2 { class: "text-2xl font-bold mb-1", "Transactions" }
+                p { class: "text-muted text-sm", "Showing {visible} of {total_filtered} transactions" }
             }
 
             // Search bar
-            div {
-                class: "relative mb-4",
+            div { class: "relative mb-4",
                 input {
                     class: "w-full bg-surface-alt border border-edge rounded-lg p-3 text-foreground placeholder-disabled focus:border-dash focus:outline-none",
                     r#type: "text",
@@ -112,8 +103,7 @@ pub fn Transactions() -> Element {
             }
 
             // Filter tabs
-            div {
-                class: "flex gap-2 mb-6",
+            div { class: "flex gap-2 mb-6",
                 for filter in [TxFilter::All, TxFilter::Received, TxFilter::Sent] {
                     {
                         let is_active = *active_filter.read() == filter;
@@ -138,10 +128,8 @@ pub fn Transactions() -> Element {
 
             // Transaction list
             if filtered.is_empty() {
-                div {
-                    class: "text-disabled text-center py-12",
-                    p {
-                        class: "text-lg",
+                div { class: "text-disabled text-center py-12",
+                    p { class: "text-lg",
                         if transactions.is_empty() {
                             "No transactions yet"
                         } else {
@@ -150,20 +138,26 @@ pub fn Transactions() -> Element {
                     }
                 }
             } else {
-                div {
-                    class: "space-y-2",
-                    for (i, tx) in filtered.iter().take(visible).enumerate() {
+                div { class: "space-y-2",
+                    for (i , tx) in filtered.iter().take(visible).enumerate() {
                         {
                             let view = format_transaction(tx, current_height, unit);
                             let is_sent = tx.direction == TransactionDirection::Sent;
                             let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
                             let border = if is_sent { "border-error" } else { "border-success" };
-                            let address_short = format_address_responsive(&tx.addresses.first().cloned().unwrap_or_default(), 30);
+                            let address_short = format_address_responsive(
+
+                                // Left: direction + address + time
+
+                                // Right: amount + confirmations + height + badges
+
+                                &tx.addresses.first().cloned().unwrap_or_default(),
+                                30,
+                            );
                             let confirmations = tx.confirmations(current_height);
                             let is_expanded = *expanded_txid.read() == Some(tx.txid);
                             let txid = tx.txid;
                             let tx = (*tx).clone();
-
                             rsx! {
                                 div {
                                     div {
@@ -176,36 +170,28 @@ pub fn Transactions() -> Element {
                                             }
                                         },
 
-                                        // Left: direction + address + time
-                                        div {
-                                            class: "flex items-center gap-3 min-w-0",
-                                            span {
-                                                class: if is_sent { "text-error text-lg flex-shrink-0" } else { "text-success text-lg flex-shrink-0" },
-                                                if is_sent { "▲" } else { "▼" }
+
+
+                                        div { class: "flex items-center gap-3 min-w-0",
+                                            span { class: if is_sent { "text-error text-lg flex-shrink-0" } else { "text-success text-lg flex-shrink-0" },
+                                                if is_sent {
+                                                    "▲"
+                                                } else {
+                                                    "▼"
+                                                }
                                             }
-                                            div {
-                                                class: "min-w-0",
-                                                p {
-                                                    class: "font-mono text-sm truncate",
-                                                    "{address_short}"
-                                                }
-                                                p {
-                                                    class: "text-disabled text-xs",
-                                                    "{view.timestamp_display}"
-                                                }
+                                            div { class: "min-w-0",
+                                                p { class: "font-mono text-sm truncate", "{address_short}" }
+                                                p { class: "text-disabled text-xs", "{view.timestamp_display}" }
                                             }
                                         }
 
-                                        // Right: amount + confirmations + height + badges
-                                        div {
-                                            class: "text-right flex items-center gap-2 flex-shrink-0",
+                                        div { class: "text-right flex items-center gap-2 flex-shrink-0",
                                             div {
-                                                p {
-                                                    class: if is_sent { "text-error font-medium" } else { "text-success font-medium" },
+                                                p { class: if is_sent { "text-error font-medium" } else { "text-success font-medium" },
                                                     "{view.amount_display}"
                                                 }
-                                                p {
-                                                    class: "text-disabled text-xs",
+                                                p { class: "text-disabled text-xs",
                                                     if confirmations > 0 {
                                                         if let Some(h) = tx.height {
                                                             "{confirmations} confirmations (block {h})"
@@ -218,14 +204,12 @@ pub fn Transactions() -> Element {
                                                 }
                                             }
                                             if view.is_instant_send {
-                                                span {
-                                                    class: "bg-dash text-foreground text-xs rounded-full px-2 py-0.5",
+                                                span { class: "bg-dash text-foreground text-xs rounded-full px-2 py-0.5",
                                                     "IS"
                                                 }
                                             }
                                             if view.is_chain_locked {
-                                                span {
-                                                    class: "bg-chainlock text-foreground text-xs rounded-full px-2 py-0.5",
+                                                span { class: "bg-chainlock text-foreground text-xs rounded-full px-2 py-0.5",
                                                     "CL"
                                                 }
                                             }
@@ -233,40 +217,34 @@ pub fn Transactions() -> Element {
                                     }
 
                                     if is_expanded {
-                                        div {
-                                            class: "bg-surface-alt rounded-b-lg px-4 py-3 -mt-1 mb-1 border-l-4 {border} text-sm space-y-2",
+                                        div { class: "bg-surface-alt rounded-b-lg px-4 py-3 -mt-1 mb-1 border-l-4 {border} text-sm space-y-2",
 
-                                            div {
-                                                class: "flex justify-between",
+                                            div { class: "flex justify-between",
                                                 span { class: "text-muted", "Transaction ID" }
                                                 span { class: "font-mono text-xs select-all", "{tx.txid}" }
                                             }
 
                                             if let Some(hash) = &tx.block_hash {
-                                                div {
-                                                    class: "flex justify-between",
+                                                div { class: "flex justify-between",
                                                     span { class: "text-muted", "Block Hash" }
                                                     span { class: "font-mono text-xs select-all", "{hash}" }
                                                 }
                                             }
 
                                             if let Some(h) = tx.height {
-                                                div {
-                                                    class: "flex justify-between",
+                                                div { class: "flex justify-between",
                                                     span { class: "text-muted", "Block Height" }
                                                     span { "{h}" }
                                                 }
                                             }
 
-                                            div {
-                                                class: "flex justify-between",
+                                            div { class: "flex justify-between",
                                                 span { class: "text-muted", "Date" }
                                                 span { "{format_timestamp_absolute(tx.timestamp)}" }
                                             }
 
                                             if let Some(fee) = tx.fee {
-                                                div {
-                                                    class: "flex justify-between",
+                                                div { class: "flex justify-between",
                                                     span { class: "text-muted", "Fee" }
                                                     span { "{format_balance(fee, unit)}" }
                                                 }
@@ -287,8 +265,7 @@ pub fn Transactions() -> Element {
                 }
 
                 // Load more / all loaded
-                div {
-                    class: "mt-4 text-center",
+                div { class: "mt-4 text-center",
                     if remaining > 0 {
                         button {
                             class: "px-6 py-2 bg-card text-muted hover:bg-hover hover:text-foreground rounded-lg transition-colors",
@@ -299,10 +276,7 @@ pub fn Transactions() -> Element {
                             "Load {PAGE_SIZE.min(remaining)} more ({remaining} remaining)"
                         }
                     } else if total_filtered > PAGE_SIZE {
-                        p {
-                            class: "text-disabled text-sm py-2",
-                            "All transactions loaded"
-                        }
+                        p { class: "text-disabled text-sm py-2", "All transactions loaded" }
                     }
                 }
             }

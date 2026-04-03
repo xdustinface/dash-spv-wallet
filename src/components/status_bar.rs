@@ -47,20 +47,16 @@ pub fn StatusBar() -> Element {
     };
 
     rsx! {
-        div {
-            class: "flex items-center px-4 py-2 bg-surface-alt border-t border-edge text-sm text-muted",
+        div { class: "flex items-center px-4 py-2 bg-surface-alt border-t border-edge text-sm text-muted",
 
             // Left side: network + sync status
-            div {
-                class: "flex items-center gap-4",
+            div { class: "flex items-center gap-4",
 
-                span {
-                    class: "px-2 py-0.5 text-xs font-medium rounded bg-hover text-muted uppercase tracking-wide",
+                span { class: "px-2 py-0.5 text-xs font-medium rounded bg-hover text-muted uppercase tracking-wide",
                     "{network_name}"
                 }
 
-                div {
-                    class: "flex items-center",
+                div { class: "flex items-center",
                     span { class: "{dot_class}" }
                     span { "{status_text}" }
                 }
@@ -71,18 +67,12 @@ pub fn StatusBar() -> Element {
 
             // Peer count
             if info.connected_peers > 0 {
-                span {
-                    class: "mr-4 text-disabled",
-                    "{peer_text}"
-                }
+                span { class: "mr-4 text-disabled", "{peer_text}" }
             }
 
             // Chain tip
             if !chain_tip.is_empty() {
-                span {
-                    class: "text-disabled",
-                    "{chain_tip}"
-                }
+                span { class: "text-disabled", "{chain_tip}" }
             }
         }
     }

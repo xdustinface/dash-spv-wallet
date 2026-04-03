@@ -153,24 +153,15 @@ pub fn Send() -> Element {
     match step() {
         SendStep::Form => {
             rsx! {
-                div {
-                    class: "text-foreground p-6",
+                div { class: "text-foreground p-6",
 
-                    h1 {
-                        class: "text-2xl font-bold mb-6",
-                        "Send"
-                    }
+                    h1 { class: "text-2xl font-bold mb-6", "Send" }
 
-                    div {
-                        class: "bg-card rounded-lg p-6 max-w-xl",
+                    div { class: "bg-card rounded-lg p-6 max-w-xl",
 
                         // Address input
-                        div {
-                            class: "mb-4",
-                            label {
-                                class: "block text-muted text-sm mb-1",
-                                "Destination Address"
-                            }
+                        div { class: "mb-4",
+                            label { class: "block text-muted text-sm mb-1", "Destination Address" }
                             input {
                                 class: "w-full bg-surface-alt text-foreground rounded-lg p-3 outline-none focus:ring-2 focus:ring-dash",
                                 r#type: "text",
@@ -182,22 +173,14 @@ pub fn Send() -> Element {
                                 },
                             }
                             if let Some(err) = address_error() {
-                                p {
-                                    class: "text-error text-sm mt-1",
-                                    "{err}"
-                                }
+                                p { class: "text-error text-sm mt-1", "{err}" }
                             }
                         }
 
                         // Amount input
-                        div {
-                            class: "mb-4",
-                            label {
-                                class: "block text-muted text-sm mb-1",
-                                "Amount ({unit})"
-                            }
-                            div {
-                                class: "relative",
+                        div { class: "mb-4",
+                            label { class: "block text-muted text-sm mb-1", "Amount ({unit})" }
+                            div { class: "relative",
                                 input {
                                     class: "w-full bg-surface-alt text-foreground rounded-lg p-3 pr-16 outline-none focus:ring-2 focus:ring-dash",
                                     r#type: "text",
@@ -217,43 +200,34 @@ pub fn Send() -> Element {
                                     "Max"
                                 }
                             }
-                            p {
-                                class: "text-disabled text-xs mt-1",
+                            p { class: "text-disabled text-xs mt-1",
                                 "Available: {format_balance(spendable, unit)}"
                             }
                             if let Some(err) = amount_error() {
-                                p {
-                                    class: "text-error text-sm mt-1",
-                                    "{err}"
-                                }
+                                p { class: "text-error text-sm mt-1", "{err}" }
                             }
                         }
 
                         // Fee rate selector
-                        div {
-                            class: "mb-4",
-                            label {
-                                class: "block text-muted text-sm mb-1",
-                                "Fee Rate"
-                            }
-                            div {
-                                class: "flex border border-edge rounded-lg overflow-hidden",
-                                for (i, rate) in FeeRate::ALL.iter().enumerate() {
+                        div { class: "mb-4",
+                            label { class: "block text-muted text-sm mb-1", "Fee Rate" }
+                            div { class: "flex border border-edge rounded-lg overflow-hidden",
+                                for (i , rate) in FeeRate::ALL.iter().enumerate() {
                                     {
                                         let rate = *rate;
                                         let active = fee_rate() == rate;
                                         let border = if i > 0 { "border-l border-edge" } else { "" };
-                                        let bg = if active { "bg-dash text-foreground" } else { "bg-surface-alt text-muted hover:bg-hover" };
+                                        let bg = if active {
+                                            "bg-dash text-foreground"
+                                        } else {
+                                            "bg-surface-alt text-muted hover:bg-hover"
+                                        };
                                         rsx! {
                                             button {
                                                 class: "flex-1 py-2 text-center transition-colors {bg} {border}",
                                                 onclick: move |_| fee_rate.set(rate),
-                                                span {
-                                                    class: "text-xs font-medium block",
-                                                    "{rate.label()}"
-                                                }
-                                                span {
-                                                    class: if active { "text-[10px] opacity-70 block" } else { "text-[10px] text-disabled block" },
+                                                span { class: "text-xs font-medium block", "{rate.label()}" }
+                                                span { class: if active { "text-[10px] opacity-70 block" } else { "text-[10px] text-disabled block" },
                                                     "{rate.description()}"
                                                 }
                                             }
@@ -265,15 +239,12 @@ pub fn Send() -> Element {
 
                         // Fee estimate display
                         if let Some(estimated_fee) = fee_estimate() {
-                            div {
-                                class: "mb-4",
-                                p {
-                                    class: "text-muted text-sm",
+                            div { class: "mb-4",
+                                p { class: "text-muted text-sm",
                                     "Estimated fee: {format_balance(estimated_fee, unit)}"
                                 }
                                 if let Some(amount_sats) = parse_dash_amount(&amount_str.read()) {
-                                    p {
-                                        class: "text-foreground font-medium",
+                                    p { class: "text-foreground font-medium",
                                         "Total: {format_balance(amount_sats.saturating_add(estimated_fee), unit)}"
                                     }
                                 }
@@ -281,8 +252,7 @@ pub fn Send() -> Element {
                         }
 
                         // Review button
-                        div {
-                            class: "flex justify-end",
+                        div { class: "flex justify-end",
                             button {
                                 class: "bg-dash hover:bg-dash-hover text-foreground text-sm font-medium py-2 px-6 rounded-lg transition-colors",
                                 onclick: move |_| {
@@ -306,91 +276,45 @@ pub fn Send() -> Element {
             let remaining = spendable.saturating_sub(total);
 
             rsx! {
-                div {
-                    class: "text-foreground p-6",
+                div { class: "text-foreground p-6",
 
-                    h1 {
-                        class: "text-2xl font-bold mb-6",
-                        "Review Transaction"
-                    }
+                    h1 { class: "text-2xl font-bold mb-6", "Review Transaction" }
 
-                    div {
-                        class: "bg-card rounded-lg p-6 max-w-xl",
+                    div { class: "bg-card rounded-lg p-6 max-w-xl",
 
-                        div {
-                            class: "mb-4",
-                            p {
-                                class: "text-muted text-sm",
-                                "To"
-                            }
-                            p {
-                                class: "font-mono text-sm break-all",
-                                "{address}"
-                            }
+                        div { class: "mb-4",
+                            p { class: "text-muted text-sm", "To" }
+                            p { class: "font-mono text-sm break-all", "{address}" }
                         }
 
-                        div {
-                            class: "mb-4",
-                            p {
-                                class: "text-muted text-sm",
-                                "Amount"
-                            }
-                            p {
-                                class: "text-xl font-bold",
-                                "{format_balance(amount_sats, unit)}"
-                            }
+                        div { class: "mb-4",
+                            p { class: "text-muted text-sm", "Amount" }
+                            p { class: "text-xl font-bold", "{format_balance(amount_sats, unit)}" }
                         }
 
-                        div {
-                            class: "mb-4",
-                            p {
-                                class: "text-muted text-sm",
-                                "Fee Rate"
-                            }
-                            p {
-                                class: "text-foreground",
+                        div { class: "mb-4",
+                            p { class: "text-muted text-sm", "Fee Rate" }
+                            p { class: "text-foreground",
                                 "{selected_rate.label()} ({selected_rate.description()})"
                             }
                         }
 
-                        div {
-                            class: "mb-4",
-                            p {
-                                class: "text-muted text-sm",
-                                "Estimated Fee"
-                            }
-                            p {
-                                class: "text-foreground",
-                                "{format_balance(estimated_fee, unit)}"
-                            }
+                        div { class: "mb-4",
+                            p { class: "text-muted text-sm", "Estimated Fee" }
+                            p { class: "text-foreground", "{format_balance(estimated_fee, unit)}" }
                         }
 
-                        div {
-                            class: "mb-4",
-                            p {
-                                class: "text-muted text-sm",
-                                "Total Deduction"
-                            }
-                            p {
-                                class: "text-foreground font-medium",
-                                "{format_balance(total, unit)}"
-                            }
+                        div { class: "mb-4",
+                            p { class: "text-muted text-sm", "Total Deduction" }
+                            p { class: "text-foreground font-medium", "{format_balance(total, unit)}" }
                         }
 
-                        div {
-                            class: "mb-6",
-                            p {
-                                class: "text-muted text-sm",
-                                "Remaining Balance"
-                            }
-                            p {
-                                class: "text-foreground",
-                                "{format_balance(remaining, unit)}"
-                            }
+                        div { class: "mb-6",
+                            p { class: "text-muted text-sm", "Remaining Balance" }
+                            p { class: "text-foreground", "{format_balance(remaining, unit)}" }
                         }
 
-                        div {
-                            class: "flex gap-3",
+                        div { class: "flex gap-3",
 
                             button {
                                 class: "flex-1 bg-hover hover:bg-edge text-foreground font-medium py-3 px-4 rounded-lg transition-colors",
@@ -427,37 +351,22 @@ pub fn Send() -> Element {
 
         SendStep::Sending => {
             rsx! {
-                div {
-                    class: "text-foreground p-6 flex flex-col items-center justify-center min-h-[300px]",
-                    div {
-                        class: "animate-spin rounded-full h-12 w-12 border-b-2 border-dash mb-4",
-                    }
-                    p {
-                        class: "text-lg",
-                        "Broadcasting transaction..."
-                    }
+                div { class: "text-foreground p-6 flex flex-col items-center justify-center min-h-[300px]",
+                    div { class: "animate-spin rounded-full h-12 w-12 border-b-2 border-dash mb-4" }
+                    p { class: "text-lg", "Broadcasting transaction..." }
                 }
             }
         }
 
         SendStep::Success(txid_hex) => {
             rsx! {
-                div {
-                    class: "text-foreground p-6",
+                div { class: "text-foreground p-6",
 
-                    div {
-                        class: "bg-card rounded-lg p-6 max-w-xl text-center",
+                    div { class: "bg-card rounded-lg p-6 max-w-xl text-center",
 
-                        p {
-                            class: "text-success text-4xl mb-4",
-                            "✓"
-                        }
-                        h2 {
-                            class: "text-xl font-bold mb-4",
-                            "Transaction sent!"
-                        }
-                        p {
-                            class: "font-mono text-xs text-muted mb-6 break-all select-all",
+                        p { class: "text-success text-4xl mb-4", "✓" }
+                        h2 { class: "text-xl font-bold mb-4", "Transaction sent!" }
+                        p { class: "font-mono text-xs text-muted mb-6 break-all select-all",
                             "{txid_hex}"
                         }
 
@@ -473,20 +382,12 @@ pub fn Send() -> Element {
 
         SendStep::Error(msg) => {
             rsx! {
-                div {
-                    class: "text-foreground p-6",
+                div { class: "text-foreground p-6",
 
-                    div {
-                        class: "bg-card rounded-lg p-6 max-w-xl",
+                    div { class: "bg-card rounded-lg p-6 max-w-xl",
 
-                        h2 {
-                            class: "text-xl font-bold mb-4 text-error",
-                            "Send Failed"
-                        }
-                        p {
-                            class: "text-foreground mb-6",
-                            "{msg}"
-                        }
+                        h2 { class: "text-xl font-bold mb-4 text-error", "Send Failed" }
+                        p { class: "text-foreground mb-6", "{msg}" }
 
                         button {
                             class: "w-full bg-dash hover:bg-dash-hover text-foreground font-medium py-3 px-4 rounded-lg transition-colors",

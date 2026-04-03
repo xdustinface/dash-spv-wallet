@@ -56,24 +56,17 @@ pub fn WalletCreate() -> Element {
     };
 
     rsx! {
-        div {
-            class: "flex flex-col items-center justify-center min-h-screen bg-surface text-foreground",
+        div { class: "flex flex-col items-center justify-center min-h-screen bg-surface text-foreground",
 
             match *step.read() {
                 Step::Generate => rsx! {
-                    h1 {
-                        class: "text-3xl font-bold mb-2",
-                        "Create New Wallet"
-                    }
-                    p {
-                        class: "text-muted mb-10",
-                        "Generate a new recovery phrase to create your wallet"
-                    }
+
+
+
+                    h1 { class: "text-3xl font-bold mb-2", "Create New Wallet" }
+                    p { class: "text-muted mb-10", "Generate a new recovery phrase to create your wallet" }
                     if let Some(err) = error_message.read().as_ref() {
-                        p {
-                            class: "text-error mb-4",
-                            "{err}"
-                        }
+                        p { class: "text-error mb-4", "{err}" }
                     }
 
                     button {
@@ -83,37 +76,22 @@ pub fn WalletCreate() -> Element {
                     }
                 },
                 Step::DisplayMnemonic => rsx! {
-                    h1 {
-                        class: "text-3xl font-bold mb-2",
-                        "Recovery Phrase"
-                    }
-                    p {
-                        class: "text-warning mb-8 max-w-md text-center",
+                    h1 { class: "text-3xl font-bold mb-2", "Recovery Phrase" }
+                    p { class: "text-warning mb-8 max-w-md text-center",
                         "Write down these words in order. You will need them to recover your wallet."
                     }
 
-                    div {
-                        class: "grid grid-cols-3 gap-3 mb-8",
-                        for (i, word) in mnemonic_words.read().iter().enumerate() {
-                            div {
-                                class: "flex items-center gap-2 bg-card border border-edge rounded-lg px-4 py-2",
-                                span {
-                                    class: "text-disabled text-sm w-6 text-right",
-                                    "{i + 1}."
-                                }
-                                span {
-                                    class: "text-foreground font-mono",
-                                    "{word}"
-                                }
+                    div { class: "grid grid-cols-3 gap-3 mb-8",
+                        for (i , word) in mnemonic_words.read().iter().enumerate() {
+                            div { class: "flex items-center gap-2 bg-card border border-edge rounded-lg px-4 py-2",
+                                span { class: "text-disabled text-sm w-6 text-right", "{i + 1}." }
+                                span { class: "text-foreground font-mono", "{word}" }
                             }
                         }
                     }
 
                     if let Some(err) = error_message.read().as_ref() {
-                        p {
-                            class: "text-error mb-4",
-                            "{err}"
-                        }
+                        p { class: "text-error mb-4", "{err}" }
                     }
 
                     button {

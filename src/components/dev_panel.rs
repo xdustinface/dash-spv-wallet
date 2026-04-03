@@ -26,8 +26,7 @@ pub fn DevPanel() -> Element {
     let entry_count = entries.len();
 
     rsx! {
-        div {
-            class: "border-t border-edge bg-surface-alt",
+        div { class: "border-t border-edge bg-surface-alt",
 
             // Toggle bar
             button {
@@ -45,27 +44,48 @@ pub fn DevPanel() -> Element {
                     }
                 }
 
-                span {
-                    class: "text-disabled",
-                    if *is_open.read() { "Collapse" } else { "Expand" }
+                span { class: "text-disabled",
+                    if *is_open.read() {
+                        "Collapse"
+                    } else {
+                        "Expand"
+                    }
                 }
             }
 
             // Panel content
             if *is_open.read() {
-                div {
-                    class: "px-4 py-2",
+                div { class: "px-4 py-2",
 
                     // Controls row
-                    div {
-                        class: "flex items-center gap-2 mb-2",
+                    div { class: "flex items-center gap-2 mb-2",
 
                         // Filter dropdown
-                        FilterButton { label: "All", active: filter.read().is_none(), onclick: move |_| filter.set(None) }
-                        FilterButton { label: "Sync", active: *filter.read() == Some(EventCategory::Sync), onclick: move |_| filter.set(Some(EventCategory::Sync)) }
-                        FilterButton { label: "Network", active: *filter.read() == Some(EventCategory::Network), onclick: move |_| filter.set(Some(EventCategory::Network)) }
-                        FilterButton { label: "Wallet", active: *filter.read() == Some(EventCategory::Wallet), onclick: move |_| filter.set(Some(EventCategory::Wallet)) }
-                        FilterButton { label: "Error", active: *filter.read() == Some(EventCategory::Error), onclick: move |_| filter.set(Some(EventCategory::Error)) }
+                        FilterButton {
+                            label: "All",
+                            active: filter.read().is_none(),
+                            onclick: move |_| filter.set(None),
+                        }
+                        FilterButton {
+                            label: "Sync",
+                            active: *filter.read() == Some(EventCategory::Sync),
+                            onclick: move |_| filter.set(Some(EventCategory::Sync)),
+                        }
+                        FilterButton {
+                            label: "Network",
+                            active: *filter.read() == Some(EventCategory::Network),
+                            onclick: move |_| filter.set(Some(EventCategory::Network)),
+                        }
+                        FilterButton {
+                            label: "Wallet",
+                            active: *filter.read() == Some(EventCategory::Wallet),
+                            onclick: move |_| filter.set(Some(EventCategory::Wallet)),
+                        }
+                        FilterButton {
+                            label: "Error",
+                            active: *filter.read() == Some(EventCategory::Error),
+                            onclick: move |_| filter.set(Some(EventCategory::Error)),
+                        }
 
                         // Spacer
                         div { class: "flex-1" }
@@ -79,37 +99,25 @@ pub fn DevPanel() -> Element {
                     }
 
                     // Log entries
-                    div {
-                        class: "max-h-48 overflow-y-auto font-mono text-xs space-y-0.5",
+                    div { class: "max-h-48 overflow-y-auto font-mono text-xs space-y-0.5",
 
                         if entries.is_empty() {
-                            p {
-                                class: "text-disabled py-2",
-                                "No events yet."
-                            }
+                            p { class: "text-disabled py-2", "No events yet." }
                         }
 
-                        for (timestamp, category, message) in entries.iter() {
-                            div {
-                                class: "flex items-start gap-2 py-0.5",
+                        for (timestamp , category , message) in entries.iter() {
+                            div { class: "flex items-start gap-2 py-0.5",
 
                                 // Timestamp
-                                span {
-                                    class: "text-disabled shrink-0",
-                                    "{format_time(*timestamp)}"
-                                }
+                                span { class: "text-disabled shrink-0", "{format_time(*timestamp)}" }
 
                                 // Category badge
-                                span {
-                                    class: "shrink-0 px-1.5 py-0.5 rounded text-xs font-medium {category_badge_class(category)}",
+                                span { class: "shrink-0 px-1.5 py-0.5 rounded text-xs font-medium {category_badge_class(category)}",
                                     "{category_label(category)}"
                                 }
 
                                 // Message
-                                span {
-                                    class: "text-foreground",
-                                    "{message}"
-                                }
+                                span { class: "text-foreground", "{message}" }
                             }
                         }
                     }
@@ -128,11 +136,7 @@ fn FilterButton(label: &'static str, active: bool, onclick: EventHandler<MouseEv
     };
 
     rsx! {
-        button {
-            class,
-            onclick: move |evt| onclick.call(evt),
-            "{label}"
-        }
+        button { class, onclick: move |evt| onclick.call(evt), "{label}" }
     }
 }
 
