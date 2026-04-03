@@ -731,6 +731,7 @@ fn extract_record_addresses(
         .iter()
         .map(|d| d.address.to_string())
         .collect();
+    addrs.sort();
     addrs.dedup();
     addrs
 }

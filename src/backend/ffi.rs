@@ -598,7 +598,7 @@ impl SpvBackend for FfiBackend {
                     };
 
                     let block_info = &record.context.block_info;
-                    let has_block = block_info.block_hash != [0u8; 32] || block_info.timestamp != 0;
+                    let has_block = block_info.block_hash != [0u8; 32] && block_info.timestamp != 0;
                     let is_instant_send = matches!(
                         record.context.context_type,
                         FFITransactionContextType::InstantSend
@@ -1471,7 +1471,7 @@ extern "C" fn on_transaction_received(
     let (is_instant_send, is_chain_locked) = ffi_transaction_context_flags(r.context.context_type);
 
     let block_info = &r.context.block_info;
-    let has_block = block_info.block_hash != [0u8; 32] || block_info.timestamp != 0;
+    let has_block = block_info.block_hash != [0u8; 32] && block_info.timestamp != 0;
 
     let addresses = extract_ffi_input_addresses(r);
 
