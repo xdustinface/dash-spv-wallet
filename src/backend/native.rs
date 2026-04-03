@@ -378,6 +378,7 @@ impl SpvBackend for NativeBackend {
                 let is_instant_send = matches!(r.context, TransactionContext::InstantSend(_));
                 let is_chain_locked =
                     matches!(r.context, TransactionContext::InChainLockedBlock(_));
+                let addresses = extract_record_addresses(r);
                 TransactionInfo {
                     txid: r.txid,
                     amount: r.net_amount,
@@ -385,7 +386,7 @@ impl SpvBackend for NativeBackend {
                     timestamp: block_info.map_or(0, |i| i.timestamp() as u64),
                     height: block_info.map(|i| i.height()),
                     fee: r.fee,
-                    addresses: Vec::new(),
+                    addresses,
                     block_hash: block_info.map(|i| i.block_hash()),
                     is_instant_send,
                     is_chain_locked,
@@ -680,10 +681,11 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
         } => {
             let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
                 extract_context_fields(&record.context);
+            let addresses = extract_record_addresses(&record);
             SpvEvent::TransactionReceived {
                 txid: record.txid.to_byte_array(),
                 amount: record.net_amount,
-                addresses: Vec::new(),
+                addresses,
                 height,
                 timestamp,
                 block_hash,
@@ -718,6 +720,19 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             locked,
         )),
     }
+}
+
+/// Extract unique addresses from a transaction record's input details.
+fn extract_record_addresses(
+    record: &key_wallet::managed_account::transaction_record::TransactionRecord,
+) -> Vec<String> {
+    let mut addrs: Vec<String> = record
+        .input_details
+        .iter()
+        .map(|d| d.address.to_string())
+        .collect();
+    addrs.dedup();
+    addrs
 }
 
 /// Extract UI-relevant fields from a `TransactionContext`.
@@ -1058,6 +1073,7 @@ mod tests {
             SpvEvent::TransactionReceived {
                 txid: mapped_txid,
                 amount,
+                addresses,
                 height,
                 is_instant_send,
                 is_chain_locked,
@@ -1065,6 +1081,7 @@ mod tests {
             } => {
                 assert_eq!(mapped_txid, txid.to_byte_array());
                 assert_eq!(amount, 50000);
+                assert!(addresses.is_empty());
                 assert_eq!(height, None);
                 assert!(!is_instant_send);
                 assert!(!is_chain_locked);

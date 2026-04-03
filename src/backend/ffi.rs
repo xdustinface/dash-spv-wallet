@@ -50,7 +50,7 @@ use key_wallet_ffi::managed_wallet::{
 };
 use key_wallet_ffi::mnemonic::{mnemonic_free, mnemonic_generate};
 use key_wallet_ffi::types::FFIAccountType;
-use key_wallet_ffi::types::{FFINetwork, FFITransactionContext};
+use key_wallet_ffi::types::{FFINetwork, FFITransactionContextType};
 use key_wallet_ffi::utxo::{managed_wallet_get_utxos, utxo_array_free};
 use key_wallet_ffi::wallet::wallet_free_const;
 use key_wallet_ffi::wallet_manager::{
@@ -601,11 +601,11 @@ impl SpvBackend for FfiBackend {
                     let has_block = block_info.block_hash != [0u8; 32] || block_info.timestamp != 0;
                     let is_instant_send = matches!(
                         record.context.context_type,
-                        FFITransactionContext::InstantSend
+                        FFITransactionContextType::InstantSend
                     );
                     let is_chain_locked = matches!(
                         record.context.context_type,
-                        FFITransactionContext::InChainLockedBlock
+                        FFITransactionContextType::InChainLockedBlock
                     );
 
                     transactions.push(TransactionInfo {
@@ -1454,46 +1454,46 @@ extern "C" fn on_peers_updated(connected_count: u32, best_height: u32, user_data
 
 extern "C" fn on_transaction_received(
     _wallet_id: *const c_char,
-    status: FFITransactionContext,
     _account_index: u32,
-    txid: *const [u8; 32],
-    amount: i64,
-    addresses: *const c_char,
+    record: *const FFITransactionRecord,
     user_data: *mut c_void,
 ) {
     // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
     let ctx = unsafe { &*(user_data as *const CallbackContext) };
 
-    let txid_bytes = if txid.is_null() {
-        [0u8; 32]
-    } else {
-        // Safety: txid is a valid pointer to a 32-byte array (callback contract).
-        unsafe { *txid }
-    };
+    if record.is_null() {
+        return;
+    }
 
-    let addr_list = if addresses.is_null() {
-        Vec::new()
-    } else {
-        // Safety: addresses is a borrowed C string valid for the duration of the callback.
-        let addr_str = unsafe { CStr::from_ptr(addresses) }
-            .to_string_lossy()
-            .into_owned();
-        addr_str
-            .split(',')
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect()
-    };
+    // Safety: record is a valid pointer to an FFITransactionRecord (callback contract).
+    let r = unsafe { &*record };
 
-    let (is_instant_send, is_chain_locked) = ffi_transaction_context_flags(status);
+    let (is_instant_send, is_chain_locked) = ffi_transaction_context_flags(r.context.context_type);
+
+    let block_info = &r.context.block_info;
+    let has_block = block_info.block_hash != [0u8; 32] || block_info.timestamp != 0;
+
+    let addresses = extract_ffi_input_addresses(r);
 
     let _ = ctx.event_tx.send(SpvEvent::TransactionReceived {
-        txid: txid_bytes,
-        amount,
-        addresses: addr_list,
-        height: None,
-        timestamp: None,
-        block_hash: None,
+        txid: r.txid,
+        amount: r.net_amount,
+        addresses,
+        height: if has_block {
+            Some(block_info.height)
+        } else {
+            None
+        },
+        timestamp: if has_block {
+            Some(block_info.timestamp as u64)
+        } else {
+            None
+        },
+        block_hash: if has_block {
+            Some(block_info.block_hash)
+        } else {
+            None
+        },
         is_instant_send,
         is_chain_locked,
     });
@@ -1552,11 +1552,39 @@ extern "C" fn on_client_error(error: *const c_char, user_data: *mut c_void) {
     let _ = ctx.event_tx.send(SpvEvent::Error(msg));
 }
 
-/// Extract `(is_instant_send, is_chain_locked)` from an `FFITransactionContext`.
-fn ffi_transaction_context_flags(status: FFITransactionContext) -> (bool, bool) {
-    match status {
-        FFITransactionContext::InstantSend => (true, false),
-        FFITransactionContext::InChainLockedBlock => (false, true),
-        FFITransactionContext::Mempool | FFITransactionContext::InBlock => (false, false),
+/// Extract `(is_instant_send, is_chain_locked)` from an `FFITransactionContextType`.
+fn ffi_transaction_context_flags(ctx_type: FFITransactionContextType) -> (bool, bool) {
+    match ctx_type {
+        FFITransactionContextType::InstantSend => (true, false),
+        FFITransactionContextType::InChainLockedBlock => (false, true),
+        FFITransactionContextType::Mempool | FFITransactionContextType::InBlock => (false, false),
     }
+}
+
+/// Extract addresses from an `FFITransactionRecord`'s input details.
+fn extract_ffi_input_addresses(record: &FFITransactionRecord) -> Vec<String> {
+    if record.input_details.is_null() || record.input_details_count == 0 {
+        return Vec::new();
+    }
+    // Safety: input_details is a valid pointer to an array of input_details_count elements
+    // (guaranteed by the FFI contract for the lifetime of the callback).
+    let details =
+        unsafe { std::slice::from_raw_parts(record.input_details, record.input_details_count) };
+    let mut addrs: Vec<String> = details
+        .iter()
+        .filter_map(|d| {
+            if d.address.is_null() {
+                None
+            } else {
+                // Safety: address is a valid C string for the duration of the callback.
+                Some(
+                    unsafe { CStr::from_ptr(d.address) }
+                        .to_string_lossy()
+                        .into_owned(),
+                )
+            }
+        })
+        .collect();
+    addrs.dedup();
+    addrs
 }
