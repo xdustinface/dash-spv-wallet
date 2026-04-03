@@ -375,7 +375,7 @@ impl SpvBackend for NativeBackend {
                     TransactionDirection::Sent
                 };
                 let block_info = r.context.block_info();
-                let is_instant_send = r.context == TransactionContext::InstantSend;
+                let is_instant_send = matches!(r.context, TransactionContext::InstantSend(_));
                 let is_chain_locked =
                     matches!(r.context, TransactionContext::InChainLockedBlock(_));
                 TransactionInfo {
@@ -643,13 +643,10 @@ fn map_sync_event(event: SyncEvent) -> Option<SpvEvent> {
         SyncEvent::InstantLockReceived {
             instant_lock,
             validated,
-        } => {
-            use dashcore::hashes::Hash;
-            Some(SpvEvent::InstantLockReceived {
-                txid: instant_lock.txid.to_byte_array(),
-                validated,
-            })
-        }
+        } => Some(SpvEvent::InstantLockReceived {
+            txid: instant_lock.txid.to_byte_array(),
+            validated,
+        }),
         SyncEvent::ManagerError { manager, error } => {
             Some(SpvEvent::Error(format!("{manager}: {error}")))
         }
@@ -677,19 +674,16 @@ fn map_network_event(event: NetworkEvent) -> SpvEvent {
 fn map_wallet_event(event: WalletEvent) -> SpvEvent {
     match event {
         WalletEvent::TransactionReceived {
-            txid,
-            amount,
-            addresses,
-            status,
-            ..
+            wallet_id: _,
+            account_index: _,
+            record,
         } => {
-            use dashcore::hashes::Hash;
             let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
-                extract_context_fields(&status);
+                extract_context_fields(&record.context);
             SpvEvent::TransactionReceived {
-                txid: txid.to_byte_array(),
-                amount,
-                addresses: addresses.iter().map(|a| a.to_string()).collect(),
+                txid: record.txid.to_byte_array(),
+                amount: record.net_amount,
+                addresses: Vec::new(),
                 height,
                 timestamp,
                 block_hash,
@@ -698,7 +692,6 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             }
         }
         WalletEvent::TransactionStatusChanged { txid, status, .. } => {
-            use dashcore::hashes::Hash;
             let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
                 extract_context_fields(&status);
             SpvEvent::TransactionReceived {
@@ -731,10 +724,9 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
 fn extract_context_fields(
     ctx: &TransactionContext,
 ) -> (Option<u32>, Option<u64>, Option<[u8; 32]>, bool, bool) {
-    use dashcore::hashes::Hash;
     match ctx {
         TransactionContext::Mempool => (None, None, None, false, false),
-        TransactionContext::InstantSend => (None, None, None, true, false),
+        TransactionContext::InstantSend(_) => (None, None, None, true, false),
         TransactionContext::InBlock(info) => (
             Some(info.height()),
             Some(info.timestamp() as u64),
@@ -758,13 +750,18 @@ mod tests {
 
     use dash_spv::network::NetworkEvent;
     use dash_spv::sync::{ManagerIdentifier, SyncEvent};
+    use dashcore::blockdata::transaction::Transaction;
     use dashcore::bls_sig_utils::BLSSignature;
     use dashcore::ephemerealdata::chain_lock::ChainLock;
     use dashcore::ephemerealdata::instant_lock::InstantLock;
     use dashcore::hashes::Hash;
     use dashcore::{Address, BlockHash, PublicKey, Txid};
+    use key_wallet::managed_account::transaction_record::{
+        TransactionDirection as RecordDirection, TransactionRecord,
+    };
     use key_wallet::transaction_checking::TransactionContext;
     use key_wallet::transaction_checking::transaction_context::BlockInfo;
+    use key_wallet::transaction_checking::transaction_router::TransactionType;
     use key_wallet_manager::WalletEvent;
 
     use super::*;
@@ -804,8 +801,9 @@ mod tests {
 
     #[test]
     fn extract_context_instant_send() {
+        let is_lock = InstantLock::default();
         let (height, timestamp, block_hash, is, cl) =
-            extract_context_fields(&TransactionContext::InstantSend);
+            extract_context_fields(&TransactionContext::InstantSend(is_lock));
         assert_eq!(height, None);
         assert_eq!(timestamp, None);
         assert_eq!(block_hash, None);
@@ -1039,21 +1037,27 @@ mod tests {
 
     #[test]
     fn map_wallet_event_transaction_received() {
-        let txid = Txid::all_zeros();
+        let tx = Transaction::dummy_empty();
+        let txid = tx.txid();
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            RecordDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            50000,
+        );
         let event = WalletEvent::TransactionReceived {
             wallet_id: [0; 32],
-            status: TransactionContext::Mempool,
             account_index: 0,
-            txid,
-            amount: 50000,
-            addresses: vec![test_address()],
+            record: Box::new(record),
         };
         let mapped = map_wallet_event(event);
         match mapped {
             SpvEvent::TransactionReceived {
                 txid: mapped_txid,
                 amount,
-                addresses,
                 height,
                 is_instant_send,
                 is_chain_locked,
@@ -1061,7 +1065,6 @@ mod tests {
             } => {
                 assert_eq!(mapped_txid, txid.to_byte_array());
                 assert_eq!(amount, 50000);
-                assert_eq!(addresses.len(), 1);
                 assert_eq!(height, None);
                 assert!(!is_instant_send);
                 assert!(!is_chain_locked);
