@@ -208,6 +208,10 @@ pub fn matches_search(tx: &TransactionInfo, query: &str, unit: &str) -> bool {
         || format_balance(tx.amount.unsigned_abs(), unit)
             .to_lowercase()
             .contains(&q)
+        || tx
+            .label
+            .as_ref()
+            .is_some_and(|l| l.to_lowercase().contains(&q))
 }
 
 /// Display-ready transaction info.
@@ -618,6 +622,14 @@ mod tests {
     #[test]
     fn matches_search_no_match() {
         assert!(!matches_search(&sample_tx(), "zzz_no_match_zzz", "DASH"));
+    }
+
+    #[test]
+    fn matches_search_by_label() {
+        let mut tx = sample_tx();
+        tx.label = Some("coffee payment".into());
+        assert!(matches_search(&tx, "coffee", "DASH"));
+        assert!(!matches_search(&tx, "groceries", "DASH"));
     }
 
     #[test]

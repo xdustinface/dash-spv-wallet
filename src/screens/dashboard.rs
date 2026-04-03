@@ -72,9 +72,12 @@ pub fn Dashboard() -> Element {
                         for (i , tx) in transactions.iter().take(DASHBOARD_TX_LIMIT).enumerate() {
                             {
                                 let view = format_transaction(tx, current_height, unit);
-                                let is_sent = tx.direction == TransactionDirection::Outgoing;
                                 let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
-                                let border = if is_sent { "border-error" } else { "border-success" };
+                                let border = match tx.direction {
+                                    TransactionDirection::Outgoing => "border-error",
+                                    TransactionDirection::Incoming => "border-success",
+                                    TransactionDirection::Internal | TransactionDirection::CoinJoin => "border-muted",
+                                };
                                 let is_expanded = *expanded_txid.read() == Some(tx.txid);
                                 let txid = tx.txid;
                                 let address_short = format_address_responsive(
@@ -99,14 +102,17 @@ pub fn Dashboard() -> Element {
                                                 }
                                             },
 
-
-
                                             div { class: "flex items-center gap-3 min-w-0 flex-1",
-                                                span { class: if is_sent { "text-error text-lg shrink-0" } else { "text-success text-lg shrink-0" },
-                                                    if is_sent {
-                                                        "▲"
-                                                    } else {
-                                                        "▼"
+                                                span {
+                                                    class: match tx.direction {
+                                                        TransactionDirection::Outgoing => "text-error text-lg shrink-0",
+                                                        TransactionDirection::Incoming => "text-success text-lg shrink-0",
+                                                        TransactionDirection::Internal | TransactionDirection::CoinJoin => "text-muted text-lg shrink-0",
+                                                    },
+                                                    match tx.direction {
+                                                        TransactionDirection::Outgoing => "▲",
+                                                        TransactionDirection::Incoming => "▼",
+                                                        TransactionDirection::Internal | TransactionDirection::CoinJoin => "⇄",
                                                     }
                                                 }
                                                 div { class: "min-w-0",
@@ -117,7 +123,12 @@ pub fn Dashboard() -> Element {
 
                                             div { class: "text-right flex items-center gap-2",
                                                 div {
-                                                    p { class: if is_sent { "text-error font-medium" } else { "text-success font-medium" },
+                                                    p {
+                                                        class: match tx.direction {
+                                                            TransactionDirection::Outgoing => "text-error font-medium",
+                                                            TransactionDirection::Incoming => "text-success font-medium",
+                                                            TransactionDirection::Internal | TransactionDirection::CoinJoin => "text-muted font-medium",
+                                                        },
                                                         "{view.amount_display}"
                                                     }
                                                     p { class: "text-disabled text-xs", "{view.confirmations_display}" }

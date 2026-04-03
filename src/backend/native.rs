@@ -1086,6 +1086,8 @@ mod tests {
             SpvEvent::TransactionReceived(info) => {
                 assert_eq!(info.txid, txid);
                 assert_eq!(info.amount, 50000);
+                assert_eq!(info.direction, TransactionDirection::Incoming);
+                assert_eq!(info.transaction_type, TransactionType::Standard);
                 assert!(info.addresses.is_empty());
                 assert_eq!(info.height, None);
                 assert!(!info.is_instant_send);

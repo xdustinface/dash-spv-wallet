@@ -37,7 +37,9 @@ impl WalletState {
                 // the incoming event is a status-only update (amount == 0).
                 if let Some(existing) = self.transactions.iter_mut().find(|t| t.txid == info.txid) {
                     existing.height = info.height;
-                    existing.timestamp = info.timestamp;
+                    if info.timestamp > 0 {
+                        existing.timestamp = info.timestamp;
+                    }
                     existing.block_hash = info.block_hash;
                     existing.is_instant_send = info.is_instant_send;
                     existing.is_chain_locked = info.is_chain_locked;
@@ -290,6 +292,28 @@ mod tests {
         assert_eq!(tx.amount, -75_000);
         assert_eq!(tx.height, Some(3000));
         assert!(tx.is_chain_locked);
+    }
+
+    #[test]
+    fn status_update_does_not_overwrite_timestamp_with_zero() {
+        let mut state = WalletState::default();
+
+        state.apply_event(&tx_event(
+            8,
+            100_000,
+            TransactionDirection::Incoming,
+            vec!["Xaddr8".into()],
+            None,
+            1700000000,
+        ));
+        assert_eq!(state.transactions[0].timestamp, 1700000000);
+
+        // Status update with timestamp 0 should not overwrite
+        state.apply_event(&status_event(8, Some(500), 0, false, true));
+
+        assert_eq!(state.transactions[0].timestamp, 1700000000);
+        assert_eq!(state.transactions[0].height, Some(500));
+        assert!(state.transactions[0].is_chain_locked);
     }
 
     #[test]

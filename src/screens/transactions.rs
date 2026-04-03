@@ -144,15 +144,13 @@ pub fn Transactions() -> Element {
                     for (i , tx) in filtered.iter().take(visible).enumerate() {
                         {
                             let view = format_transaction(tx, current_height, unit);
-                            let is_sent = tx.direction == TransactionDirection::Outgoing;
                             let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
-                            let border = if is_sent { "border-error" } else { "border-success" };
+                            let border = match tx.direction {
+                                TransactionDirection::Outgoing => "border-error",
+                                TransactionDirection::Incoming => "border-success",
+                                TransactionDirection::Internal | TransactionDirection::CoinJoin => "border-muted",
+                            };
                             let address_short = format_address_responsive(
-
-                                // Left: direction + address + time
-
-                                // Right: amount + confirmations + height + badges
-
                                 &tx.addresses.first().cloned().unwrap_or_default(),
                                 30,
                             );
@@ -172,14 +170,17 @@ pub fn Transactions() -> Element {
                                             }
                                         },
 
-
-
                                         div { class: "flex items-center gap-3 min-w-0",
-                                            span { class: if is_sent { "text-error text-lg flex-shrink-0" } else { "text-success text-lg flex-shrink-0" },
-                                                if is_sent {
-                                                    "▲"
-                                                } else {
-                                                    "▼"
+                                            span {
+                                                class: match tx.direction {
+                                                    TransactionDirection::Outgoing => "text-error text-lg flex-shrink-0",
+                                                    TransactionDirection::Incoming => "text-success text-lg flex-shrink-0",
+                                                    TransactionDirection::Internal | TransactionDirection::CoinJoin => "text-muted text-lg flex-shrink-0",
+                                                },
+                                                match tx.direction {
+                                                    TransactionDirection::Outgoing => "▲",
+                                                    TransactionDirection::Incoming => "▼",
+                                                    TransactionDirection::Internal | TransactionDirection::CoinJoin => "⇄",
                                                 }
                                             }
                                             div { class: "min-w-0",
@@ -190,7 +191,12 @@ pub fn Transactions() -> Element {
 
                                         div { class: "text-right flex items-center gap-2 flex-shrink-0",
                                             div {
-                                                p { class: if is_sent { "text-error font-medium" } else { "text-success font-medium" },
+                                                p {
+                                                    class: match tx.direction {
+                                                        TransactionDirection::Outgoing => "text-error font-medium",
+                                                        TransactionDirection::Incoming => "text-success font-medium",
+                                                        TransactionDirection::Internal | TransactionDirection::CoinJoin => "text-muted font-medium",
+                                                    },
                                                     "{view.amount_display}"
                                                 }
                                                 p { class: "text-disabled text-xs",
