@@ -1134,6 +1134,26 @@ mod tests {
     }
 
     #[test]
+    fn from_record_in_block_uses_block_timestamp_over_fallback() {
+        let tx = Transaction::dummy_empty();
+        let block_hash = BlockHash::all_zeros();
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::InBlock(BlockInfo::new(500, block_hash, 1700000000)),
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            42000,
+        );
+
+        let info = TransactionInfo::from_record(&record, 9999999999);
+
+        assert_eq!(info.timestamp, 1700000000);
+        assert_eq!(info.height, Some(500));
+    }
+
+    #[test]
     fn extract_record_addresses_deduplicates() {
         let addr_a = test_address();
         // Create a distinct address using a different public key
