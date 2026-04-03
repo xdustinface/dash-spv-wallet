@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-
-use std::path::PathBuf;
+use std::time::SystemTime;
 
 use dash_spv::client::EventHandler;
 use dash_spv::network::NetworkEvent;
@@ -14,6 +14,7 @@ use dash_spv::sync::SyncEvent;
 use dash_spv::{ClientConfig, DashSpvClient, MempoolStrategy};
 use dashcore::hashes::Hash;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::mnemonic::Language;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -369,27 +370,7 @@ impl SpvBackend for NativeBackend {
 
         let mut transactions: Vec<TransactionInfo> = records
             .into_iter()
-            .map(|r| {
-                let block_info = r.context.block_info();
-                let is_instant_send = matches!(r.context, TransactionContext::InstantSend(_));
-                let is_chain_locked =
-                    matches!(r.context, TransactionContext::InChainLockedBlock(_));
-                let addresses = extract_record_addresses(r);
-                TransactionInfo {
-                    txid: r.txid,
-                    amount: r.net_amount,
-                    direction: r.direction,
-                    transaction_type: r.transaction_type,
-                    timestamp: block_info.map_or(0, |i| i.timestamp() as u64),
-                    height: block_info.map(|i| i.height()),
-                    fee: r.fee,
-                    addresses,
-                    block_hash: block_info.map(|i| i.block_hash()),
-                    is_instant_send,
-                    is_chain_locked,
-                    label: r.label.clone(),
-                }
-            })
+            .map(TransactionInfo::from_record)
             .collect();
 
         // Sort: unconfirmed first, then by timestamp descending
@@ -676,34 +657,12 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             wallet_id: _,
             account_index: _,
             record,
-        } => {
-            let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
-                extract_context_fields(&record.context);
-            let addresses = extract_record_addresses(&record);
-            let fallback_timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-            SpvEvent::TransactionReceived(Box::new(TransactionInfo {
-                txid: record.txid,
-                amount: record.net_amount,
-                direction: record.direction,
-                transaction_type: record.transaction_type,
-                timestamp: timestamp.unwrap_or(fallback_timestamp),
-                height,
-                fee: None,
-                addresses,
-                block_hash: block_hash.map(dashcore::BlockHash::from_byte_array),
-                is_instant_send,
-                is_chain_locked,
-                label: record.label,
-            }))
-        }
+        } => SpvEvent::TransactionReceived(Box::new(TransactionInfo::from_record(&record))),
         WalletEvent::TransactionStatusChanged { txid, status, .. } => {
             let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
                 extract_context_fields(&status);
-            let fallback_timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            let fallback_timestamp = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
             SpvEvent::TransactionReceived(Box::new(TransactionInfo {
@@ -736,10 +695,35 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
     }
 }
 
+impl TransactionInfo {
+    /// Build a `TransactionInfo` from a wallet `TransactionRecord`.
+    fn from_record(record: &TransactionRecord) -> Self {
+        let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
+            extract_context_fields(&record.context);
+        let addresses = extract_record_addresses(record);
+        let fallback_timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        TransactionInfo {
+            txid: record.txid,
+            amount: record.net_amount,
+            direction: record.direction,
+            transaction_type: record.transaction_type,
+            timestamp: timestamp.unwrap_or(fallback_timestamp),
+            height,
+            fee: record.fee,
+            addresses,
+            block_hash: block_hash.map(dashcore::BlockHash::from_byte_array),
+            is_instant_send,
+            is_chain_locked,
+            label: record.label.clone(),
+        }
+    }
+}
+
 /// Extract unique addresses from a transaction record's input details.
-fn extract_record_addresses(
-    record: &key_wallet::managed_account::transaction_record::TransactionRecord,
-) -> Vec<String> {
+fn extract_record_addresses(record: &TransactionRecord) -> Vec<String> {
     let mut addrs: Vec<String> = record
         .input_details
         .iter()
