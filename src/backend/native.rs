@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-
-use std::path::PathBuf;
+use std::time::SystemTime;
 
 use dash_spv::client::EventHandler;
 use dash_spv::network::NetworkEvent;
@@ -14,6 +14,7 @@ use dash_spv::sync::SyncEvent;
 use dash_spv::{ClientConfig, DashSpvClient, MempoolStrategy};
 use dashcore::hashes::Hash;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::mnemonic::Language;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -33,7 +34,8 @@ use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent, event_channel};
 use super::r#trait::SpvBackend;
 use super::types::{
-    Network, SyncProgress, TransactionDirection, TransactionInfo, WalletCoreBalance,
+    Network, SyncProgress, TransactionDirection, TransactionInfo, TransactionType,
+    WalletCoreBalance,
 };
 use crate::config::AppConfig;
 
@@ -368,30 +370,7 @@ impl SpvBackend for NativeBackend {
 
         let mut transactions: Vec<TransactionInfo> = records
             .into_iter()
-            .map(|r| {
-                let direction = if r.net_amount >= 0 {
-                    TransactionDirection::Received
-                } else {
-                    TransactionDirection::Sent
-                };
-                let block_info = r.context.block_info();
-                let is_instant_send = matches!(r.context, TransactionContext::InstantSend(_));
-                let is_chain_locked =
-                    matches!(r.context, TransactionContext::InChainLockedBlock(_));
-                let addresses = extract_record_addresses(r);
-                TransactionInfo {
-                    txid: r.txid,
-                    amount: r.net_amount,
-                    direction,
-                    timestamp: block_info.map_or(0, |i| i.timestamp() as u64),
-                    height: block_info.map(|i| i.height()),
-                    fee: r.fee,
-                    addresses,
-                    block_hash: block_info.map(|i| i.block_hash()),
-                    is_instant_send,
-                    is_chain_locked,
-                }
-            })
+            .map(|r| TransactionInfo::from_record(r, 0))
             .collect();
 
         // Sort: unconfirmed first, then by timestamp descending
@@ -679,33 +658,36 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             account_index: _,
             record,
         } => {
-            let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
-                extract_context_fields(&record.context);
-            let addresses = extract_record_addresses(&record);
-            SpvEvent::TransactionReceived {
-                txid: record.txid.to_byte_array(),
-                amount: record.net_amount,
-                addresses,
-                height,
-                timestamp,
-                block_hash,
-                is_instant_send,
-                is_chain_locked,
-            }
+            let fallback_timestamp = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            SpvEvent::TransactionReceived(Box::new(TransactionInfo::from_record(
+                &record,
+                fallback_timestamp,
+            )))
         }
         WalletEvent::TransactionStatusChanged { txid, status, .. } => {
             let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
                 extract_context_fields(&status);
-            SpvEvent::TransactionReceived {
-                txid: txid.to_byte_array(),
+            let fallback_timestamp = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+                txid,
                 amount: 0,
-                addresses: Vec::new(),
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
+                timestamp: timestamp.unwrap_or(fallback_timestamp),
                 height,
-                timestamp,
-                block_hash,
+                fee: None,
+                addresses: Vec::new(),
+                block_hash: block_hash.map(dashcore::BlockHash::from_byte_array),
                 is_instant_send,
                 is_chain_locked,
-            }
+                label: None,
+            }))
         }
         WalletEvent::BalanceUpdated {
             spendable,
@@ -722,10 +704,36 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
     }
 }
 
+impl TransactionInfo {
+    /// Build a `TransactionInfo` from a wallet `TransactionRecord`.
+    ///
+    /// `fallback_timestamp` is used when the transaction context carries no
+    /// timestamp (mempool / instant-send).  Pass `0` for cold-start loads
+    /// (renders as "Pending") or the current unix time for live events
+    /// (renders as "just now").
+    fn from_record(record: &TransactionRecord, fallback_timestamp: u64) -> Self {
+        let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
+            extract_context_fields(&record.context);
+        let addresses = extract_record_addresses(record);
+        TransactionInfo {
+            txid: record.txid,
+            amount: record.net_amount,
+            direction: record.direction,
+            transaction_type: record.transaction_type,
+            timestamp: timestamp.unwrap_or(fallback_timestamp),
+            height,
+            fee: record.fee,
+            addresses,
+            block_hash: block_hash.map(dashcore::BlockHash::from_byte_array),
+            is_instant_send,
+            is_chain_locked,
+            label: record.label.clone(),
+        }
+    }
+}
+
 /// Extract unique addresses from a transaction record's input details.
-fn extract_record_addresses(
-    record: &key_wallet::managed_account::transaction_record::TransactionRecord,
-) -> Vec<String> {
+fn extract_record_addresses(record: &TransactionRecord) -> Vec<String> {
     let mut addrs: Vec<String> = record
         .input_details
         .iter()
@@ -772,9 +780,7 @@ mod tests {
     use dashcore::ephemerealdata::instant_lock::InstantLock;
     use dashcore::hashes::Hash;
     use dashcore::{Address, BlockHash, PublicKey, Txid};
-    use key_wallet::managed_account::transaction_record::{
-        InputDetail, TransactionDirection as RecordDirection, TransactionRecord,
-    };
+    use key_wallet::managed_account::transaction_record::{InputDetail, TransactionRecord};
     use key_wallet::transaction_checking::TransactionContext;
     use key_wallet::transaction_checking::transaction_context::BlockInfo;
     use key_wallet::transaction_checking::transaction_router::TransactionType;
@@ -1059,7 +1065,7 @@ mod tests {
             tx,
             TransactionContext::Mempool,
             TransactionType::Standard,
-            RecordDirection::Incoming,
+            TransactionDirection::Incoming,
             Vec::new(),
             Vec::new(),
             50000,
@@ -1071,21 +1077,15 @@ mod tests {
         };
         let mapped = map_wallet_event(event);
         match mapped {
-            SpvEvent::TransactionReceived {
-                txid: mapped_txid,
-                amount,
-                addresses,
-                height,
-                is_instant_send,
-                is_chain_locked,
-                ..
-            } => {
-                assert_eq!(mapped_txid, txid.to_byte_array());
-                assert_eq!(amount, 50000);
-                assert!(addresses.is_empty());
-                assert_eq!(height, None);
-                assert!(!is_instant_send);
-                assert!(!is_chain_locked);
+            SpvEvent::TransactionReceived(info) => {
+                assert_eq!(info.txid, txid);
+                assert_eq!(info.amount, 50000);
+                assert_eq!(info.direction, TransactionDirection::Incoming);
+                assert_eq!(info.transaction_type, TransactionType::Standard);
+                assert!(info.addresses.is_empty());
+                assert_eq!(info.height, None);
+                assert!(!info.is_instant_send);
+                assert!(!info.is_chain_locked);
             }
             other => panic!("expected TransactionReceived, got {:?}", other),
         }
@@ -1105,17 +1105,13 @@ mod tests {
         };
         let mapped = map_wallet_event(event);
         match mapped {
-            SpvEvent::TransactionReceived {
-                amount,
-                height,
-                timestamp,
-                is_chain_locked,
-                ..
-            } => {
-                assert_eq!(amount, 0);
-                assert_eq!(height, Some(300));
-                assert_eq!(timestamp, Some(1700000000));
-                assert!(!is_chain_locked);
+            SpvEvent::TransactionReceived(info) => {
+                assert_eq!(info.amount, 0);
+                assert_eq!(info.direction, TransactionDirection::Incoming);
+                assert_eq!(info.transaction_type, TransactionType::Standard);
+                assert_eq!(info.height, Some(300));
+                assert_eq!(info.timestamp, 1700000000);
+                assert!(!info.is_chain_locked);
             }
             other => panic!("expected TransactionReceived, got {:?}", other),
         }
@@ -1135,6 +1131,47 @@ mod tests {
             mapped,
             SpvEvent::BalanceUpdated(WalletCoreBalance::new(100_000, 50_000, 25_000, 10_000))
         );
+    }
+
+    #[test]
+    fn from_record_in_block_uses_block_timestamp_over_fallback() {
+        let tx = Transaction::dummy_empty();
+        let block_hash = BlockHash::all_zeros();
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::InBlock(BlockInfo::new(500, block_hash, 1700000000)),
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            42000,
+        );
+
+        let info = TransactionInfo::from_record(&record, 9999999999);
+
+        assert_eq!(info.timestamp, 1700000000);
+        assert_eq!(info.height, Some(500));
+        assert_eq!(info.direction, TransactionDirection::Incoming);
+        assert_eq!(info.transaction_type, TransactionType::Standard);
+    }
+
+    #[test]
+    fn from_record_mempool_uses_fallback_timestamp() {
+        let tx = Transaction::dummy_empty();
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            10000,
+        );
+
+        let info = TransactionInfo::from_record(&record, 0);
+
+        assert_eq!(info.timestamp, 0);
+        assert_eq!(info.height, None);
     }
 
     #[test]
@@ -1177,7 +1214,7 @@ mod tests {
             tx,
             TransactionContext::Mempool,
             TransactionType::Standard,
-            RecordDirection::Incoming,
+            TransactionDirection::Incoming,
             input_details,
             Vec::new(),
             10000,

@@ -2,15 +2,8 @@
 pub use dash_spv::sync::{ManagerIdentifier, SyncProgress, SyncState};
 pub use dashcore::Network;
 pub use key_wallet::WalletCoreBalance;
-
-// UI-specific types that don't exist in rust-dashcore.
-
-/// Direction of a transaction relative to the wallet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransactionDirection {
-    Sent,
-    Received,
-}
+pub use key_wallet::managed_account::transaction_record::TransactionDirection;
+pub use key_wallet::transaction_checking::transaction_router::TransactionType;
 
 /// A UI-facing transaction record assembled from wallet events and sync state.
 ///
@@ -21,6 +14,7 @@ pub struct TransactionInfo {
     pub txid: dashcore::Txid,
     pub amount: i64,
     pub direction: TransactionDirection,
+    pub transaction_type: TransactionType,
     pub timestamp: u64,
     pub height: Option<u32>,
     pub fee: Option<u64>,
@@ -28,6 +22,7 @@ pub struct TransactionInfo {
     pub block_hash: Option<dashcore::BlockHash>,
     pub is_instant_send: bool,
     pub is_chain_locked: bool,
+    pub label: Option<String>,
 }
 
 impl TransactionInfo {

@@ -208,6 +208,10 @@ pub fn matches_search(tx: &TransactionInfo, query: &str, unit: &str) -> bool {
         || format_balance(tx.amount.unsigned_abs(), unit)
             .to_lowercase()
             .contains(&q)
+        || tx
+            .label
+            .as_ref()
+            .is_some_and(|l| l.to_lowercase().contains(&q))
 }
 
 /// Display-ready transaction info.
@@ -231,8 +235,10 @@ pub fn format_transaction(
 ) -> TransactionView {
     let txid_hex = tx.txid.to_string();
     let direction_label = match tx.direction {
-        TransactionDirection::Sent => "Sent",
-        TransactionDirection::Received => "Received",
+        TransactionDirection::Outgoing => "Sent",
+        TransactionDirection::Incoming => "Received",
+        TransactionDirection::Internal => "Internal",
+        TransactionDirection::CoinJoin => "CoinJoin",
     };
     let amount_display = format_amount(tx.amount, unit);
     let timestamp_display = format_timestamp(tx.timestamp);
@@ -263,6 +269,8 @@ pub fn format_transaction(
 #[cfg(test)]
 mod tests {
     use dashcore::hashes::Hash;
+
+    use crate::backend::types::TransactionType;
 
     use super::*;
 
@@ -441,7 +449,8 @@ mod tests {
         let tx = TransactionInfo {
             txid: dashcore::Txid::from_byte_array([0xAB; 32]),
             amount: 100_000_000,
-            direction: TransactionDirection::Received,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             timestamp: 1700000000,
             height: Some(994),
             fee: None,
@@ -449,6 +458,7 @@ mod tests {
             block_hash: None,
             is_instant_send: true,
             is_chain_locked: false,
+            label: None,
         };
 
         let view = format_transaction(&tx, 1000, "DASH");
@@ -466,7 +476,8 @@ mod tests {
         let tx = TransactionInfo {
             txid: dashcore::Txid::from_byte_array([0xCD; 32]),
             amount: -50_000_000,
-            direction: TransactionDirection::Sent,
+            direction: TransactionDirection::Outgoing,
+            transaction_type: TransactionType::Standard,
             timestamp: 1700000000,
             height: None,
             fee: Some(226),
@@ -474,6 +485,7 @@ mod tests {
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         };
 
         let view = format_transaction(&tx, 1000, "DASH");
@@ -487,7 +499,8 @@ mod tests {
         let tx = TransactionInfo {
             txid: dashcore::Txid::from_byte_array([0xAB; 32]),
             amount: 100_000_000,
-            direction: TransactionDirection::Received,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             timestamp: 1700000000,
             height: Some(994),
             fee: None,
@@ -495,6 +508,7 @@ mod tests {
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         };
 
         let view = format_transaction(&tx, 1000, "tDASH");
@@ -506,7 +520,8 @@ mod tests {
         let tx = TransactionInfo {
             txid: dashcore::Txid::from_byte_array([0; 32]),
             amount: 0,
-            direction: TransactionDirection::Received,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             timestamp: 0,
             height: None,
             fee: None,
@@ -514,6 +529,7 @@ mod tests {
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         };
 
         let view = format_transaction(&tx, 0, "DASH");
@@ -568,7 +584,8 @@ mod tests {
         TransactionInfo {
             txid: dashcore::Txid::from_byte_array([0xAB; 32]),
             amount: 150_000_000,
-            direction: TransactionDirection::Received,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
             timestamp: 1700000000,
             height: Some(1000),
             fee: None,
@@ -576,6 +593,7 @@ mod tests {
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: false,
+            label: None,
         }
     }
 
@@ -604,6 +622,14 @@ mod tests {
     #[test]
     fn matches_search_no_match() {
         assert!(!matches_search(&sample_tx(), "zzz_no_match_zzz", "DASH"));
+    }
+
+    #[test]
+    fn matches_search_by_label() {
+        let mut tx = sample_tx();
+        tx.label = Some("coffee payment".into());
+        assert!(matches_search(&tx, "coffee", "DASH"));
+        assert!(!matches_search(&tx, "groceries", "DASH"));
     }
 
     #[test]

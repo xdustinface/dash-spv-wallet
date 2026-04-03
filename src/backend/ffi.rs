@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use dash_spv::sync::{
     BlockHeadersProgress, BlocksProgress, ChainLockProgress, FilterHeadersProgress,
@@ -49,8 +50,10 @@ use key_wallet_ffi::managed_wallet::{
     managed_wallet_get_next_bip44_change_address, managed_wallet_info_free,
 };
 use key_wallet_ffi::mnemonic::{mnemonic_free, mnemonic_generate};
-use key_wallet_ffi::types::FFIAccountType;
-use key_wallet_ffi::types::{FFINetwork, FFITransactionContextType};
+use key_wallet_ffi::types::{
+    FFIAccountType, FFINetwork, FFITransactionContextType, FFITransactionDirection,
+    FFITransactionType,
+};
 use key_wallet_ffi::utxo::{managed_wallet_get_utxos, utxo_array_free};
 use key_wallet_ffi::wallet::wallet_free_const;
 use key_wallet_ffi::wallet_manager::{
@@ -64,7 +67,8 @@ use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent, event_channel};
 use super::r#trait::SpvBackend;
 use super::types::{
-    Network, SyncProgress, TransactionDirection, TransactionInfo, WalletCoreBalance,
+    Network, SyncProgress, TransactionDirection, TransactionInfo, TransactionType,
+    WalletCoreBalance,
 };
 use crate::config::AppConfig;
 
@@ -584,12 +588,6 @@ impl SpvBackend for FfiBackend {
                 let records = unsafe { std::slice::from_raw_parts(txs_ptr, tx_count) };
 
                 for record in records {
-                    let direction = if record.net_amount >= 0 {
-                        TransactionDirection::Received
-                    } else {
-                        TransactionDirection::Sent
-                    };
-
                     let txid = dashcore::Txid::from_byte_array(record.txid);
                     let fee = if record.fee > 0 {
                         Some(record.fee)
@@ -608,10 +606,14 @@ impl SpvBackend for FfiBackend {
                         FFITransactionContextType::InChainLockedBlock
                     );
 
+                    // Safety: label is a valid C string for the lifetime of the record.
+                    let label = unsafe { extract_ffi_label(record.label) };
+
                     transactions.push(TransactionInfo {
                         txid,
                         amount: record.net_amount,
-                        direction,
+                        direction: ffi_direction_to_direction(record.direction),
+                        transaction_type: ffi_type_to_type(record.transaction_type),
                         timestamp: if has_block {
                             block_info.timestamp as u64
                         } else {
@@ -631,6 +633,7 @@ impl SpvBackend for FfiBackend {
                         },
                         is_instant_send,
                         is_chain_locked,
+                        label,
                     });
                 }
 
@@ -1475,28 +1478,42 @@ extern "C" fn on_transaction_received(
 
     let addresses = extract_ffi_input_addresses(r);
 
-    let _ = ctx.event_tx.send(SpvEvent::TransactionReceived {
-        txid: r.txid,
-        amount: r.net_amount,
-        addresses,
-        height: if has_block {
-            Some(block_info.height)
-        } else {
-            None
-        },
-        timestamp: if has_block {
-            Some(block_info.timestamp as u64)
-        } else {
-            None
-        },
-        block_hash: if has_block {
-            Some(block_info.block_hash)
-        } else {
-            None
-        },
-        is_instant_send,
-        is_chain_locked,
-    });
+    // Safety: label is a valid C string for the duration of the callback.
+    let label = unsafe { extract_ffi_label(r.label) };
+
+    let fallback_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let _ = ctx
+        .event_tx
+        .send(SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+            txid: dashcore::Txid::from_byte_array(r.txid),
+            amount: r.net_amount,
+            direction: ffi_direction_to_direction(r.direction),
+            transaction_type: ffi_type_to_type(r.transaction_type),
+            timestamp: if has_block {
+                block_info.timestamp as u64
+            } else {
+                fallback_timestamp
+            },
+            height: if has_block {
+                Some(block_info.height)
+            } else {
+                None
+            },
+            fee: if r.fee > 0 { Some(r.fee) } else { None },
+            addresses,
+            block_hash: if has_block {
+                Some(dashcore::BlockHash::from_byte_array(block_info.block_hash))
+            } else {
+                None
+            },
+            is_instant_send,
+            is_chain_locked,
+            label,
+        })));
 }
 
 extern "C" fn on_balance_updated(
@@ -1561,6 +1578,47 @@ fn ffi_transaction_context_flags(ctx_type: FFITransactionContextType) -> (bool, 
     }
 }
 
+fn ffi_direction_to_direction(dir: FFITransactionDirection) -> TransactionDirection {
+    match dir {
+        FFITransactionDirection::Incoming => TransactionDirection::Incoming,
+        FFITransactionDirection::Outgoing => TransactionDirection::Outgoing,
+        FFITransactionDirection::Internal => TransactionDirection::Internal,
+        FFITransactionDirection::CoinJoin => TransactionDirection::CoinJoin,
+    }
+}
+
+fn ffi_type_to_type(tt: FFITransactionType) -> TransactionType {
+    match tt {
+        FFITransactionType::Standard => TransactionType::Standard,
+        FFITransactionType::CoinJoin => TransactionType::CoinJoin,
+        FFITransactionType::ProviderRegistration => TransactionType::ProviderRegistration,
+        FFITransactionType::ProviderUpdateRegistrar => TransactionType::ProviderUpdateRegistrar,
+        FFITransactionType::ProviderUpdateService => TransactionType::ProviderUpdateService,
+        FFITransactionType::ProviderUpdateRevocation => TransactionType::ProviderUpdateRevocation,
+        FFITransactionType::AssetLock => TransactionType::AssetLock,
+        FFITransactionType::AssetUnlock => TransactionType::AssetUnlock,
+        FFITransactionType::Coinbase => TransactionType::Coinbase,
+        FFITransactionType::Ignored => TransactionType::Ignored,
+    }
+}
+
+/// Extract an optional label string from a C string pointer.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to a valid, nul-terminated C string for the
+/// duration of the call.
+unsafe fn extract_ffi_label(ptr: *const c_char) -> Option<String> {
+    if ptr.is_null() {
+        return None;
+    }
+    // Safety: caller guarantees `ptr` is a valid, nul-terminated C string.
+    let s = unsafe { CStr::from_ptr(ptr) }
+        .to_string_lossy()
+        .into_owned();
+    if s.is_empty() { None } else { Some(s) }
+}
+
 /// Extract addresses from an `FFITransactionRecord`'s input details.
 fn extract_ffi_input_addresses(record: &FFITransactionRecord) -> Vec<String> {
     if record.input_details.is_null() || record.input_details_count == 0 {
@@ -1588,4 +1646,98 @@ fn extract_ffi_input_addresses(record: &FFITransactionRecord) -> Vec<String> {
     addrs.sort();
     addrs.dedup();
     addrs
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::CString;
+    use std::ptr;
+
+    use key_wallet_ffi::types::{FFITransactionDirection, FFITransactionType};
+
+    use super::*;
+
+    #[test]
+    fn ffi_direction_to_direction_maps_all_variants() {
+        assert_eq!(
+            ffi_direction_to_direction(FFITransactionDirection::Incoming),
+            TransactionDirection::Incoming,
+        );
+        assert_eq!(
+            ffi_direction_to_direction(FFITransactionDirection::Outgoing),
+            TransactionDirection::Outgoing,
+        );
+        assert_eq!(
+            ffi_direction_to_direction(FFITransactionDirection::Internal),
+            TransactionDirection::Internal,
+        );
+        assert_eq!(
+            ffi_direction_to_direction(FFITransactionDirection::CoinJoin),
+            TransactionDirection::CoinJoin,
+        );
+    }
+
+    #[test]
+    fn ffi_type_to_type_maps_all_variants() {
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::Standard),
+            TransactionType::Standard,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::CoinJoin),
+            TransactionType::CoinJoin,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::ProviderRegistration),
+            TransactionType::ProviderRegistration,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::ProviderUpdateRegistrar),
+            TransactionType::ProviderUpdateRegistrar,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::ProviderUpdateService),
+            TransactionType::ProviderUpdateService,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::ProviderUpdateRevocation),
+            TransactionType::ProviderUpdateRevocation,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::AssetLock),
+            TransactionType::AssetLock,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::AssetUnlock),
+            TransactionType::AssetUnlock,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::Coinbase),
+            TransactionType::Coinbase,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::Ignored),
+            TransactionType::Ignored,
+        );
+    }
+
+    #[test]
+    fn extract_ffi_label_null_returns_none() {
+        let result = unsafe { extract_ffi_label(ptr::null()) };
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn extract_ffi_label_empty_returns_none() {
+        let s = CString::new("").unwrap();
+        let result = unsafe { extract_ffi_label(s.as_ptr()) };
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn extract_ffi_label_valid_returns_some() {
+        let s = CString::new("coffee payment").unwrap();
+        let result = unsafe { extract_ffi_label(s.as_ptr()) };
+        assert_eq!(result, Some("coffee payment".to_string()));
+    }
 }

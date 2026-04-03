@@ -11,34 +11,35 @@ use crate::state::wallet::WalletState;
 
 const PAGE_SIZE: usize = 50;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TxFilter {
-    All,
-    Received,
-    Sent,
-}
+/// Filter tabs: `None` means "All", `Some(dir)` filters to that direction.
+const FILTER_TABS: [Option<TransactionDirection>; 5] = [
+    None,
+    Some(TransactionDirection::Incoming),
+    Some(TransactionDirection::Outgoing),
+    Some(TransactionDirection::Internal),
+    Some(TransactionDirection::CoinJoin),
+];
 
-impl TxFilter {
-    fn label(self) -> &'static str {
-        match self {
-            Self::All => "All",
-            Self::Received => "Received",
-            Self::Sent => "Sent",
-        }
+fn filter_label(filter: Option<TransactionDirection>) -> &'static str {
+    match filter {
+        None => "All",
+        Some(TransactionDirection::Incoming) => "Received",
+        Some(TransactionDirection::Outgoing) => "Sent",
+        Some(TransactionDirection::Internal) => "Internal",
+        Some(TransactionDirection::CoinJoin) => "CoinJoin",
     }
 }
 
 fn apply_filters<'a>(
     txs: &'a [TransactionInfo],
-    filter: TxFilter,
+    filter: Option<TransactionDirection>,
     search: &str,
     unit: &str,
 ) -> Vec<&'a TransactionInfo> {
     txs.iter()
         .filter(|tx| match filter {
-            TxFilter::All => true,
-            TxFilter::Received => tx.direction == TransactionDirection::Received,
-            TxFilter::Sent => tx.direction == TransactionDirection::Sent,
+            None => true,
+            Some(dir) => tx.direction == dir,
         })
         .filter(|tx| matches_search(tx, search, unit))
         .collect()
@@ -51,7 +52,7 @@ pub fn Transactions() -> Element {
     let config = use_context::<Signal<AppConfig>>();
 
     let mut search_query = use_signal(String::new);
-    let mut active_filter = use_signal(|| TxFilter::All);
+    let mut active_filter = use_signal(|| None::<TransactionDirection>);
     let mut visible_count = use_signal(|| PAGE_SIZE);
     let mut expanded_txid = use_signal(|| None::<dashcore::Txid>);
 
@@ -104,7 +105,7 @@ pub fn Transactions() -> Element {
 
             // Filter tabs
             div { class: "flex gap-2 mb-6",
-                for filter in [TxFilter::All, TxFilter::Received, TxFilter::Sent] {
+                for filter in FILTER_TABS {
                     {
                         let is_active = *active_filter.read() == filter;
                         let class = if is_active {
@@ -112,6 +113,7 @@ pub fn Transactions() -> Element {
                         } else {
                             "px-4 py-2 rounded-lg bg-card text-muted hover:bg-hover transition-colors"
                         };
+                        let label = filter_label(filter);
                         rsx! {
                             button {
                                 class,
@@ -119,7 +121,7 @@ pub fn Transactions() -> Element {
                                     active_filter.set(filter);
                                     visible_count.set(PAGE_SIZE);
                                 },
-                                "{filter.label()}"
+                                "{label}"
                             }
                         }
                     }
@@ -142,15 +144,16 @@ pub fn Transactions() -> Element {
                     for (i , tx) in filtered.iter().take(visible).enumerate() {
                         {
                             let view = format_transaction(tx, current_height, unit);
-                            let is_sent = tx.direction == TransactionDirection::Sent;
                             let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
-                            let border = if is_sent { "border-error" } else { "border-success" };
+                            let border = match tx.direction {
+                                TransactionDirection::Outgoing => "border-error",
+                                TransactionDirection::Incoming => "border-success",
+
+                                TransactionDirection::Internal | TransactionDirection::CoinJoin => {
+                                    "border-muted"
+                                }
+                            };
                             let address_short = format_address_responsive(
-
-                                // Left: direction + address + time
-
-                                // Right: amount + confirmations + height + badges
-
                                 &tx.addresses.first().cloned().unwrap_or_default(),
                                 30,
                             );
@@ -173,11 +176,18 @@ pub fn Transactions() -> Element {
 
 
                                         div { class: "flex items-center gap-3 min-w-0",
-                                            span { class: if is_sent { "text-error text-lg flex-shrink-0" } else { "text-success text-lg flex-shrink-0" },
-                                                if is_sent {
-                                                    "▲"
-                                                } else {
-                                                    "▼"
+                                            span {
+                                                class: match tx.direction {
+                                                    TransactionDirection::Outgoing => "text-error text-lg flex-shrink-0",
+                                                    TransactionDirection::Incoming => "text-success text-lg flex-shrink-0",
+                                                    TransactionDirection::Internal | TransactionDirection::CoinJoin => {
+                                                        "text-muted text-lg flex-shrink-0"
+                                                    }
+                                                },
+                                                match tx.direction {
+                                                    TransactionDirection::Outgoing => "▲",
+                                                    TransactionDirection::Incoming => "▼",
+                                                    TransactionDirection::Internal | TransactionDirection::CoinJoin => "⇄",
                                                 }
                                             }
                                             div { class: "min-w-0",
@@ -188,7 +198,14 @@ pub fn Transactions() -> Element {
 
                                         div { class: "text-right flex items-center gap-2 flex-shrink-0",
                                             div {
-                                                p { class: if is_sent { "text-error font-medium" } else { "text-success font-medium" },
+                                                p {
+                                                    class: match tx.direction {
+                                                        TransactionDirection::Outgoing => "text-error font-medium",
+                                                        TransactionDirection::Incoming => "text-success font-medium",
+                                                        TransactionDirection::Internal | TransactionDirection::CoinJoin => {
+                                                            "text-muted font-medium"
+                                                        }
+                                                    },
                                                     "{view.amount_display}"
                                                 }
                                                 p { class: "text-disabled text-xs",
@@ -288,6 +305,8 @@ pub fn Transactions() -> Element {
 mod tests {
     use dashcore::hashes::Hash;
 
+    use crate::backend::types::TransactionType;
+
     use super::*;
 
     fn sample_txs() -> Vec<TransactionInfo> {
@@ -295,7 +314,8 @@ mod tests {
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([0xAA; 32]),
                 amount: 100_000_000,
-                direction: TransactionDirection::Received,
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
                 timestamp: 1700000000,
                 height: Some(100),
                 fee: None,
@@ -303,11 +323,13 @@ mod tests {
                 block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
+                label: None,
             },
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([0xBB; 32]),
                 amount: -50_000_000,
-                direction: TransactionDirection::Sent,
+                direction: TransactionDirection::Outgoing,
+                transaction_type: TransactionType::Standard,
                 timestamp: 1700001000,
                 height: Some(101),
                 fee: Some(226),
@@ -315,11 +337,13 @@ mod tests {
                 block_hash: None,
                 is_instant_send: false,
                 is_chain_locked: false,
+                label: None,
             },
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([0xCC; 32]),
                 amount: 200_000_000,
-                direction: TransactionDirection::Received,
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
                 timestamp: 1700002000,
                 height: Some(102),
                 fee: None,
@@ -327,6 +351,7 @@ mod tests {
                 block_hash: None,
                 is_instant_send: true,
                 is_chain_locked: false,
+                label: None,
             },
         ]
     }
@@ -334,34 +359,34 @@ mod tests {
     #[test]
     fn apply_filters_all() {
         let txs = sample_txs();
-        let result = apply_filters(&txs, TxFilter::All, "", "DASH");
+        let result = apply_filters(&txs, None, "", "DASH");
         assert_eq!(result.len(), 3);
     }
 
     #[test]
     fn apply_filters_received_only() {
         let txs = sample_txs();
-        let result = apply_filters(&txs, TxFilter::Received, "", "DASH");
+        let result = apply_filters(&txs, Some(TransactionDirection::Incoming), "", "DASH");
         assert_eq!(result.len(), 2);
         assert!(
             result
                 .iter()
-                .all(|tx| tx.direction == TransactionDirection::Received)
+                .all(|tx| tx.direction == TransactionDirection::Incoming)
         );
     }
 
     #[test]
     fn apply_filters_sent_only() {
         let txs = sample_txs();
-        let result = apply_filters(&txs, TxFilter::Sent, "", "DASH");
+        let result = apply_filters(&txs, Some(TransactionDirection::Outgoing), "", "DASH");
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].direction, TransactionDirection::Sent);
+        assert_eq!(result[0].direction, TransactionDirection::Outgoing);
     }
 
     #[test]
     fn apply_filters_with_search() {
         let txs = sample_txs();
-        let result = apply_filters(&txs, TxFilter::All, "yAddr2", "DASH");
+        let result = apply_filters(&txs, None, "yAddr2", "DASH");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].addresses[0], "yAddr2");
     }
@@ -369,14 +394,14 @@ mod tests {
     #[test]
     fn apply_filters_no_match() {
         let txs = sample_txs();
-        let result = apply_filters(&txs, TxFilter::All, "zzz_nonexistent", "DASH");
+        let result = apply_filters(&txs, None, "zzz_nonexistent", "DASH");
         assert!(result.is_empty());
     }
 
     #[test]
     fn apply_filters_combined_filter_and_search() {
         let txs = sample_txs();
-        let result = apply_filters(&txs, TxFilter::Received, "yAddr3", "DASH");
+        let result = apply_filters(&txs, Some(TransactionDirection::Incoming), "yAddr3", "DASH");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].addresses[0], "yAddr3");
     }
@@ -384,14 +409,71 @@ mod tests {
     #[test]
     fn apply_filters_empty_transactions() {
         let txs: Vec<TransactionInfo> = vec![];
-        let result = apply_filters(&txs, TxFilter::All, "", "DASH");
+        let result = apply_filters(&txs, None, "", "DASH");
         assert!(result.is_empty());
     }
 
     #[test]
-    fn tx_filter_labels() {
-        assert_eq!(TxFilter::All.label(), "All");
-        assert_eq!(TxFilter::Received.label(), "Received");
-        assert_eq!(TxFilter::Sent.label(), "Sent");
+    fn apply_filters_internal_only() {
+        let mut txs = sample_txs();
+        txs.push(TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xDD; 32]),
+            amount: 10_000,
+            direction: TransactionDirection::Internal,
+            transaction_type: TransactionType::Standard,
+            timestamp: 1700003000,
+            height: Some(103),
+            fee: None,
+            addresses: vec!["yAddr4".into()],
+            block_hash: None,
+            is_instant_send: false,
+            is_chain_locked: false,
+            label: None,
+        });
+
+        let result = apply_filters(&txs, Some(TransactionDirection::Internal), "", "DASH");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].direction, TransactionDirection::Internal);
+    }
+
+    #[test]
+    fn apply_filters_coinjoin_only() {
+        let mut txs = sample_txs();
+        txs.push(TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xEE; 32]),
+            amount: -25_000_000,
+            direction: TransactionDirection::CoinJoin,
+            transaction_type: TransactionType::CoinJoin,
+            timestamp: 1700004000,
+            height: Some(104),
+            fee: Some(100),
+            addresses: vec!["yAddr5".into()],
+            block_hash: None,
+            is_instant_send: false,
+            is_chain_locked: false,
+            label: None,
+        });
+
+        let result = apply_filters(&txs, Some(TransactionDirection::CoinJoin), "", "DASH");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].direction, TransactionDirection::CoinJoin);
+    }
+
+    #[test]
+    fn filter_labels() {
+        assert_eq!(filter_label(None), "All");
+        assert_eq!(
+            filter_label(Some(TransactionDirection::Incoming)),
+            "Received"
+        );
+        assert_eq!(filter_label(Some(TransactionDirection::Outgoing)), "Sent");
+        assert_eq!(
+            filter_label(Some(TransactionDirection::Internal)),
+            "Internal"
+        );
+        assert_eq!(
+            filter_label(Some(TransactionDirection::CoinJoin)),
+            "CoinJoin"
+        );
     }
 }

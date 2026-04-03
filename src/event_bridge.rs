@@ -47,8 +47,13 @@ pub fn use_event_bridge() {
 
 #[cfg(test)]
 mod tests {
+    use dashcore::hashes::Hash;
+
     use crate::backend::events::{SpvEvent, event_channel};
-    use crate::backend::types::{ManagerIdentifier, WalletCoreBalance};
+    use crate::backend::types::{
+        ManagerIdentifier, TransactionDirection, TransactionInfo, TransactionType,
+        WalletCoreBalance,
+    };
     use crate::state::connection::ConnectionState;
     use crate::state::dev_log::{DevLog, EventCategory};
     use crate::state::network::NetworkInfo;
@@ -107,16 +112,20 @@ mod tests {
     #[test]
     fn transaction_received_updates_wallet() {
         let (mut conn, mut wallet, mut net, mut log) = make_state();
-        let event = SpvEvent::TransactionReceived {
-            txid: [0xAA; 32],
+        let event = SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xAA; 32]),
             amount: 500_000,
-            addresses: vec!["Xaddr1".into()],
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
+            timestamp: 1700000000,
             height: Some(1000),
-            timestamp: Some(1700000000),
+            fee: None,
+            addresses: vec!["Xaddr1".into()],
             block_hash: None,
             is_instant_send: false,
             is_chain_locked: true,
-        };
+            label: None,
+        }));
 
         dispatch_event(&event, &mut conn, &mut wallet, &mut net, &mut log);
 
@@ -359,16 +368,20 @@ mod tests {
                 best_height: 10000,
             },
             SpvEvent::SyncProgressUpdated(Box::default()),
-            SpvEvent::TransactionReceived {
-                txid: [1; 32],
+            SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+                txid: dashcore::Txid::from_byte_array([1; 32]),
                 amount: 1_000_000,
-                addresses: vec!["Xaddr".into()],
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
+                timestamp: 1700000000,
                 height: Some(9999),
-                timestamp: Some(1700000000),
+                fee: None,
+                addresses: vec!["Xaddr".into()],
                 block_hash: None,
                 is_instant_send: true,
                 is_chain_locked: false,
-            },
+                label: None,
+            })),
             SpvEvent::BalanceUpdated(WalletCoreBalance::new(1_000_000, 0, 0, 0)),
             SpvEvent::SyncComplete {
                 tip_height: 10000,
