@@ -1585,6 +1585,7 @@ fn extract_ffi_input_addresses(record: &FFITransactionRecord) -> Vec<String> {
             }
         })
         .collect();
+    addrs.sort();
     addrs.dedup();
     addrs
 }
