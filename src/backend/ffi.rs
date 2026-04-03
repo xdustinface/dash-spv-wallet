@@ -1643,3 +1643,74 @@ fn extract_ffi_input_addresses(record: &FFITransactionRecord) -> Vec<String> {
     addrs.dedup();
     addrs
 }
+
+#[cfg(test)]
+mod tests {
+    use key_wallet_ffi::types::{FFITransactionDirection, FFITransactionType};
+
+    use super::*;
+
+    #[test]
+    fn ffi_direction_to_direction_maps_all_variants() {
+        assert_eq!(
+            ffi_direction_to_direction(FFITransactionDirection::Incoming),
+            TransactionDirection::Incoming,
+        );
+        assert_eq!(
+            ffi_direction_to_direction(FFITransactionDirection::Outgoing),
+            TransactionDirection::Outgoing,
+        );
+        assert_eq!(
+            ffi_direction_to_direction(FFITransactionDirection::Internal),
+            TransactionDirection::Internal,
+        );
+        assert_eq!(
+            ffi_direction_to_direction(FFITransactionDirection::CoinJoin),
+            TransactionDirection::CoinJoin,
+        );
+    }
+
+    #[test]
+    fn ffi_type_to_type_maps_all_variants() {
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::Standard),
+            TransactionType::Standard,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::CoinJoin),
+            TransactionType::CoinJoin,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::ProviderRegistration),
+            TransactionType::ProviderRegistration,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::ProviderUpdateRegistrar),
+            TransactionType::ProviderUpdateRegistrar,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::ProviderUpdateService),
+            TransactionType::ProviderUpdateService,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::ProviderUpdateRevocation),
+            TransactionType::ProviderUpdateRevocation,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::AssetLock),
+            TransactionType::AssetLock,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::AssetUnlock),
+            TransactionType::AssetUnlock,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::Coinbase),
+            TransactionType::Coinbase,
+        );
+        assert_eq!(
+            ffi_type_to_type(FFITransactionType::Ignored),
+            TransactionType::Ignored,
+        );
+    }
+}

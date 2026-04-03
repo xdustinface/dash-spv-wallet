@@ -148,7 +148,10 @@ pub fn Transactions() -> Element {
                             let border = match tx.direction {
                                 TransactionDirection::Outgoing => "border-error",
                                 TransactionDirection::Incoming => "border-success",
-                                TransactionDirection::Internal | TransactionDirection::CoinJoin => "border-muted",
+
+                                TransactionDirection::Internal | TransactionDirection::CoinJoin => {
+                                    "border-muted"
+                                }
                             };
                             let address_short = format_address_responsive(
                                 &tx.addresses.first().cloned().unwrap_or_default(),
@@ -170,12 +173,16 @@ pub fn Transactions() -> Element {
                                             }
                                         },
 
+
+
                                         div { class: "flex items-center gap-3 min-w-0",
                                             span {
                                                 class: match tx.direction {
                                                     TransactionDirection::Outgoing => "text-error text-lg flex-shrink-0",
                                                     TransactionDirection::Incoming => "text-success text-lg flex-shrink-0",
-                                                    TransactionDirection::Internal | TransactionDirection::CoinJoin => "text-muted text-lg flex-shrink-0",
+                                                    TransactionDirection::Internal | TransactionDirection::CoinJoin => {
+                                                        "text-muted text-lg flex-shrink-0"
+                                                    }
                                                 },
                                                 match tx.direction {
                                                     TransactionDirection::Outgoing => "▲",
@@ -195,7 +202,9 @@ pub fn Transactions() -> Element {
                                                     class: match tx.direction {
                                                         TransactionDirection::Outgoing => "text-error font-medium",
                                                         TransactionDirection::Incoming => "text-success font-medium",
-                                                        TransactionDirection::Internal | TransactionDirection::CoinJoin => "text-muted font-medium",
+                                                        TransactionDirection::Internal | TransactionDirection::CoinJoin => {
+                                                            "text-muted font-medium"
+                                                        }
                                                     },
                                                     "{view.amount_display}"
                                                 }

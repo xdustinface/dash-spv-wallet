@@ -76,16 +76,13 @@ pub fn Dashboard() -> Element {
                                 let border = match tx.direction {
                                     TransactionDirection::Outgoing => "border-error",
                                     TransactionDirection::Incoming => "border-success",
-                                    TransactionDirection::Internal | TransactionDirection::CoinJoin => "border-muted",
+                                    TransactionDirection::Internal | TransactionDirection::CoinJoin => {
+                                        "border-muted"
+                                    }
                                 };
                                 let is_expanded = *expanded_txid.read() == Some(tx.txid);
                                 let txid = tx.txid;
                                 let address_short = format_address_responsive(
-
-                                    // Left: direction + address + time
-
-                                    // Right: amount + confirmations + badges
-
                                     &tx.addresses.first().cloned().unwrap_or_default(),
                                     20,
                                 );
@@ -102,12 +99,16 @@ pub fn Dashboard() -> Element {
                                                 }
                                             },
 
+
+
                                             div { class: "flex items-center gap-3 min-w-0 flex-1",
                                                 span {
                                                     class: match tx.direction {
                                                         TransactionDirection::Outgoing => "text-error text-lg shrink-0",
                                                         TransactionDirection::Incoming => "text-success text-lg shrink-0",
-                                                        TransactionDirection::Internal | TransactionDirection::CoinJoin => "text-muted text-lg shrink-0",
+                                                        TransactionDirection::Internal | TransactionDirection::CoinJoin => {
+                                                            "text-muted text-lg shrink-0"
+                                                        }
                                                     },
                                                     match tx.direction {
                                                         TransactionDirection::Outgoing => "▲",
@@ -127,7 +128,9 @@ pub fn Dashboard() -> Element {
                                                         class: match tx.direction {
                                                             TransactionDirection::Outgoing => "text-error font-medium",
                                                             TransactionDirection::Incoming => "text-success font-medium",
-                                                            TransactionDirection::Internal | TransactionDirection::CoinJoin => "text-muted font-medium",
+                                                            TransactionDirection::Internal | TransactionDirection::CoinJoin => {
+                                                                "text-muted font-medium"
+                                                            }
                                                         },
                                                         "{view.amount_display}"
                                                     }
