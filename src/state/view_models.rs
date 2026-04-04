@@ -227,7 +227,6 @@ pub struct TransactionView {
     pub amount_display: String,
     pub timestamp_display: String,
     pub confirmations_display: String,
-    pub address_short: String,
     pub is_instant_send: bool,
     pub is_chain_locked: bool,
 }
@@ -298,12 +297,6 @@ pub fn format_transaction(
     } else {
         format!("{confirmations} confirmations")
     };
-    let address_short = tx
-        .addresses
-        .first()
-        .map(|a| format_address_short(a))
-        .unwrap_or_default();
-
     TransactionView {
         txid_hex,
         direction_label,
@@ -315,7 +308,6 @@ pub fn format_transaction(
         amount_display,
         timestamp_display,
         confirmations_display,
-        address_short,
         is_instant_send: tx.is_instant_send,
         is_chain_locked: tx.is_chain_locked,
     }
@@ -524,7 +516,6 @@ mod tests {
         assert_eq!(view.type_badge, None);
         assert_eq!(view.amount_display, "+1.0 DASH");
         assert_eq!(view.confirmations_display, "7 confirmations");
-        assert_eq!(view.address_short, "XqN8...BGsP");
         assert!(view.is_instant_send);
         assert!(!view.is_chain_locked);
         assert_eq!(view.txid_hex.len(), 64);
@@ -576,27 +567,6 @@ mod tests {
 
         let view = format_transaction(&tx, 1000, "tDASH");
         assert_eq!(view.amount_display, "+1.0 tDASH");
-    }
-
-    #[test]
-    fn format_transaction_no_addresses() {
-        let tx = TransactionInfo {
-            txid: dashcore::Txid::from_byte_array([0; 32]),
-            amount: 0,
-            direction: TransactionDirection::Incoming,
-            transaction_type: TransactionType::Standard,
-            timestamp: 0,
-            height: None,
-            fee: None,
-            addresses: vec![],
-            block_hash: None,
-            is_instant_send: false,
-            is_chain_locked: false,
-            label: None,
-        };
-
-        let view = format_transaction(&tx, 0, "DASH");
-        assert_eq!(view.address_short, "");
     }
 
     #[test]
@@ -689,6 +659,33 @@ mod tests {
             )
             .type_badge,
             Some("ProReg")
+        );
+        assert_eq!(
+            format_transaction(
+                &make_tx(TransactionType::ProviderUpdateRegistrar),
+                1000,
+                "DASH"
+            )
+            .type_badge,
+            Some("ProUpReg")
+        );
+        assert_eq!(
+            format_transaction(
+                &make_tx(TransactionType::ProviderUpdateService),
+                1000,
+                "DASH"
+            )
+            .type_badge,
+            Some("ProUpServ")
+        );
+        assert_eq!(
+            format_transaction(
+                &make_tx(TransactionType::ProviderUpdateRevocation),
+                1000,
+                "DASH"
+            )
+            .type_badge,
+            Some("ProUpRev")
         );
         assert_eq!(
             format_transaction(&make_tx(TransactionType::Ignored), 1000, "DASH").type_badge,
