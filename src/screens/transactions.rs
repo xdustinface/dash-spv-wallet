@@ -4,7 +4,8 @@ use crate::backend::types::{TransactionDirection, TransactionInfo};
 use crate::config::AppConfig;
 use crate::state::network::NetworkInfo;
 use crate::state::view_models::{
-    TransactionView, format_address_responsive, format_transaction, matches_search,
+    TransactionView, format_address_responsive, format_input, format_output, format_transaction,
+    matches_search,
 };
 use crate::state::wallet::WalletState;
 
@@ -54,6 +55,8 @@ pub fn Transactions() -> Element {
     let mut active_filter = use_signal(|| None::<TransactionDirection>);
     let mut visible_count = use_signal(|| PAGE_SIZE);
     let mut expanded_txid = use_signal(|| None::<dashcore::Txid>);
+    let mut inputs_expanded = use_signal(|| false);
+    let mut outputs_expanded = use_signal(|| false);
 
     let transactions = wallet.read().transactions.clone();
     let current_height = network_info.read().chain_tip;
@@ -161,12 +164,25 @@ pub fn Transactions() -> Element {
                                     height: tx.height,
                                     is_expanded,
                                     addresses: tx.addresses.clone(),
+                                    inputs: tx.inputs.clone(),
+                                    outputs: tx.outputs.clone(),
+                                    unit: unit.to_string(),
+                                    inputs_expanded: *inputs_expanded.read(),
+                                    outputs_expanded: *outputs_expanded.read(),
                                     onclick: move |_| {
                                         if *expanded_txid.read() == Some(txid) {
                                             expanded_txid.set(None);
                                         } else {
                                             expanded_txid.set(Some(txid));
+                                            inputs_expanded.set(false);
+                                            outputs_expanded.set(false);
                                         }
+                                    },
+                                    on_toggle_inputs: move |_| {
+                                        inputs_expanded.set(true);
+                                    },
+                                    on_toggle_outputs: move |_| {
+                                        outputs_expanded.set(true);
                                     },
                                 }
                             }
@@ -203,7 +219,14 @@ fn TransactionRow(
     height: Option<u32>,
     is_expanded: bool,
     addresses: Vec<String>,
+    inputs: Vec<crate::backend::types::InputInfo>,
+    outputs: Vec<crate::backend::types::OutputInfo>,
+    unit: String,
+    inputs_expanded: bool,
+    outputs_expanded: bool,
     onclick: EventHandler<MouseEvent>,
+    on_toggle_inputs: EventHandler<MouseEvent>,
+    on_toggle_outputs: EventHandler<MouseEvent>,
 ) -> Element {
     let border = view.border_class;
     let icon_class = view.direction_icon_class;
@@ -296,6 +319,93 @@ fn TransactionRow(
                         for addr in &addresses {
                             p { class: "font-mono text-xs select-all", "{addr}" }
                         }
+                    }
+
+                    if !inputs.is_empty() {
+                        {
+                            let input_count = inputs.len();
+                            let collapse_threshold = 5;
+                            let show_all_inputs = inputs_expanded
+                                || input_count <= collapse_threshold;
+                            let visible_inputs = if show_all_inputs {
+                                input_count
+                            } else {
+                                collapse_threshold
+                            };
+                            let input_views: Vec<_> = inputs
+                                .iter()
+                                .take(visible_inputs)
+                                .map(|inp| format_input(inp, &unit))
+                                .collect();
+                            rsx! {
+                                div { class: "mt-2 pt-2 border-t border-edge",
+                                    span { class: "text-muted font-medium block mb-1", "Inputs ({input_count})" }
+                                    div { class: "space-y-1",
+                                        for iv in &input_views {
+                                            div { class: "flex items-center gap-2 text-xs",
+                                                span { class: "text-disabled w-6", "#{iv.index}" }
+                                                span { class: "font-mono truncate flex-1", "{iv.address_short}" }
+                                                span { class: "text-foreground font-medium", "{iv.amount_display}" }
+                                            }
+                                        }
+                                    }
+                                    if input_count > collapse_threshold && !show_all_inputs {
+                                        button {
+                                            class: "text-dash text-xs mt-1 hover:underline",
+                                            onclick: move |e| on_toggle_inputs.call(e),
+                                            "Show all {input_count} inputs"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !outputs.is_empty() {
+                        {
+                            let output_count = outputs.len();
+                            let collapse_threshold = 5;
+                            let show_all_outputs = outputs_expanded
+                                || output_count <= collapse_threshold;
+                            let visible_outputs = if show_all_outputs {
+                                output_count
+                            } else {
+                                collapse_threshold
+                            };
+                            let output_views: Vec<_> = outputs
+                                .iter()
+                                .take(visible_outputs)
+                                .map(|out| format_output(out, &unit))
+                                .collect();
+                            rsx! {
+                                div { class: "mt-2 pt-2 border-t border-edge",
+                                    span { class: "text-muted font-medium block mb-1", "Outputs ({output_count})" }
+                                    div { class: "space-y-1",
+                                        for ov in &output_views {
+                                            div { class: "flex items-center gap-2 text-xs",
+                                                span { class: "text-disabled w-6", "#{ov.index}" }
+                                                span { class: "font-mono truncate flex-1", "{ov.address_short}" }
+                                                span { class: "text-foreground font-medium", "{ov.amount_display}" }
+                                                span { class: "{ov.role_color} text-foreground rounded-full px-2 py-0.5 text-xs",
+                                                    "{ov.role_label}"
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if output_count > collapse_threshold && !show_all_outputs {
+                                        button {
+                                            class: "text-dash text-xs mt-1 hover:underline",
+                                            onclick: move |e| on_toggle_outputs.call(e),
+                                            "Show all {output_count} outputs"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    div { class: "mt-2 pt-2 border-t border-edge text-center",
+                        span { class: "text-dash text-xs cursor-pointer hover:underline", "View full details" }
                     }
                 }
             }
