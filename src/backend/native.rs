@@ -52,6 +52,7 @@ type SpvClient = DashSpvClient<
 struct NativeEventHandler {
     event_tx: EventSender,
     progress: Arc<RwLock<SyncProgress>>,
+    network: Network,
 }
 
 impl EventHandler for NativeEventHandler {
@@ -75,7 +76,9 @@ impl EventHandler for NativeEventHandler {
     }
 
     fn on_wallet_event(&self, event: &WalletEvent) {
-        let _ = self.event_tx.send(map_wallet_event(event.clone()));
+        let _ = self
+            .event_tx
+            .send(map_wallet_event(event.clone(), self.network));
     }
 
     fn on_error(&self, error: &str) {
@@ -183,6 +186,7 @@ impl SpvBackend for NativeBackend {
         let event_handler = Arc::new(NativeEventHandler {
             event_tx: self.event_tx.clone(),
             progress: self.progress.clone(),
+            network: self.config.network,
         });
 
         let client = Arc::new(
@@ -372,7 +376,7 @@ impl SpvBackend for NativeBackend {
 
         let mut transactions: Vec<TransactionInfo> = records
             .into_iter()
-            .map(|r| TransactionInfo::from_record(r, 0))
+            .map(|r| TransactionInfo::from_record(r, 0, self.config.network))
             .collect();
 
         // Sort: unconfirmed first, then by timestamp descending
@@ -653,7 +657,7 @@ fn map_network_event(event: NetworkEvent) -> SpvEvent {
     }
 }
 
-fn map_wallet_event(event: WalletEvent) -> SpvEvent {
+fn map_wallet_event(event: WalletEvent, network: Network) -> SpvEvent {
     match event {
         WalletEvent::TransactionReceived {
             wallet_id: _,
@@ -667,6 +671,7 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             SpvEvent::TransactionReceived(Box::new(TransactionInfo::from_record(
                 &record,
                 fallback_timestamp,
+                network,
             )))
         }
         WalletEvent::TransactionStatusChanged { txid, status, .. } => {
@@ -715,12 +720,12 @@ impl TransactionInfo {
     /// timestamp (mempool / instant-send).  Pass `0` for cold-start loads
     /// (renders as "Pending") or the current unix time for live events
     /// (renders as "just now").
-    fn from_record(record: &TransactionRecord, fallback_timestamp: u64) -> Self {
+    fn from_record(record: &TransactionRecord, fallback_timestamp: u64, network: Network) -> Self {
         let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
             extract_context_fields(&record.context);
         let addresses = extract_record_addresses(record);
         let inputs = extract_record_inputs(record);
-        let outputs = extract_record_outputs(record);
+        let outputs = extract_record_outputs(record, network);
         TransactionInfo {
             txid: record.txid,
             amount: record.net_amount,
@@ -767,7 +772,7 @@ fn extract_record_inputs(record: &TransactionRecord) -> Vec<InputInfo> {
 
 /// Build `OutputInfo` entries from a transaction record's output details,
 /// enriching them with value and address from the raw transaction outputs.
-fn extract_record_outputs(record: &TransactionRecord) -> Vec<OutputInfo> {
+fn extract_record_outputs(record: &TransactionRecord, network: Network) -> Vec<OutputInfo> {
     record
         .output_details
         .iter()
@@ -775,10 +780,7 @@ fn extract_record_outputs(record: &TransactionRecord) -> Vec<OutputInfo> {
             let tx_out = record.transaction.output.get(d.index as usize);
             let value = tx_out.map_or(0, |o| o.value);
             let address = tx_out
-                .and_then(|o| {
-                    dashcore::Address::from_script(&o.script_pubkey, dashcore::Network::Mainnet)
-                        .ok()
-                })
+                .and_then(|o| dashcore::Address::from_script(&o.script_pubkey, network).ok())
                 .map_or_else(String::new, |a| a.to_string());
             OutputInfo {
                 index: d.index,
@@ -1130,7 +1132,7 @@ mod tests {
             account_index: 0,
             record: Box::new(record),
         };
-        let mapped = map_wallet_event(event);
+        let mapped = map_wallet_event(event, Network::Mainnet);
         match mapped {
             SpvEvent::TransactionReceived(info) => {
                 assert_eq!(info.txid, txid);
@@ -1158,7 +1160,7 @@ mod tests {
                 1700000000,
             )),
         };
-        let mapped = map_wallet_event(event);
+        let mapped = map_wallet_event(event, Network::Mainnet);
         match mapped {
             SpvEvent::TransactionReceived(info) => {
                 assert_eq!(info.amount, 0);
@@ -1181,7 +1183,7 @@ mod tests {
             immature: 25_000,
             locked: 10_000,
         };
-        let mapped = map_wallet_event(event);
+        let mapped = map_wallet_event(event, Network::Mainnet);
         assert_eq!(
             mapped,
             SpvEvent::BalanceUpdated(WalletCoreBalance::new(100_000, 50_000, 25_000, 10_000))
@@ -1202,7 +1204,7 @@ mod tests {
             42000,
         );
 
-        let info = TransactionInfo::from_record(&record, 9999999999);
+        let info = TransactionInfo::from_record(&record, 9999999999, Network::Mainnet);
 
         assert_eq!(info.timestamp, 1700000000);
         assert_eq!(info.height, Some(500));
@@ -1223,7 +1225,7 @@ mod tests {
             10000,
         );
 
-        let info = TransactionInfo::from_record(&record, 0);
+        let info = TransactionInfo::from_record(&record, 0, Network::Mainnet);
 
         assert_eq!(info.timestamp, 0);
         assert_eq!(info.height, None);

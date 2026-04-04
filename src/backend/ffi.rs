@@ -76,6 +76,7 @@ use crate::config::AppConfig;
 struct CallbackContext {
     event_tx: EventSender,
     progress: std::sync::Arc<RwLock<SyncProgress>>,
+    network: Network,
 }
 
 pub struct FfiBackend {
@@ -205,7 +206,11 @@ impl SpvBackend for FfiBackend {
                 };
             }
 
-            let ctx = Box::new(CallbackContext { event_tx, progress });
+            let ctx = Box::new(CallbackContext {
+                event_tx,
+                progress,
+                network: app_network,
+            });
             let user_data = Box::into_raw(ctx) as *mut c_void;
 
             let callbacks = FFIEventCallbacks {
@@ -514,6 +519,7 @@ impl SpvBackend for FfiBackend {
             return Err(BackendError::NotRunning);
         }
 
+        let network = self.config.network;
         std::thread::spawn(move || {
             let client_ptr = client_usize as *mut FFIDashSpvClient;
 
@@ -610,7 +616,7 @@ impl SpvBackend for FfiBackend {
                     let label = unsafe { extract_ffi_label(record.label) };
 
                     let inputs = extract_ffi_inputs(record);
-                    let outputs = extract_ffi_outputs(record);
+                    let outputs = extract_ffi_outputs(record, network);
 
                     transactions.push(TransactionInfo {
                         txid,
@@ -1483,7 +1489,7 @@ extern "C" fn on_transaction_received(
 
     let addresses = extract_ffi_input_addresses(r);
     let inputs = extract_ffi_inputs(r);
-    let outputs = extract_ffi_outputs(r);
+    let outputs = extract_ffi_outputs(r, ctx.network);
 
     // Safety: label is a valid C string for the duration of the callback.
     let label = unsafe { extract_ffi_label(r.label) };
@@ -1690,7 +1696,7 @@ fn extract_ffi_inputs(record: &FFITransactionRecord) -> Vec<InputInfo> {
 /// The FFI `OutputDetail` only carries index and role. Value and address are
 /// extracted from the consensus-serialized transaction bytes embedded in the
 /// record.
-fn extract_ffi_outputs(record: &FFITransactionRecord) -> Vec<OutputInfo> {
+fn extract_ffi_outputs(record: &FFITransactionRecord, network: Network) -> Vec<OutputInfo> {
     if record.output_details.is_null() || record.output_details_count == 0 {
         return Vec::new();
     }
@@ -1715,12 +1721,9 @@ fn extract_ffi_outputs(record: &FFITransactionRecord) -> Vec<OutputInfo> {
                 .as_ref()
                 .and_then(|t| t.output.get(d.index as usize))
                 .map(|o| {
-                    let addr = dashcore::Address::from_script(
-                        &o.script_pubkey,
-                        dashcore::Network::Mainnet,
-                    )
-                    .ok()
-                    .map_or_else(String::new, |a| a.to_string());
+                    let addr = dashcore::Address::from_script(&o.script_pubkey, network)
+                        .ok()
+                        .map_or_else(String::new, |a| a.to_string());
                     (o.value, addr)
                 })
                 .unwrap_or((0, String::new()));
