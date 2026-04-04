@@ -60,6 +60,17 @@ pub trait SpvBackend: Send + Sync + 'static {
         fee_rate: u32,
     ) -> impl Future<Output = BackendResult<[u8; 32]>> + Send;
 
+    // -- Labels --
+
+    /// Set or clear a label on a transaction.
+    ///
+    /// An empty string clears the label. The label must not exceed 256 bytes.
+    fn set_transaction_label(
+        &self,
+        txid: &str,
+        label: &str,
+    ) -> impl Future<Output = BackendResult<()>> + Send;
+
     // -- Cache --
 
     /// Returns the total size in bytes of cached SPV data (headers, filters, blocks, etc.).

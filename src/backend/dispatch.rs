@@ -144,6 +144,15 @@ impl SpvBackend for Backend {
         }
     }
 
+    async fn set_transaction_label(&self, txid: &str, label: &str) -> BackendResult<()> {
+        match self {
+            Self::Native(b) => b.set_transaction_label(txid, label).await,
+            Self::Mock(b) => b.set_transaction_label(txid, label).await,
+            #[cfg(feature = "ffi")]
+            Self::Ffi(b) => b.set_transaction_label(txid, label).await,
+        }
+    }
+
     fn cache_size(&self) -> BackendResult<u64> {
         match self {
             Self::Native(b) => b.cache_size(),
@@ -400,6 +409,22 @@ mod tests {
         // Verify the mnemonic can be used to create a wallet through dispatch
         backend.create_wallet(&mnemonic).await.unwrap();
         assert!(backend.get_balance().is_ok());
+    }
+
+    #[tokio::test]
+    async fn dispatch_set_transaction_label() {
+        let backend = mock_backend_with_wallet(Network::Testnet, 1_000_000);
+        backend.load_wallet().await.unwrap();
+        backend.send("Xaddr", 100_000, 1000).await.unwrap();
+
+        let txid = backend.get_transactions().unwrap()[0].txid.to_string();
+        backend
+            .set_transaction_label(&txid, "test label")
+            .await
+            .unwrap();
+
+        let tx = &backend.get_transactions().unwrap()[0];
+        assert_eq!(tx.label, Some("test label".into()));
     }
 
     #[tokio::test]

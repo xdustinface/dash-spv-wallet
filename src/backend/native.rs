@@ -383,6 +383,29 @@ impl SpvBackend for NativeBackend {
         Ok(transactions)
     }
 
+    async fn set_transaction_label(&self, txid: &str, label: &str) -> BackendResult<()> {
+        let txid = dashcore::Txid::from_str(txid)
+            .map_err(|e| BackendError::Internal(format!("invalid txid: {e}")))?;
+
+        let mut wallet = self.wallet.write().await;
+        let wallet_ids: Vec<_> = wallet.list_wallets().into_iter().cloned().collect();
+        let wallet_id = wallet_ids.first().ok_or(BackendError::NoWallet)?;
+
+        let wallet_info = wallet
+            .get_wallet_info_mut(wallet_id)
+            .ok_or(BackendError::NoWallet)?;
+
+        for account in wallet_info.accounts_mut().all_accounts_mut() {
+            if let Some(record) = account.transactions.get_mut(&txid) {
+                return record
+                    .set_label(label.to_owned())
+                    .map_err(|e| BackendError::Internal(e.to_string()));
+            }
+        }
+
+        Err(BackendError::Internal("transaction not found".to_string()))
+    }
+
     fn estimate_fee(&self, _address: &str, _amount: u64, fee_rate: u32) -> BackendResult<u64> {
         // Estimate for a typical 1-input 2-output P2PKH transaction (226 bytes)
         let fee = FeeRate::new(fee_rate as u64).calculate_fee(226);

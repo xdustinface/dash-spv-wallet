@@ -61,6 +61,13 @@ impl WalletState {
         }
     }
 
+    /// Update the label on a transaction in the local state.
+    pub fn set_transaction_label(&mut self, txid: &dashcore::Txid, label: Option<String>) {
+        if let Some(tx) = self.transactions.iter_mut().find(|t| t.txid == *txid) {
+            tx.label = label;
+        }
+    }
+
     /// Replace the full transaction list (e.g., after initial load).
     pub fn set_transactions(&mut self, mut transactions: Vec<TransactionInfo>) {
         sort_transactions(&mut transactions);
@@ -547,5 +554,35 @@ mod tests {
             state.transactions[0].label,
             Some("payment for coffee".into())
         );
+    }
+
+    #[test]
+    fn set_transaction_label_updates_existing() {
+        let mut state = WalletState::default();
+        let txid = dashcore::Txid::from_byte_array([9u8; 32]);
+
+        state.apply_event(&tx_event(
+            9,
+            100_000,
+            TransactionDirection::Incoming,
+            vec!["Xaddr9".into()],
+            Some(500),
+            1700000000,
+        ));
+
+        state.set_transaction_label(&txid, Some("rent payment".into()));
+        assert_eq!(state.transactions[0].label, Some("rent payment".into()));
+
+        state.set_transaction_label(&txid, None);
+        assert_eq!(state.transactions[0].label, None);
+    }
+
+    #[test]
+    fn set_transaction_label_nonexistent_is_noop() {
+        let mut state = WalletState::default();
+        let txid = dashcore::Txid::from_byte_array([99u8; 32]);
+
+        state.set_transaction_label(&txid, Some("label".into()));
+        assert!(state.transactions.is_empty());
     }
 }
