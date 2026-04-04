@@ -114,7 +114,9 @@ pub fn Dashboard() -> Element {
                                                     }
                                                 }
                                                 if view.is_instant_send {
-                                                    span { class: "bg-dash text-foreground text-xs rounded-full px-2 py-0.5", "IS" }
+                                                    span { class: "bg-dash text-foreground text-xs rounded-full px-2 py-0.5",
+                                                        "IS"
+                                                    }
                                                 }
                                                 if view.is_chain_locked {
                                                     span { class: "bg-chainlock text-foreground text-xs rounded-full px-2 py-0.5",
