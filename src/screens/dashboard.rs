@@ -1,6 +1,5 @@
 use dioxus::prelude::*;
 
-use crate::backend::types::TransactionDirection;
 use crate::config::AppConfig;
 use crate::router::Route;
 use crate::state::network::NetworkInfo;
@@ -73,13 +72,10 @@ pub fn Dashboard() -> Element {
                             {
                                 let view = format_transaction(tx, current_height, unit);
                                 let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
-                                let border = match tx.direction {
-                                    TransactionDirection::Outgoing => "border-error",
-                                    TransactionDirection::Incoming => "border-success",
-                                    TransactionDirection::Internal | TransactionDirection::CoinJoin => {
-                                        "border-muted"
-                                    }
-                                };
+                                let border = view.border_class;
+                                let icon_class = view.direction_icon_class;
+                                let icon = view.direction_icon;
+                                let amount_class = view.amount_class;
                                 let is_expanded = *expanded_txid.read() == Some(tx.txid);
                                 let txid = tx.txid;
                                 let address_short = format_address_responsive(
@@ -102,20 +98,7 @@ pub fn Dashboard() -> Element {
 
 
                                             div { class: "flex items-center gap-3 min-w-0 flex-1",
-                                                span {
-                                                    class: match tx.direction {
-                                                        TransactionDirection::Outgoing => "text-error text-lg shrink-0",
-                                                        TransactionDirection::Incoming => "text-success text-lg shrink-0",
-                                                        TransactionDirection::Internal | TransactionDirection::CoinJoin => {
-                                                            "text-muted text-lg shrink-0"
-                                                        }
-                                                    },
-                                                    match tx.direction {
-                                                        TransactionDirection::Outgoing => "▲",
-                                                        TransactionDirection::Incoming => "▼",
-                                                        TransactionDirection::Internal | TransactionDirection::CoinJoin => "⇄",
-                                                    }
-                                                }
+                                                span { class: icon_class, "{icon}" }
                                                 div { class: "min-w-0",
                                                     p { class: "font-mono text-sm truncate", "{address_short}" }
                                                     p { class: "text-disabled text-xs", "{view.timestamp_display}" }
@@ -124,17 +107,13 @@ pub fn Dashboard() -> Element {
 
                                             div { class: "text-right flex items-center gap-2",
                                                 div {
-                                                    p {
-                                                        class: match tx.direction {
-                                                            TransactionDirection::Outgoing => "text-error font-medium",
-                                                            TransactionDirection::Incoming => "text-success font-medium",
-                                                            TransactionDirection::Internal | TransactionDirection::CoinJoin => {
-                                                                "text-muted font-medium"
-                                                            }
-                                                        },
-                                                        "{view.amount_display}"
-                                                    }
+                                                    p { class: amount_class, "{view.amount_display}" }
                                                     p { class: "text-disabled text-xs", "{view.confirmations_display}" }
+                                                }
+                                                if let Some(badge) = view.type_badge {
+                                                    span { class: "bg-surface-alt text-muted text-xs rounded-full px-2 py-0.5 border border-edge",
+                                                        "{badge}"
+                                                    }
                                                 }
                                                 if view.is_instant_send {
                                                     span { class: "bg-dash text-xs rounded-full px-2 py-0.5", "IS" }

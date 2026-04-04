@@ -1,4 +1,4 @@
-use crate::backend::types::{TransactionDirection, TransactionInfo};
+use crate::backend::types::{TransactionDirection, TransactionInfo, TransactionType};
 
 const SATS_PER_DASH: u64 = 100_000_000;
 
@@ -219,12 +219,33 @@ pub fn matches_search(tx: &TransactionInfo, query: &str, unit: &str) -> bool {
 pub struct TransactionView {
     pub txid_hex: String,
     pub direction_label: &'static str,
+    pub direction_icon: &'static str,
+    pub direction_icon_class: &'static str,
+    pub border_class: &'static str,
+    pub amount_class: &'static str,
+    pub type_badge: Option<&'static str>,
     pub amount_display: String,
     pub timestamp_display: String,
     pub confirmations_display: String,
     pub address_short: String,
     pub is_instant_send: bool,
     pub is_chain_locked: bool,
+}
+
+/// Derive the type badge label for non-standard transaction types.
+fn type_badge_label(tx_type: TransactionType) -> Option<&'static str> {
+    match tx_type {
+        TransactionType::Standard => None,
+        TransactionType::CoinJoin => Some("CoinJoin"),
+        TransactionType::Coinbase => Some("Coinbase"),
+        TransactionType::AssetLock => Some("AssetLock"),
+        TransactionType::AssetUnlock => Some("AssetUnlock"),
+        TransactionType::ProviderRegistration => Some("ProReg"),
+        TransactionType::ProviderUpdateRegistrar => Some("ProUpReg"),
+        TransactionType::ProviderUpdateService => Some("ProUpServ"),
+        TransactionType::ProviderUpdateRevocation => Some("ProUpRev"),
+        TransactionType::Ignored => None,
+    }
 }
 
 /// Convert a transaction record to a display-ready view.
@@ -234,12 +255,41 @@ pub fn format_transaction(
     unit: &str,
 ) -> TransactionView {
     let txid_hex = tx.txid.to_string();
-    let direction_label = match tx.direction {
-        TransactionDirection::Outgoing => "Sent",
-        TransactionDirection::Incoming => "Received",
-        TransactionDirection::Internal => "Internal",
-        TransactionDirection::CoinJoin => "CoinJoin",
-    };
+
+    let (direction_label, direction_icon, direction_icon_class, border_class, amount_class) =
+        match tx.direction {
+            TransactionDirection::Incoming => (
+                "Received",
+                "\u{25bc}",
+                "text-success text-lg flex-shrink-0",
+                "border-success",
+                "text-success font-medium",
+            ),
+            TransactionDirection::Outgoing => (
+                "Sent",
+                "\u{25b2}",
+                "text-error text-lg flex-shrink-0",
+                "border-error",
+                "text-error font-medium",
+            ),
+            TransactionDirection::Internal => (
+                "Internal",
+                "\u{21c4}",
+                "text-muted text-lg flex-shrink-0",
+                "border-muted",
+                "text-muted font-medium",
+            ),
+            TransactionDirection::CoinJoin => (
+                "CoinJoin",
+                "\u{21c4}",
+                "text-muted text-lg flex-shrink-0",
+                "border-muted",
+                "text-muted font-medium",
+            ),
+        };
+
+    let type_badge = type_badge_label(tx.transaction_type);
+
     let amount_display = format_amount(tx.amount, unit);
     let timestamp_display = format_timestamp(tx.timestamp);
     let confirmations = tx.confirmations(current_height);
@@ -257,6 +307,11 @@ pub fn format_transaction(
     TransactionView {
         txid_hex,
         direction_label,
+        direction_icon,
+        direction_icon_class,
+        border_class,
+        amount_class,
+        type_badge,
         amount_display,
         timestamp_display,
         confirmations_display,
@@ -463,6 +518,10 @@ mod tests {
 
         let view = format_transaction(&tx, 1000, "DASH");
         assert_eq!(view.direction_label, "Received");
+        assert_eq!(view.direction_icon, "▼");
+        assert_eq!(view.border_class, "border-success");
+        assert_eq!(view.amount_class, "text-success font-medium");
+        assert_eq!(view.type_badge, None);
         assert_eq!(view.amount_display, "+1.0 DASH");
         assert_eq!(view.confirmations_display, "7 confirmations");
         assert_eq!(view.address_short, "XqN8...BGsP");
@@ -490,6 +549,10 @@ mod tests {
 
         let view = format_transaction(&tx, 1000, "DASH");
         assert_eq!(view.direction_label, "Sent");
+        assert_eq!(view.direction_icon, "▲");
+        assert_eq!(view.border_class, "border-error");
+        assert_eq!(view.amount_class, "text-error font-medium");
+        assert_eq!(view.type_badge, None);
         assert_eq!(view.amount_display, "-0.5 DASH");
         assert_eq!(view.confirmations_display, "Unconfirmed");
     }
@@ -534,6 +597,103 @@ mod tests {
 
         let view = format_transaction(&tx, 0, "DASH");
         assert_eq!(view.address_short, "");
+    }
+
+    #[test]
+    fn format_transaction_internal() {
+        let tx = TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xDD; 32]),
+            amount: 0,
+            direction: TransactionDirection::Internal,
+            transaction_type: TransactionType::Standard,
+            timestamp: 1700000000,
+            height: Some(500),
+            fee: Some(226),
+            addresses: vec!["yInternalAddr".into()],
+            block_hash: None,
+            is_instant_send: false,
+            is_chain_locked: false,
+            label: None,
+        };
+
+        let view = format_transaction(&tx, 1000, "DASH");
+        assert_eq!(view.direction_label, "Internal");
+        assert_eq!(view.direction_icon, "⇄");
+        assert_eq!(view.border_class, "border-muted");
+        assert_eq!(view.amount_class, "text-muted font-medium");
+        assert_eq!(view.type_badge, None);
+    }
+
+    #[test]
+    fn format_transaction_coinjoin() {
+        let tx = TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xEE; 32]),
+            amount: -25_000_000,
+            direction: TransactionDirection::CoinJoin,
+            transaction_type: TransactionType::CoinJoin,
+            timestamp: 1700000000,
+            height: Some(500),
+            fee: Some(100),
+            addresses: vec!["yMixAddr".into()],
+            block_hash: None,
+            is_instant_send: false,
+            is_chain_locked: false,
+            label: None,
+        };
+
+        let view = format_transaction(&tx, 1000, "DASH");
+        assert_eq!(view.direction_label, "CoinJoin");
+        assert_eq!(view.direction_icon, "⇄");
+        assert_eq!(view.border_class, "border-muted");
+        assert_eq!(view.type_badge, Some("CoinJoin"));
+    }
+
+    #[test]
+    fn format_transaction_type_badges() {
+        let make_tx = |tx_type: TransactionType| TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xFF; 32]),
+            amount: 100_000_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: tx_type,
+            timestamp: 1700000000,
+            height: Some(500),
+            fee: None,
+            addresses: vec![],
+            block_hash: None,
+            is_instant_send: false,
+            is_chain_locked: false,
+            label: None,
+        };
+
+        assert_eq!(
+            format_transaction(&make_tx(TransactionType::Standard), 1000, "DASH").type_badge,
+            None
+        );
+        assert_eq!(
+            format_transaction(&make_tx(TransactionType::Coinbase), 1000, "DASH").type_badge,
+            Some("Coinbase")
+        );
+        assert_eq!(
+            format_transaction(&make_tx(TransactionType::AssetLock), 1000, "DASH").type_badge,
+            Some("AssetLock")
+        );
+        assert_eq!(
+            format_transaction(&make_tx(TransactionType::AssetUnlock), 1000, "DASH").type_badge,
+            Some("AssetUnlock")
+        );
+        assert_eq!(
+            format_transaction(
+                &make_tx(TransactionType::ProviderRegistration),
+                1000,
+                "DASH"
+            )
+            .type_badge,
+            Some("ProReg")
+        );
+        assert_eq!(
+            format_transaction(&make_tx(TransactionType::Ignored), 1000, "DASH").type_badge,
+            None
+        );
     }
 
     // -- parse_dash_amount --

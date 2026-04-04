@@ -4,8 +4,8 @@ use crate::backend::types::{TransactionDirection, TransactionInfo};
 use crate::config::AppConfig;
 use crate::state::network::NetworkInfo;
 use crate::state::view_models::{
-    format_address_responsive, format_balance, format_timestamp_absolute, format_transaction,
-    matches_search,
+    TransactionView, format_address_responsive, format_balance, format_timestamp_absolute,
+    format_transaction, matches_search,
 };
 use crate::state::wallet::WalletState;
 
@@ -145,14 +145,6 @@ pub fn Transactions() -> Element {
                         {
                             let view = format_transaction(tx, current_height, unit);
                             let bg = if i % 2 == 0 { "bg-card" } else { "bg-surface-alt" };
-                            let border = match tx.direction {
-                                TransactionDirection::Outgoing => "border-error",
-                                TransactionDirection::Incoming => "border-success",
-
-                                TransactionDirection::Internal | TransactionDirection::CoinJoin => {
-                                    "border-muted"
-                                }
-                            };
                             let address_short = format_address_responsive(
                                 &tx.addresses.first().cloned().unwrap_or_default(),
                                 30,
@@ -162,119 +154,25 @@ pub fn Transactions() -> Element {
                             let txid = tx.txid;
                             let tx = (*tx).clone();
                             rsx! {
-                                div {
-                                    div {
-                                        class: "flex items-center justify-between {bg} border-l-4 {border} hover:bg-hover rounded-lg p-3 transition-colors cursor-pointer",
-                                        onclick: move |_| {
-                                            if *expanded_txid.read() == Some(txid) {
-                                                expanded_txid.set(None);
-                                            } else {
-                                                expanded_txid.set(Some(txid));
-                                            }
-                                        },
-
-
-
-                                        div { class: "flex items-center gap-3 min-w-0",
-                                            span {
-                                                class: match tx.direction {
-                                                    TransactionDirection::Outgoing => "text-error text-lg flex-shrink-0",
-                                                    TransactionDirection::Incoming => "text-success text-lg flex-shrink-0",
-                                                    TransactionDirection::Internal | TransactionDirection::CoinJoin => {
-                                                        "text-muted text-lg flex-shrink-0"
-                                                    }
-                                                },
-                                                match tx.direction {
-                                                    TransactionDirection::Outgoing => "▲",
-                                                    TransactionDirection::Incoming => "▼",
-                                                    TransactionDirection::Internal | TransactionDirection::CoinJoin => "⇄",
-                                                }
-                                            }
-                                            div { class: "min-w-0",
-                                                p { class: "font-mono text-sm truncate", "{address_short}" }
-                                                p { class: "text-disabled text-xs", "{view.timestamp_display}" }
-                                            }
+                                TransactionRow {
+                                    view,
+                                    bg,
+                                    address_short,
+                                    confirmations,
+                                    height: tx.height,
+                                    is_expanded,
+                                    block_hash: tx.block_hash,
+                                    timestamp: tx.timestamp,
+                                    fee: tx.fee,
+                                    addresses: tx.addresses.clone(),
+                                    unit,
+                                    onclick: move |_| {
+                                        if *expanded_txid.read() == Some(txid) {
+                                            expanded_txid.set(None);
+                                        } else {
+                                            expanded_txid.set(Some(txid));
                                         }
-
-                                        div { class: "text-right flex items-center gap-2 flex-shrink-0",
-                                            div {
-                                                p {
-                                                    class: match tx.direction {
-                                                        TransactionDirection::Outgoing => "text-error font-medium",
-                                                        TransactionDirection::Incoming => "text-success font-medium",
-                                                        TransactionDirection::Internal | TransactionDirection::CoinJoin => {
-                                                            "text-muted font-medium"
-                                                        }
-                                                    },
-                                                    "{view.amount_display}"
-                                                }
-                                                p { class: "text-disabled text-xs",
-                                                    if confirmations > 0 {
-                                                        if let Some(h) = tx.height {
-                                                            "{confirmations} confirmations (block {h})"
-                                                        } else {
-                                                            "{view.confirmations_display}"
-                                                        }
-                                                    } else {
-                                                        "Unconfirmed"
-                                                    }
-                                                }
-                                            }
-                                            if view.is_instant_send {
-                                                span { class: "bg-dash text-foreground text-xs rounded-full px-2 py-0.5",
-                                                    "IS"
-                                                }
-                                            }
-                                            if view.is_chain_locked {
-                                                span { class: "bg-chainlock text-foreground text-xs rounded-full px-2 py-0.5",
-                                                    "CL"
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    if is_expanded {
-                                        div { class: "bg-surface-alt rounded-b-lg px-4 py-3 -mt-1 mb-1 border-l-4 {border} text-sm space-y-2",
-
-                                            div { class: "flex justify-between",
-                                                span { class: "text-muted", "Transaction ID" }
-                                                span { class: "font-mono text-xs select-all", "{tx.txid}" }
-                                            }
-
-                                            if let Some(hash) = &tx.block_hash {
-                                                div { class: "flex justify-between",
-                                                    span { class: "text-muted", "Block Hash" }
-                                                    span { class: "font-mono text-xs select-all", "{hash}" }
-                                                }
-                                            }
-
-                                            if let Some(h) = tx.height {
-                                                div { class: "flex justify-between",
-                                                    span { class: "text-muted", "Block Height" }
-                                                    span { "{h}" }
-                                                }
-                                            }
-
-                                            div { class: "flex justify-between",
-                                                span { class: "text-muted", "Date" }
-                                                span { "{format_timestamp_absolute(tx.timestamp)}" }
-                                            }
-
-                                            if let Some(fee) = tx.fee {
-                                                div { class: "flex justify-between",
-                                                    span { class: "text-muted", "Fee" }
-                                                    span { "{format_balance(fee, unit)}" }
-                                                }
-                                            }
-
-                                            div {
-                                                span { class: "text-muted block mb-1", "Addresses" }
-                                                for addr in &tx.addresses {
-                                                    p { class: "font-mono text-xs select-all", "{addr}" }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    },
                                 }
                             }
                         }
@@ -294,6 +192,119 @@ pub fn Transactions() -> Element {
                         }
                     } else if total_filtered > PAGE_SIZE {
                         p { class: "text-disabled text-sm py-2", "All transactions loaded" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn TransactionRow(
+    view: TransactionView,
+    bg: &'static str,
+    address_short: String,
+    confirmations: u32,
+    height: Option<u32>,
+    is_expanded: bool,
+    block_hash: Option<dashcore::BlockHash>,
+    timestamp: u64,
+    fee: Option<u64>,
+    addresses: Vec<String>,
+    unit: &'static str,
+    onclick: EventHandler<MouseEvent>,
+) -> Element {
+    let border = view.border_class;
+    let icon_class = view.direction_icon_class;
+    let icon = view.direction_icon;
+    let amount_class = view.amount_class;
+
+    rsx! {
+        div {
+            div {
+                class: "flex items-center justify-between {bg} border-l-4 {border} hover:bg-hover rounded-lg p-3 transition-colors cursor-pointer",
+                onclick: move |e| onclick.call(e),
+
+                div { class: "flex items-center gap-3 min-w-0",
+                    span { class: icon_class, "{icon}" }
+                    div { class: "min-w-0",
+                        p { class: "font-mono text-sm truncate", "{address_short}" }
+                        p { class: "text-disabled text-xs", "{view.timestamp_display}" }
+                    }
+                }
+
+                div { class: "text-right flex items-center gap-2 flex-shrink-0",
+                    div {
+                        p { class: amount_class, "{view.amount_display}" }
+                        p { class: "text-disabled text-xs",
+                            if confirmations > 0 {
+                                if let Some(h) = height {
+                                    "{confirmations} confirmations (block {h})"
+                                } else {
+                                    "{view.confirmations_display}"
+                                }
+                            } else {
+                                "Unconfirmed"
+                            }
+                        }
+                    }
+                    if let Some(badge) = view.type_badge {
+                        span { class: "bg-surface-alt text-muted text-xs rounded-full px-2 py-0.5 border border-edge",
+                            "{badge}"
+                        }
+                    }
+                    if view.is_instant_send {
+                        span { class: "bg-dash text-foreground text-xs rounded-full px-2 py-0.5",
+                            "IS"
+                        }
+                    }
+                    if view.is_chain_locked {
+                        span { class: "bg-chainlock text-foreground text-xs rounded-full px-2 py-0.5",
+                            "CL"
+                        }
+                    }
+                }
+            }
+
+            if is_expanded {
+                div { class: "bg-surface-alt rounded-b-lg px-4 py-3 -mt-1 mb-1 border-l-4 {border} text-sm space-y-2",
+
+                    div { class: "flex justify-between",
+                        span { class: "text-muted", "Transaction ID" }
+                        span { class: "font-mono text-xs select-all", "{view.txid_hex}" }
+                    }
+
+                    if let Some(hash) = &block_hash {
+                        div { class: "flex justify-between",
+                            span { class: "text-muted", "Block Hash" }
+                            span { class: "font-mono text-xs select-all", "{hash}" }
+                        }
+                    }
+
+                    if let Some(h) = height {
+                        div { class: "flex justify-between",
+                            span { class: "text-muted", "Block Height" }
+                            span { "{h}" }
+                        }
+                    }
+
+                    div { class: "flex justify-between",
+                        span { class: "text-muted", "Date" }
+                        span { "{format_timestamp_absolute(timestamp)}" }
+                    }
+
+                    if let Some(fee) = fee {
+                        div { class: "flex justify-between",
+                            span { class: "text-muted", "Fee" }
+                            span { "{format_balance(fee, unit)}" }
+                        }
+                    }
+
+                    div {
+                        span { class: "text-muted block mb-1", "Addresses" }
+                        for addr in &addresses {
+                            p { class: "font-mono text-xs select-all", "{addr}" }
+                        }
                     }
                 }
             }
