@@ -511,6 +511,10 @@ mod tests {
         let view = format_transaction(&tx, 1000, "DASH");
         assert_eq!(view.direction_label, "Received");
         assert_eq!(view.direction_icon, "▼");
+        assert_eq!(
+            view.direction_icon_class,
+            "text-success text-lg flex-shrink-0"
+        );
         assert_eq!(view.border_class, "border-success");
         assert_eq!(view.amount_class, "text-success font-medium");
         assert_eq!(view.type_badge, None);
@@ -541,6 +545,10 @@ mod tests {
         let view = format_transaction(&tx, 1000, "DASH");
         assert_eq!(view.direction_label, "Sent");
         assert_eq!(view.direction_icon, "▲");
+        assert_eq!(
+            view.direction_icon_class,
+            "text-error text-lg flex-shrink-0"
+        );
         assert_eq!(view.border_class, "border-error");
         assert_eq!(view.amount_class, "text-error font-medium");
         assert_eq!(view.type_badge, None);
@@ -589,6 +597,10 @@ mod tests {
         let view = format_transaction(&tx, 1000, "DASH");
         assert_eq!(view.direction_label, "Internal");
         assert_eq!(view.direction_icon, "⇄");
+        assert_eq!(
+            view.direction_icon_class,
+            "text-muted text-lg flex-shrink-0"
+        );
         assert_eq!(view.border_class, "border-muted");
         assert_eq!(view.amount_class, "text-muted font-medium");
         assert_eq!(view.type_badge, None);
@@ -614,6 +626,10 @@ mod tests {
         let view = format_transaction(&tx, 1000, "DASH");
         assert_eq!(view.direction_label, "CoinJoin");
         assert_eq!(view.direction_icon, "⇄");
+        assert_eq!(
+            view.direction_icon_class,
+            "text-muted text-lg flex-shrink-0"
+        );
         assert_eq!(view.border_class, "border-muted");
         assert_eq!(view.type_badge, Some("CoinJoin"));
     }
