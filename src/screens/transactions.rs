@@ -326,6 +326,8 @@ mod tests {
                 is_instant_send: false,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             },
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([0xBB; 32]),
@@ -340,6 +342,8 @@ mod tests {
                 is_instant_send: false,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             },
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([0xCC; 32]),
@@ -354,6 +358,8 @@ mod tests {
                 is_instant_send: true,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             },
         ]
     }
@@ -431,6 +437,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         });
 
         let result = apply_filters(&txs, Some(TransactionDirection::Internal), "", "DASH");
@@ -454,6 +462,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         });
 
         let result = apply_filters(&txs, Some(TransactionDirection::CoinJoin), "", "DASH");

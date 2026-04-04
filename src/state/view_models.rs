@@ -533,6 +533,8 @@ mod tests {
             is_instant_send: true,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let view = format_transaction(&tx, 1000, "DASH");
@@ -571,6 +573,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let view = format_transaction(&tx, 1000, "DASH");
@@ -604,6 +608,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let view = format_transaction(&tx, 1000, "tDASH");
@@ -625,6 +631,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let view = format_transaction(&tx, 1000, "DASH");
@@ -654,6 +662,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let view = format_transaction(&tx, 1000, "DASH");
@@ -682,6 +692,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         assert_eq!(
@@ -800,6 +812,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         }
     }
 

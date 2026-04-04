@@ -51,7 +51,7 @@ use key_wallet_ffi::managed_wallet::{
 };
 use key_wallet_ffi::mnemonic::{mnemonic_free, mnemonic_generate};
 use key_wallet_ffi::types::{
-    FFIAccountType, FFINetwork, FFITransactionContextType, FFITransactionDirection,
+    FFIAccountType, FFINetwork, FFIOutputRole, FFITransactionContextType, FFITransactionDirection,
     FFITransactionType,
 };
 use key_wallet_ffi::utxo::{managed_wallet_get_utxos, utxo_array_free};
@@ -67,8 +67,8 @@ use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent, event_channel};
 use super::r#trait::SpvBackend;
 use super::types::{
-    Network, SyncProgress, TransactionDirection, TransactionInfo, TransactionType,
-    WalletCoreBalance,
+    InputInfo, Network, OutputInfo, OutputRole, SyncProgress, TransactionDirection,
+    TransactionInfo, TransactionType, WalletCoreBalance,
 };
 use crate::config::AppConfig;
 
@@ -609,6 +609,9 @@ impl SpvBackend for FfiBackend {
                     // Safety: label is a valid C string for the lifetime of the record.
                     let label = unsafe { extract_ffi_label(record.label) };
 
+                    let inputs = extract_ffi_inputs(record);
+                    let outputs = extract_ffi_outputs(record);
+
                     transactions.push(TransactionInfo {
                         txid,
                         amount: record.net_amount,
@@ -634,6 +637,8 @@ impl SpvBackend for FfiBackend {
                         is_instant_send,
                         is_chain_locked,
                         label,
+                        inputs,
+                        outputs,
                     });
                 }
 
@@ -1477,6 +1482,8 @@ extern "C" fn on_transaction_received(
     let has_block = block_info.block_hash != [0u8; 32] && block_info.timestamp != 0;
 
     let addresses = extract_ffi_input_addresses(r);
+    let inputs = extract_ffi_inputs(r);
+    let outputs = extract_ffi_outputs(r);
 
     // Safety: label is a valid C string for the duration of the callback.
     let label = unsafe { extract_ffi_label(r.label) };
@@ -1513,6 +1520,8 @@ extern "C" fn on_transaction_received(
             is_instant_send,
             is_chain_locked,
             label,
+            inputs,
+            outputs,
         })));
 }
 
@@ -1646,6 +1655,92 @@ fn extract_ffi_input_addresses(record: &FFITransactionRecord) -> Vec<String> {
     addrs.sort();
     addrs.dedup();
     addrs
+}
+
+/// Extract `InputInfo` entries from an `FFITransactionRecord`.
+fn extract_ffi_inputs(record: &FFITransactionRecord) -> Vec<InputInfo> {
+    if record.input_details.is_null() || record.input_details_count == 0 {
+        return Vec::new();
+    }
+    // Safety: input_details is a valid pointer to an array of input_details_count elements.
+    let details =
+        unsafe { std::slice::from_raw_parts(record.input_details, record.input_details_count) };
+    details
+        .iter()
+        .map(|d| {
+            let address = if d.address.is_null() {
+                String::new()
+            } else {
+                // Safety: address is a valid C string for the duration of the callback.
+                unsafe { CStr::from_ptr(d.address) }
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            InputInfo {
+                index: d.index,
+                value: d.value,
+                address,
+            }
+        })
+        .collect()
+}
+
+/// Extract `OutputInfo` entries from an `FFITransactionRecord`.
+///
+/// The FFI `OutputDetail` only carries index and role. Value and address are
+/// extracted from the consensus-serialized transaction bytes embedded in the
+/// record.
+fn extract_ffi_outputs(record: &FFITransactionRecord) -> Vec<OutputInfo> {
+    if record.output_details.is_null() || record.output_details_count == 0 {
+        return Vec::new();
+    }
+    // Safety: output_details is a valid pointer to an array of output_details_count elements.
+    let details =
+        unsafe { std::slice::from_raw_parts(record.output_details, record.output_details_count) };
+
+    // Attempt to deserialize the raw transaction so we can read output values/addresses.
+    let tx: Option<dashcore::blockdata::transaction::Transaction> =
+        if !record.tx_data.is_null() && record.tx_len > 0 {
+            // Safety: tx_data is a valid pointer for tx_len bytes.
+            let bytes = unsafe { std::slice::from_raw_parts(record.tx_data, record.tx_len) };
+            dashcore::consensus::deserialize(bytes).ok()
+        } else {
+            None
+        };
+
+    details
+        .iter()
+        .map(|d| {
+            let (value, address) = tx
+                .as_ref()
+                .and_then(|t| t.output.get(d.index as usize))
+                .map(|o| {
+                    let addr = dashcore::Address::from_script(
+                        &o.script_pubkey,
+                        dashcore::Network::Mainnet,
+                    )
+                    .ok()
+                    .map_or_else(String::new, |a| a.to_string());
+                    (o.value, addr)
+                })
+                .unwrap_or((0, String::new()));
+            OutputInfo {
+                index: d.index,
+                value,
+                address,
+                role: ffi_output_role_to_role(d.role),
+            }
+        })
+        .collect()
+}
+
+fn ffi_output_role_to_role(role: FFIOutputRole) -> OutputRole {
+    match role {
+        FFIOutputRole::Received => OutputRole::Received,
+        FFIOutputRole::Change => OutputRole::Change,
+        FFIOutputRole::Sent => OutputRole::Sent,
+        FFIOutputRole::Unspendable => OutputRole::Unspendable,
+    }
 }
 
 #[cfg(test)]

@@ -242,6 +242,8 @@ impl SpvBackend for MockBackend {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         self.transactions.lock().unwrap().push(record.clone());
@@ -297,6 +299,8 @@ pub fn mock_transaction(
         is_instant_send: false,
         is_chain_locked: false,
         label: None,
+        inputs: Vec::new(),
+        outputs: Vec::new(),
     }
 }
 

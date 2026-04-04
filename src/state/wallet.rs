@@ -97,6 +97,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         }))
     }
 
@@ -120,6 +122,8 @@ mod tests {
             is_instant_send,
             is_chain_locked,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         }))
     }
 
@@ -194,6 +198,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: true,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         }));
         state.apply_event(&event);
 
@@ -222,6 +228,8 @@ mod tests {
             is_instant_send: true,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         })));
 
         assert_eq!(state.transactions.len(), 1);
@@ -279,6 +287,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: Some("my mix".into()),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         })));
 
         // Status update with hardcoded Incoming/Standard fallbacks (amount=0)
@@ -333,6 +343,8 @@ mod tests {
                 is_instant_send: false,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             },
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([2u8; 32]),
@@ -347,6 +359,8 @@ mod tests {
                 is_instant_send: false,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             },
         ];
         state.set_transactions(txs);
@@ -379,6 +393,8 @@ mod tests {
                 is_instant_send: false,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             },
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([2u8; 32]),
@@ -393,6 +409,8 @@ mod tests {
                 is_instant_send: false,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             },
         ];
         state.set_transactions(txs);
@@ -450,6 +468,8 @@ mod tests {
                 is_instant_send: false,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             },
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([2u8; 32]),
@@ -464,6 +484,8 @@ mod tests {
                 is_instant_send: false,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             },
         ];
         state.set_transactions(txs);
@@ -540,6 +562,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: Some("payment for coffee".into()),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         })));
 
         assert_eq!(state.transactions.len(), 1);

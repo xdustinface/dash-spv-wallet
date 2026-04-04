@@ -14,7 +14,9 @@ use dash_spv::sync::SyncEvent;
 use dash_spv::{ClientConfig, DashSpvClient, MempoolStrategy};
 use dashcore::hashes::Hash;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
-use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::managed_account::transaction_record::{
+    OutputRole as UpstreamOutputRole, TransactionRecord,
+};
 use key_wallet::mnemonic::Language;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -34,8 +36,8 @@ use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent, event_channel};
 use super::r#trait::SpvBackend;
 use super::types::{
-    Network, SyncProgress, TransactionDirection, TransactionInfo, TransactionType,
-    WalletCoreBalance,
+    InputInfo, Network, OutputInfo, OutputRole, SyncProgress, TransactionDirection,
+    TransactionInfo, TransactionType, WalletCoreBalance,
 };
 use crate::config::AppConfig;
 
@@ -687,6 +689,8 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
                 is_instant_send,
                 is_chain_locked,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             }))
         }
         WalletEvent::BalanceUpdated {
@@ -715,6 +719,8 @@ impl TransactionInfo {
         let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
             extract_context_fields(&record.context);
         let addresses = extract_record_addresses(record);
+        let inputs = extract_record_inputs(record);
+        let outputs = extract_record_outputs(record);
         TransactionInfo {
             txid: record.txid,
             amount: record.net_amount,
@@ -728,6 +734,8 @@ impl TransactionInfo {
             is_instant_send,
             is_chain_locked,
             label: record.label.clone(),
+            inputs,
+            outputs,
         }
     }
 }
@@ -742,6 +750,53 @@ fn extract_record_addresses(record: &TransactionRecord) -> Vec<String> {
     addrs.sort();
     addrs.dedup();
     addrs
+}
+
+/// Build `InputInfo` entries from a transaction record's input details.
+fn extract_record_inputs(record: &TransactionRecord) -> Vec<InputInfo> {
+    record
+        .input_details
+        .iter()
+        .map(|d| InputInfo {
+            index: d.index,
+            value: d.value,
+            address: d.address.to_string(),
+        })
+        .collect()
+}
+
+/// Build `OutputInfo` entries from a transaction record's output details,
+/// enriching them with value and address from the raw transaction outputs.
+fn extract_record_outputs(record: &TransactionRecord) -> Vec<OutputInfo> {
+    record
+        .output_details
+        .iter()
+        .map(|d| {
+            let tx_out = record.transaction.output.get(d.index as usize);
+            let value = tx_out.map_or(0, |o| o.value);
+            let address = tx_out
+                .and_then(|o| {
+                    dashcore::Address::from_script(&o.script_pubkey, dashcore::Network::Mainnet)
+                        .ok()
+                })
+                .map_or_else(String::new, |a| a.to_string());
+            OutputInfo {
+                index: d.index,
+                value,
+                address,
+                role: map_output_role(d.role),
+            }
+        })
+        .collect()
+}
+
+fn map_output_role(role: UpstreamOutputRole) -> OutputRole {
+    match role {
+        UpstreamOutputRole::Received => OutputRole::Received,
+        UpstreamOutputRole::Change => OutputRole::Change,
+        UpstreamOutputRole::Sent => OutputRole::Sent,
+        UpstreamOutputRole::Unspendable => OutputRole::Unspendable,
+    }
 }
 
 /// Extract UI-relevant fields from a `TransactionContext`.
