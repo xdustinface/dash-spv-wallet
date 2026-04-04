@@ -4,8 +4,7 @@ use crate::backend::types::{TransactionDirection, TransactionInfo};
 use crate::config::AppConfig;
 use crate::state::network::NetworkInfo;
 use crate::state::view_models::{
-    TransactionView, format_address_responsive, format_balance, format_timestamp_absolute,
-    format_transaction, matches_search,
+    TransactionView, format_address_responsive, format_transaction, matches_search,
 };
 use crate::state::wallet::WalletState;
 
@@ -161,11 +160,7 @@ pub fn Transactions() -> Element {
                                     confirmations,
                                     height: tx.height,
                                     is_expanded,
-                                    block_hash: tx.block_hash,
-                                    timestamp: tx.timestamp,
-                                    fee: tx.fee,
                                     addresses: tx.addresses.clone(),
-                                    unit,
                                     onclick: move |_| {
                                         if *expanded_txid.read() == Some(txid) {
                                             expanded_txid.set(None);
@@ -207,11 +202,7 @@ fn TransactionRow(
     confirmations: u32,
     height: Option<u32>,
     is_expanded: bool,
-    block_hash: Option<dashcore::BlockHash>,
-    timestamp: u64,
-    fee: Option<u64>,
     addresses: Vec<String>,
-    unit: &'static str,
     onclick: EventHandler<MouseEvent>,
 ) -> Element {
     let border = view.border_class;
@@ -274,14 +265,14 @@ fn TransactionRow(
                         span { class: "font-mono text-xs select-all", "{view.txid_hex}" }
                     }
 
-                    if let Some(hash) = &block_hash {
+                    if let Some(hash) = &view.block_hash_display {
                         div { class: "flex justify-between",
                             span { class: "text-muted", "Block Hash" }
                             span { class: "font-mono text-xs select-all", "{hash}" }
                         }
                     }
 
-                    if let Some(h) = height {
+                    if let Some(h) = &view.height_display {
                         div { class: "flex justify-between",
                             span { class: "text-muted", "Block Height" }
                             span { "{h}" }
@@ -290,13 +281,13 @@ fn TransactionRow(
 
                     div { class: "flex justify-between",
                         span { class: "text-muted", "Date" }
-                        span { "{format_timestamp_absolute(timestamp)}" }
+                        span { "{view.absolute_date}" }
                     }
 
-                    if let Some(fee) = fee {
+                    if let Some(fee) = &view.fee_display {
                         div { class: "flex justify-between",
                             span { class: "text-muted", "Fee" }
-                            span { "{format_balance(fee, unit)}" }
+                            span { "{fee}" }
                         }
                     }
 

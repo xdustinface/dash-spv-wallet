@@ -226,7 +226,11 @@ pub struct TransactionView {
     pub type_badge: Option<&'static str>,
     pub amount_display: String,
     pub timestamp_display: String,
+    pub absolute_date: String,
     pub confirmations_display: String,
+    pub fee_display: Option<String>,
+    pub block_hash_display: Option<String>,
+    pub height_display: Option<String>,
     pub is_instant_send: bool,
     pub is_chain_locked: bool,
 }
@@ -291,12 +295,17 @@ pub fn format_transaction(
 
     let amount_display = format_amount(tx.amount, unit);
     let timestamp_display = format_timestamp(tx.timestamp);
+    let absolute_date = format_timestamp_absolute(tx.timestamp);
     let confirmations = tx.confirmations(current_height);
     let confirmations_display = if confirmations == 0 {
         "Unconfirmed".to_string()
     } else {
         format!("{confirmations} confirmations")
     };
+    let fee_display = tx.fee.map(|f| format_balance(f, unit));
+    let block_hash_display = tx.block_hash.map(|h| h.to_string());
+    let height_display = tx.height.map(|h| h.to_string());
+
     TransactionView {
         txid_hex,
         direction_label,
@@ -307,7 +316,11 @@ pub fn format_transaction(
         type_badge,
         amount_display,
         timestamp_display,
+        absolute_date,
         confirmations_display,
+        fee_display,
+        block_hash_display,
+        height_display,
         is_instant_send: tx.is_instant_send,
         is_chain_locked: tx.is_chain_locked,
     }
@@ -520,6 +533,10 @@ mod tests {
         assert_eq!(view.type_badge, None);
         assert_eq!(view.amount_display, "+1.0 DASH");
         assert_eq!(view.confirmations_display, "7 confirmations");
+        assert_eq!(view.absolute_date, "2023-11-14 22:13:20");
+        assert_eq!(view.fee_display, None);
+        assert_eq!(view.block_hash_display, None);
+        assert_eq!(view.height_display, Some("994".to_string()));
         assert!(view.is_instant_send);
         assert!(!view.is_chain_locked);
         assert_eq!(view.txid_hex.len(), 64);
@@ -554,6 +571,8 @@ mod tests {
         assert_eq!(view.type_badge, None);
         assert_eq!(view.amount_display, "-0.5 DASH");
         assert_eq!(view.confirmations_display, "Unconfirmed");
+        assert_eq!(view.fee_display, Some("0.00000226 DASH".to_string()));
+        assert_eq!(view.height_display, None);
     }
 
     #[test]

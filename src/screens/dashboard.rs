@@ -3,9 +3,7 @@ use dioxus::prelude::*;
 use crate::config::AppConfig;
 use crate::router::Route;
 use crate::state::network::NetworkInfo;
-use crate::state::view_models::{
-    format_address_responsive, format_balance, format_timestamp_absolute, format_transaction,
-};
+use crate::state::view_models::{format_address_responsive, format_balance, format_transaction};
 use crate::state::wallet::WalletState;
 
 const DASHBOARD_TX_LIMIT: usize = 5;
@@ -131,17 +129,17 @@ pub fn Dashboard() -> Element {
 
                                                 div { class: "flex justify-between",
                                                     span { class: "text-muted", "Transaction ID" }
-                                                    span { class: "font-mono text-xs select-all", "{tx.txid}" }
+                                                    span { class: "font-mono text-xs select-all", "{view.txid_hex}" }
                                                 }
 
-                                                if let Some(hash) = &tx.block_hash {
+                                                if let Some(hash) = &view.block_hash_display {
                                                     div { class: "flex justify-between",
                                                         span { class: "text-muted", "Block Hash" }
                                                         span { class: "font-mono text-xs select-all", "{hash}" }
                                                     }
                                                 }
 
-                                                if let Some(h) = tx.height {
+                                                if let Some(h) = &view.height_display {
                                                     div { class: "flex justify-between",
                                                         span { class: "text-muted", "Block Height" }
                                                         span { "{h}" }
@@ -150,13 +148,13 @@ pub fn Dashboard() -> Element {
 
                                                 div { class: "flex justify-between",
                                                     span { class: "text-muted", "Date" }
-                                                    span { "{format_timestamp_absolute(tx.timestamp)}" }
+                                                    span { "{view.absolute_date}" }
                                                 }
 
-                                                if let Some(fee) = tx.fee {
+                                                if let Some(fee) = &view.fee_display {
                                                     div { class: "flex justify-between",
                                                         span { class: "text-muted", "Fee" }
-                                                        span { "{format_balance(fee, unit)}" }
+                                                        span { "{fee}" }
                                                     }
                                                 }
 
