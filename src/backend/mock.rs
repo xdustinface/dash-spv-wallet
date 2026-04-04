@@ -10,8 +10,8 @@ use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent};
 use super::r#trait::SpvBackend;
 use super::types::{
-    Network, SyncProgress, TransactionDirection, TransactionInfo, TransactionType,
-    WalletCoreBalance,
+    InputInfo, Network, OutputInfo, OutputRole, SyncProgress, TransactionDirection,
+    TransactionInfo, TransactionType, WalletCoreBalance,
 };
 
 /// Builder for configuring a `MockBackend` instance.
@@ -277,12 +277,15 @@ fn mock_txid(index: u32) -> [u8; 32] {
     txid
 }
 
-/// Creates a test transaction record.
+/// Creates a test transaction record with sample I/O data.
 pub fn mock_transaction(
     index: u32,
     direction: TransactionDirection,
     amount: u64,
 ) -> TransactionInfo {
+    let addr = mock_address(index);
+    let change_addr = mock_address(index + 100);
+    let (inputs, outputs) = mock_io(direction, amount, &addr, &change_addr);
     TransactionInfo {
         txid: dashcore::Txid::from_byte_array(mock_txid(index)),
         amount: match direction {
@@ -294,13 +297,69 @@ pub fn mock_transaction(
         timestamp: 1700000000 + (index as u64 * 600),
         height: Some(1000 + index),
         fee: None,
-        addresses: vec![mock_address(index)],
+        addresses: vec![addr],
         block_hash: None,
         is_instant_send: false,
         is_chain_locked: false,
         label: None,
-        inputs: Vec::new(),
-        outputs: Vec::new(),
+        inputs,
+        outputs,
+    }
+}
+
+/// Generate representative input/output entries for a mock transaction.
+fn mock_io(
+    direction: TransactionDirection,
+    amount: u64,
+    addr: &str,
+    change_addr: &str,
+) -> (Vec<InputInfo>, Vec<OutputInfo>) {
+    match direction {
+        TransactionDirection::Incoming => {
+            let inputs = vec![InputInfo {
+                index: 0,
+                value: amount + 1000,
+                address: "XexternalSender0000000000000000001".into(),
+            }];
+            let outputs = vec![
+                OutputInfo {
+                    index: 0,
+                    value: amount,
+                    address: addr.to_string(),
+                    role: OutputRole::Received,
+                },
+                OutputInfo {
+                    index: 1,
+                    value: 1000,
+                    address: "XexternalSender0000000000000000001".into(),
+                    role: OutputRole::Sent,
+                },
+            ];
+            (inputs, outputs)
+        }
+        TransactionDirection::Outgoing => {
+            let inputs = vec![InputInfo {
+                index: 0,
+                value: amount + 5000,
+                address: change_addr.to_string(),
+            }];
+            let outputs = vec![
+                OutputInfo {
+                    index: 0,
+                    value: amount,
+                    address: addr.to_string(),
+                    role: OutputRole::Sent,
+                },
+                OutputInfo {
+                    index: 1,
+                    value: 5000,
+                    address: change_addr.to_string(),
+                    role: OutputRole::Change,
+                },
+            ];
+            (inputs, outputs)
+        }
+        _ => (Vec::new(), Vec::new()),
     }
 }
 
