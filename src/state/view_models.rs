@@ -284,7 +284,7 @@ pub fn format_transaction(
             ),
             TransactionDirection::CoinJoin => (
                 "CoinJoin",
-                "\u{21c4}",
+                "\u{21cb}",
                 "text-muted text-lg flex-shrink-0",
                 "border-muted",
                 "text-muted font-medium",
@@ -644,7 +644,7 @@ mod tests {
 
         let view = format_transaction(&tx, 1000, "DASH");
         assert_eq!(view.direction_label, "CoinJoin");
-        assert_eq!(view.direction_icon, "⇄");
+        assert_eq!(view.direction_icon, "⇋");
         assert_eq!(
             view.direction_icon_class,
             "text-muted text-lg flex-shrink-0"
