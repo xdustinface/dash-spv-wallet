@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::{
     Mutex,
     atomic::{AtomicBool, AtomicU32, Ordering},
@@ -249,6 +250,33 @@ impl SpvBackend for MockBackend {
         self.emit(SpvEvent::TransactionReceived(Box::new(record)));
 
         Ok(txid_bytes)
+    }
+
+    async fn set_transaction_label(&self, txid: &str, label: &str) -> BackendResult<()> {
+        self.require_wallet()?;
+
+        let txid = dashcore::Txid::from_str(txid)
+            .map_err(|e| BackendError::Internal(format!("invalid txid: {e}")))?;
+
+        if !label.is_empty() && label.len() > 256 {
+            return Err(BackendError::Internal(
+                "Label exceeds 256 bytes".to_string(),
+            ));
+        }
+
+        let mut transactions = self.transactions.lock().unwrap();
+        let tx = transactions
+            .iter_mut()
+            .find(|t| t.txid == txid)
+            .ok_or_else(|| BackendError::Internal("transaction not found".to_string()))?;
+
+        tx.label = if label.is_empty() {
+            None
+        } else {
+            Some(label.to_owned())
+        };
+
+        Ok(())
     }
 
     fn cache_size(&self) -> BackendResult<u64> {
@@ -625,5 +653,106 @@ mod tests {
     async fn clear_cache_is_noop() {
         let backend = MockBackend::builder(Network::Testnet).build();
         backend.clear_cache().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn set_transaction_label_success() {
+        let txs = vec![mock_transaction(0, TransactionDirection::Incoming, 100_000)];
+        let backend = MockBackend::builder(Network::Testnet)
+            .with_transactions(txs)
+            .build();
+        backend.create_wallet(TEST_MNEMONIC_12).await.unwrap();
+
+        let txid = backend.get_transactions().unwrap()[0].txid.to_string();
+
+        backend
+            .set_transaction_label(&txid, "coffee payment")
+            .await
+            .unwrap();
+
+        let tx = &backend.get_transactions().unwrap()[0];
+        assert_eq!(tx.label, Some("coffee payment".into()));
+    }
+
+    #[tokio::test]
+    async fn set_transaction_label_clear() {
+        let mut tx = mock_transaction(0, TransactionDirection::Incoming, 100_000);
+        tx.label = Some("old label".into());
+        let backend = MockBackend::builder(Network::Testnet)
+            .with_transactions(vec![tx])
+            .build();
+        backend.create_wallet(TEST_MNEMONIC_12).await.unwrap();
+
+        let txid = backend.get_transactions().unwrap()[0].txid.to_string();
+
+        backend.set_transaction_label(&txid, "").await.unwrap();
+
+        let tx = &backend.get_transactions().unwrap()[0];
+        assert_eq!(tx.label, None);
+    }
+
+    #[tokio::test]
+    async fn set_transaction_label_too_long() {
+        let txs = vec![mock_transaction(0, TransactionDirection::Incoming, 100_000)];
+        let backend = MockBackend::builder(Network::Testnet)
+            .with_transactions(txs)
+            .build();
+        backend.create_wallet(TEST_MNEMONIC_12).await.unwrap();
+
+        let txid = backend.get_transactions().unwrap()[0].txid.to_string();
+        let long_label = "x".repeat(257);
+
+        let err = backend
+            .set_transaction_label(&txid, &long_label)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, BackendError::Internal(_)));
+    }
+
+    #[tokio::test]
+    async fn set_transaction_label_not_found() {
+        let backend = MockBackend::builder(Network::Testnet).build();
+        backend.create_wallet(TEST_MNEMONIC_12).await.unwrap();
+
+        let fake_txid = "0000000000000000000000000000000000000000000000000000000000000001";
+        let err = backend
+            .set_transaction_label(fake_txid, "label")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, BackendError::Internal(_)));
+    }
+
+    #[tokio::test]
+    async fn set_transaction_label_no_wallet() {
+        let backend = MockBackend::builder(Network::Testnet).build();
+
+        let err = backend
+            .set_transaction_label(
+                "0000000000000000000000000000000000000000000000000000000000000001",
+                "label",
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(err, BackendError::NoWallet);
+    }
+
+    #[tokio::test]
+    async fn set_transaction_label_max_length() {
+        let txs = vec![mock_transaction(0, TransactionDirection::Incoming, 100_000)];
+        let backend = MockBackend::builder(Network::Testnet)
+            .with_transactions(txs)
+            .build();
+        backend.create_wallet(TEST_MNEMONIC_12).await.unwrap();
+
+        let txid = backend.get_transactions().unwrap()[0].txid.to_string();
+        let max_label = "x".repeat(256);
+
+        backend
+            .set_transaction_label(&txid, &max_label)
+            .await
+            .unwrap();
+
+        let tx = &backend.get_transactions().unwrap()[0];
+        assert_eq!(tx.label, Some(max_label));
     }
 }

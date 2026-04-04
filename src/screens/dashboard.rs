@@ -118,6 +118,9 @@ pub fn Dashboard() -> Element {
                                                 }
                                                 div { class: "min-w-0",
                                                     p { class: "font-mono text-sm truncate", "{address_short}" }
+                                                    if let Some(label) = &view.label {
+                                                        p { class: "text-muted text-xs truncate", "{label}" }
+                                                    }
                                                     p { class: "text-disabled text-xs", "{view.timestamp_display}" }
                                                 }
                                             }
@@ -153,6 +156,13 @@ pub fn Dashboard() -> Element {
                                                 div { class: "flex justify-between",
                                                     span { class: "text-muted", "Transaction ID" }
                                                     span { class: "font-mono text-xs select-all", "{tx.txid}" }
+                                                }
+
+                                                if let Some(label) = &tx.label {
+                                                    div { class: "flex justify-between",
+                                                        span { class: "text-muted", "Label" }
+                                                        span { "{label}" }
+                                                    }
                                                 }
 
                                                 if let Some(hash) = &tx.block_hash {

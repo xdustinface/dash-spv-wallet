@@ -44,7 +44,8 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use key_wallet_ffi::error::FFIError as WalletFFIError;
 use key_wallet_ffi::managed_account::{
     FFITransactionRecord, managed_core_account_free, managed_core_account_free_transactions,
-    managed_core_account_get_transactions, managed_wallet_get_account,
+    managed_core_account_get_transactions, managed_core_account_set_transaction_label,
+    managed_wallet_get_account,
 };
 use key_wallet_ffi::managed_wallet::{
     managed_wallet_get_next_bip44_change_address, managed_wallet_info_free,
@@ -655,6 +656,100 @@ impl SpvBackend for FfiBackend {
             });
 
             Ok(transactions)
+        })
+        .join()
+        .map_err(|_| BackendError::Internal("FFI thread panicked".into()))?
+    }
+
+    async fn set_transaction_label(&self, txid: &str, label: &str) -> BackendResult<()> {
+        let client_usize = self.require_client()?;
+        let txid_parsed = dashcore::Txid::from_str(txid)
+            .map_err(|e| BackendError::Internal(format!("invalid txid: {e}")))?;
+        let txid_bytes = txid_parsed.to_byte_array();
+        let label = label.to_owned();
+
+        std::thread::spawn(move || {
+            let client_ptr = client_usize as *mut FFIDashSpvClient;
+
+            // Safety: client_ptr was cast from a valid pointer.
+            let wm = unsafe { dash_spv_ffi_client_get_wallet_manager(client_ptr) };
+            if wm.is_null() {
+                return Err(BackendError::Internal(get_last_ffi_error()));
+            }
+            let wm_typed = wm as *const key_wallet_ffi::FFIWalletManager;
+
+            let mut wallet_ids_ptr: *mut u8 = std::ptr::null_mut();
+            let mut count: usize = 0;
+            let mut error = WalletFFIError::success();
+
+            let ok = unsafe {
+                wallet_manager_get_wallet_ids(wm_typed, &mut wallet_ids_ptr, &mut count, &mut error)
+            };
+
+            if !ok || count == 0 {
+                unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+                return Err(BackendError::NoWallet);
+            }
+
+            let mut wallet_id = [0u8; 32];
+            unsafe {
+                std::ptr::copy_nonoverlapping(wallet_ids_ptr, wallet_id.as_mut_ptr(), 32);
+                wallet_manager_free_wallet_ids(wallet_ids_ptr, count);
+            }
+
+            let account_result = unsafe {
+                managed_wallet_get_account(
+                    wm_typed,
+                    wallet_id.as_ptr(),
+                    FFIAccountType::Bip44Standard,
+                    0,
+                    &mut error,
+                )
+            };
+
+            if account_result.account.is_null() {
+                unsafe { dash_spv_ffi_wallet_manager_free(wm) };
+                return Err(BackendError::Internal(format!(
+                    "failed to get account: {}",
+                    error.message_string()
+                )));
+            }
+
+            let account_ptr = account_result.account;
+
+            let label_c = if label.is_empty() {
+                None
+            } else {
+                Some(
+                    CString::new(label.as_bytes())
+                        .map_err(|e| BackendError::Internal(format!("invalid label: {e}")))?,
+                )
+            };
+            let label_ptr = label_c.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
+
+            // Safety: account_ptr and txid_bytes are valid.
+            let ok = unsafe {
+                managed_core_account_set_transaction_label(
+                    account_ptr,
+                    txid_bytes.as_ptr(),
+                    label_ptr,
+                    &mut error,
+                )
+            };
+
+            unsafe {
+                managed_core_account_free(account_ptr);
+                dash_spv_ffi_wallet_manager_free(wm);
+            }
+
+            if !ok {
+                return Err(BackendError::Internal(format!(
+                    "failed to set label: {}",
+                    error.message_string()
+                )));
+            }
+
+            Ok(())
         })
         .join()
         .map_err(|_| BackendError::Internal("FFI thread panicked".into()))?

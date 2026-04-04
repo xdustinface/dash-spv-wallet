@@ -225,6 +225,7 @@ pub struct TransactionView {
     pub address_short: String,
     pub is_instant_send: bool,
     pub is_chain_locked: bool,
+    pub label: Option<String>,
 }
 
 /// Convert a transaction record to a display-ready view.
@@ -263,6 +264,7 @@ pub fn format_transaction(
         address_short,
         is_instant_send: tx.is_instant_send,
         is_chain_locked: tx.is_chain_locked,
+        label: tx.label.clone(),
     }
 }
 
@@ -534,6 +536,48 @@ mod tests {
 
         let view = format_transaction(&tx, 0, "DASH");
         assert_eq!(view.address_short, "");
+    }
+
+    #[test]
+    fn format_transaction_with_label() {
+        let tx = TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xEE; 32]),
+            amount: 50_000_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
+            timestamp: 1700000000,
+            height: Some(500),
+            fee: None,
+            addresses: vec!["Xaddr".into()],
+            block_hash: None,
+            is_instant_send: false,
+            is_chain_locked: false,
+            label: Some("coffee payment".into()),
+        };
+
+        let view = format_transaction(&tx, 1000, "DASH");
+        assert_eq!(view.label, Some("coffee payment".into()));
+    }
+
+    #[test]
+    fn format_transaction_without_label() {
+        let tx = TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([0xFF; 32]),
+            amount: 50_000_000,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
+            timestamp: 1700000000,
+            height: Some(500),
+            fee: None,
+            addresses: vec!["Xaddr".into()],
+            block_hash: None,
+            is_instant_send: false,
+            is_chain_locked: false,
+            label: None,
+        };
+
+        let view = format_transaction(&tx, 1000, "DASH");
+        assert_eq!(view.label, None);
     }
 
     // -- parse_dash_amount --
