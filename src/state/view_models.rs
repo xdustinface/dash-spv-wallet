@@ -214,6 +214,14 @@ pub fn matches_search(tx: &TransactionInfo, query: &str, unit: &str) -> bool {
             .is_some_and(|l| l.to_lowercase().contains(&q))
 }
 
+struct DirectionStyle {
+    label: &'static str,
+    icon: &'static str,
+    icon_class: &'static str,
+    border_class: &'static str,
+    amount_class: &'static str,
+}
+
 /// Display-ready transaction info.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TransactionView {
@@ -266,37 +274,36 @@ pub fn format_transaction(
 ) -> TransactionView {
     let txid_hex = tx.txid.to_string();
 
-    let (direction_label, direction_icon, direction_icon_class, border_class, amount_class) =
-        match tx.direction {
-            TransactionDirection::Incoming => (
-                "Received",
-                "\u{25bc}",
-                "text-success text-lg flex-shrink-0",
-                "border-success",
-                "text-success font-medium",
-            ),
-            TransactionDirection::Outgoing => (
-                "Sent",
-                "\u{25b2}",
-                "text-error text-lg flex-shrink-0",
-                "border-error",
-                "text-error font-medium",
-            ),
-            TransactionDirection::Internal => (
-                "Internal",
-                "\u{21c4}",
-                "text-muted text-lg flex-shrink-0",
-                "border-muted",
-                "text-muted font-medium",
-            ),
-            TransactionDirection::CoinJoin => (
-                "CoinJoin",
-                "\u{21cb}",
-                "text-muted text-lg flex-shrink-0",
-                "border-muted",
-                "text-muted font-medium",
-            ),
-        };
+    let style = match tx.direction {
+        TransactionDirection::Incoming => DirectionStyle {
+            label: "Received",
+            icon: "\u{25bc}",
+            icon_class: "text-success text-lg flex-shrink-0",
+            border_class: "border-success",
+            amount_class: "text-success font-medium",
+        },
+        TransactionDirection::Outgoing => DirectionStyle {
+            label: "Sent",
+            icon: "\u{25b2}",
+            icon_class: "text-error text-lg flex-shrink-0",
+            border_class: "border-error",
+            amount_class: "text-error font-medium",
+        },
+        TransactionDirection::Internal => DirectionStyle {
+            label: "Internal",
+            icon: "\u{21c4}",
+            icon_class: "text-muted text-lg flex-shrink-0",
+            border_class: "border-muted",
+            amount_class: "text-muted font-medium",
+        },
+        TransactionDirection::CoinJoin => DirectionStyle {
+            label: "CoinJoin",
+            icon: "\u{21cb}",
+            icon_class: "text-muted text-lg flex-shrink-0",
+            border_class: "border-muted",
+            amount_class: "text-muted font-medium",
+        },
+    };
 
     let type_badge = type_badge_label(tx.transaction_type, tx.direction);
 
@@ -315,11 +322,11 @@ pub fn format_transaction(
 
     TransactionView {
         txid_hex,
-        direction_label,
-        direction_icon,
-        direction_icon_class,
-        border_class,
-        amount_class,
+        direction_label: style.label,
+        direction_icon: style.icon,
+        direction_icon_class: style.icon_class,
+        border_class: style.border_class,
+        amount_class: style.amount_class,
         type_badge,
         amount_display,
         timestamp_display,
