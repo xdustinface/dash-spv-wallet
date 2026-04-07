@@ -236,9 +236,16 @@ pub struct TransactionView {
 }
 
 /// Derive the type badge label for non-standard transaction types.
-fn type_badge_label(tx_type: TransactionType) -> Option<&'static str> {
+///
+/// Returns `None` when the badge would be redundant with the direction label
+/// (e.g., CoinJoin direction already shows "CoinJoin").
+fn type_badge_label(
+    tx_type: TransactionType,
+    direction: TransactionDirection,
+) -> Option<&'static str> {
     match tx_type {
         TransactionType::Standard => None,
+        TransactionType::CoinJoin if direction == TransactionDirection::CoinJoin => None,
         TransactionType::CoinJoin => Some("CoinJoin"),
         TransactionType::Coinbase => Some("Coinbase"),
         TransactionType::AssetLock => Some("AssetLock"),
@@ -291,7 +298,7 @@ pub fn format_transaction(
             ),
         };
 
-    let type_badge = type_badge_label(tx.transaction_type);
+    let type_badge = type_badge_label(tx.transaction_type, tx.direction);
 
     let amount_display = format_amount(tx.amount, unit);
     let timestamp_display = format_timestamp(tx.timestamp);
@@ -650,7 +657,7 @@ mod tests {
             "text-muted text-lg flex-shrink-0"
         );
         assert_eq!(view.border_class, "border-muted");
-        assert_eq!(view.type_badge, Some("CoinJoin"));
+        assert_eq!(view.type_badge, None);
     }
 
     #[test]
