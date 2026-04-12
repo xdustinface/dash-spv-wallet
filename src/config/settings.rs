@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::{fmt, fs, io};
 
@@ -218,6 +218,11 @@ impl AppConfig {
         Self::load_with_cli(Cli::parse(), &paths::config_file_path())
     }
 
+    /// Returns the default production config file path.
+    pub(crate) fn default_config_path() -> PathBuf {
+        paths::config_file_path()
+    }
+
     /// Load configuration from `config_path`, applying CLI overrides from `cli`.
     fn load_with_cli(cli: Cli, config_path: &std::path::Path) -> Result<Self, ConfigError> {
         let mut config = match fs::read_to_string(config_path) {
@@ -225,7 +230,7 @@ impl AppConfig {
                 .map_err(|e: toml::de::Error| ConfigError::Parse(e.to_string()))?,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 let default_config = Self::default();
-                let _ = default_config.save();
+                let _ = default_config.save(config_path);
                 default_config
             }
             Err(e) => return Err(ConfigError::Io(e)),
@@ -275,15 +280,14 @@ impl AppConfig {
         Ok(config)
     }
 
-    /// Save the current configuration to the TOML file.
-    pub fn save(&self) -> Result<(), ConfigError> {
-        let path = paths::config_file_path();
+    /// Save the current configuration to `path`.
+    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(ConfigError::Io)?;
         }
         let contents =
             toml::to_string_pretty(self).map_err(|e| ConfigError::Parse(e.to_string()))?;
-        fs::write(&path, contents).map_err(ConfigError::Io)
+        fs::write(path, contents).map_err(ConfigError::Io)
     }
 
     /// Returns the resolved wallet directory.
@@ -683,6 +687,11 @@ mod tests {
 
     #[test]
     fn save_writes_valid_toml() {
+        let tmp = std::env::temp_dir().join("dash-spv-ui-test-save");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let config_path = tmp.join("config.toml");
+
         let config = AppConfig {
             network: Network::Regtest,
             data_dir: PathBuf::from("/tmp/data"),
@@ -694,16 +703,18 @@ mod tests {
             ..Default::default()
         };
 
-        config.save().unwrap();
+        config.save(&config_path).unwrap();
 
-        let path = paths::config_file_path();
-        let restored: AppConfig = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let restored: AppConfig =
+            toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
         assert_eq!(restored.network, Network::Regtest);
         assert!(restored.dev_mode);
         assert_eq!(restored.log_level, "debug");
         assert_eq!(restored.window_width, 800);
         assert_eq!(restored.window_height, 600);
         assert_eq!(restored.wallet_dir, Some(PathBuf::from("/tmp/wallets")));
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

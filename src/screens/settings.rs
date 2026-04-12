@@ -92,7 +92,7 @@ pub fn Settings() -> Element {
         cfg.log_level = log_level();
         cfg.network_config_mut().mempool_strategy = mempool_strategy();
 
-        match cfg.save() {
+        match cfg.save(&AppConfig::default_config_path()) {
             Ok(()) => save_status.set(Some(Ok(()))),
             Err(e) => save_status.set(Some(Err(e.to_string()))),
         }

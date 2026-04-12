@@ -70,7 +70,7 @@ pub fn AppLayout() -> Element {
         let mut cfg = config.write();
         cfg.window_width = size.width;
         cfg.window_height = size.height;
-        let _ = cfg.save();
+        let _ = cfg.save(&AppConfig::default_config_path());
     });
 
     rsx! {

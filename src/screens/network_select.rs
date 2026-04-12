@@ -25,7 +25,7 @@ pub fn NetworkSelect() -> Element {
             app_state.write().select_network(network);
             let mut cfg = config.write();
             cfg.network = network;
-            let _ = cfg.save();
+            let _ = cfg.save(&AppConfig::default_config_path());
             navigator.push(Route::WalletChoice {});
         }
     };
