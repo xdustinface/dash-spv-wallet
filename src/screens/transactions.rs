@@ -325,8 +325,7 @@ fn TransactionRow(
                         {
                             let input_count = inputs.len();
                             let collapse_threshold = 5;
-                            let show_all_inputs = inputs_expanded
-                                || input_count <= collapse_threshold;
+                            let show_all_inputs = inputs_expanded || input_count <= collapse_threshold;
                             let visible_inputs = if show_all_inputs {
                                 input_count
                             } else {
@@ -365,8 +364,7 @@ fn TransactionRow(
                         {
                             let output_count = outputs.len();
                             let collapse_threshold = 5;
-                            let show_all_outputs = outputs_expanded
-                                || output_count <= collapse_threshold;
+                            let show_all_outputs = outputs_expanded || output_count <= collapse_threshold;
                             let visible_outputs = if show_all_outputs {
                                 output_count
                             } else {
@@ -405,7 +403,9 @@ fn TransactionRow(
                     }
 
                     div { class: "mt-2 pt-2 border-t border-edge text-center",
-                        span { class: "text-dash text-xs cursor-pointer hover:underline", "View full details" }
+                        span { class: "text-dash text-xs cursor-pointer hover:underline",
+                            "View full details"
+                        }
                     }
                 }
             }
