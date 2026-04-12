@@ -179,10 +179,10 @@ pub fn Transactions() -> Element {
                                         }
                                     },
                                     on_toggle_inputs: move |_| {
-                                        inputs_expanded.set(true);
+                                        inputs_expanded.set(!*inputs_expanded.read());
                                     },
                                     on_toggle_outputs: move |_| {
-                                        outputs_expanded.set(true);
+                                        outputs_expanded.set(!*outputs_expanded.read());
                                     },
                                 }
                             }
@@ -348,11 +348,11 @@ fn TransactionRow(
                                             }
                                         }
                                     }
-                                    if input_count > collapse_threshold && !show_all_inputs {
+                                    if input_count > collapse_threshold {
                                         button {
                                             class: "text-dash text-xs mt-1 hover:underline",
                                             onclick: move |e| on_toggle_inputs.call(e),
-                                            "Show all {input_count} inputs"
+                                            if show_all_inputs { "Show less" } else { "Show all {input_count} inputs" }
                                         }
                                     }
                                 }
@@ -390,11 +390,11 @@ fn TransactionRow(
                                             }
                                         }
                                     }
-                                    if output_count > collapse_threshold && !show_all_outputs {
+                                    if output_count > collapse_threshold {
                                         button {
                                             class: "text-dash text-xs mt-1 hover:underline",
                                             onclick: move |e| on_toggle_outputs.call(e),
-                                            "Show all {output_count} outputs"
+                                            if show_all_outputs { "Show less" } else { "Show all {output_count} outputs" }
                                         }
                                     }
                                 }
