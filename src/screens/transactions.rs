@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::backend::types::{TransactionDirection, TransactionInfo};
+use crate::backend::types::{InputInfo, OutputInfo, TransactionDirection, TransactionInfo};
 use crate::config::AppConfig;
 use crate::state::network::NetworkInfo;
 use crate::state::view_models::{
@@ -219,8 +219,8 @@ fn TransactionRow(
     height: Option<u32>,
     is_expanded: bool,
     addresses: Vec<String>,
-    inputs: Vec<crate::backend::types::InputInfo>,
-    outputs: Vec<crate::backend::types::OutputInfo>,
+    inputs: Vec<InputInfo>,
+    outputs: Vec<OutputInfo>,
     unit: String,
     inputs_expanded: bool,
     outputs_expanded: bool,
