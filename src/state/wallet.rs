@@ -50,6 +50,12 @@ impl WalletState {
                         existing.addresses.clone_from(&info.addresses);
                         existing.label.clone_from(&info.label);
                     }
+                    if !info.inputs.is_empty() {
+                        existing.inputs.clone_from(&info.inputs);
+                    }
+                    if !info.outputs.is_empty() {
+                        existing.outputs.clone_from(&info.outputs);
+                    }
                     sort_transactions(&mut self.transactions);
                     return;
                 }
@@ -571,5 +577,51 @@ mod tests {
             state.transactions[0].label,
             Some("payment for coffee".into())
         );
+    }
+
+    #[test]
+    fn status_update_preserves_inputs_and_outputs() {
+        use crate::backend::types::{InputInfo, OutputInfo, OutputRole};
+
+        let mut state = WalletState::default();
+
+        let inputs = vec![InputInfo {
+            index: 0,
+            value: 100_000,
+            address: "Xinput1".into(),
+        }];
+        let outputs = vec![OutputInfo {
+            index: 0,
+            value: 99_774,
+            address: "Xout1".into(),
+            role: OutputRole::Received,
+        }];
+
+        state.apply_event(&SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+            txid: dashcore::Txid::from_byte_array([9u8; 32]),
+            amount: 99_774,
+            direction: TransactionDirection::Incoming,
+            transaction_type: TransactionType::Standard,
+            timestamp: 1700000000,
+            height: None,
+            fee: None,
+            addresses: vec!["Xout1".into()],
+            block_hash: None,
+            is_instant_send: false,
+            is_chain_locked: false,
+            label: None,
+            inputs: inputs.clone(),
+            outputs: outputs.clone(),
+        })));
+
+        // Status-only update: inputs/outputs are empty (as emitted by TransactionStatusChanged)
+        state.apply_event(&status_event(9, Some(4000), 1700001000, false, true));
+
+        assert_eq!(state.transactions.len(), 1);
+        let tx = &state.transactions[0];
+        assert_eq!(tx.height, Some(4000));
+        assert!(tx.is_chain_locked);
+        assert_eq!(tx.inputs, inputs, "inputs must be preserved after status update");
+        assert_eq!(tx.outputs, outputs, "outputs must be preserved after status update");
     }
 }
