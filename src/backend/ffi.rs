@@ -1711,7 +1711,9 @@ fn extract_ffi_outputs(record: &FFITransactionRecord, network: Network) -> Vec<O
             let bytes = unsafe { std::slice::from_raw_parts(record.tx_data, record.tx_len) };
             let result = dashcore::consensus::deserialize(bytes);
             if result.is_err() {
-                tracing::warn!("FFI: failed to deserialize tx_data; output values/addresses will be empty");
+                tracing::warn!(
+                    "FFI: failed to deserialize tx_data; output values/addresses will be empty"
+                );
             }
             result.ok()
         } else {

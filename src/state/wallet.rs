@@ -621,7 +621,13 @@ mod tests {
         let tx = &state.transactions[0];
         assert_eq!(tx.height, Some(4000));
         assert!(tx.is_chain_locked);
-        assert_eq!(tx.inputs, inputs, "inputs must be preserved after status update");
-        assert_eq!(tx.outputs, outputs, "outputs must be preserved after status update");
+        assert_eq!(
+            tx.inputs, inputs,
+            "inputs must be preserved after status update"
+        );
+        assert_eq!(
+            tx.outputs, outputs,
+            "outputs must be preserved after status update"
+        );
     }
 }

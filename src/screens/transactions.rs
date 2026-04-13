@@ -354,7 +354,11 @@ fn TransactionRow(
                                         button {
                                             class: "text-dash text-xs mt-1 hover:underline",
                                             onclick: move |e| on_toggle_inputs.call(e),
-                                            if show_all_inputs { "Show less" } else { "Show all {input_count} inputs" }
+                                            if show_all_inputs {
+                                                "Show less"
+                                            } else {
+                                                "Show all {input_count} inputs"
+                                            }
                                         }
                                     }
                                 }
@@ -396,7 +400,11 @@ fn TransactionRow(
                                         button {
                                             class: "text-dash text-xs mt-1 hover:underline",
                                             onclick: move |e| on_toggle_outputs.call(e),
-                                            if show_all_outputs { "Show less" } else { "Show all {output_count} outputs" }
+                                            if show_all_outputs {
+                                                "Show less"
+                                            } else {
+                                                "Show all {output_count} outputs"
+                                            }
                                         }
                                     }
                                 }
