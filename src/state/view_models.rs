@@ -1082,6 +1082,21 @@ mod tests {
     }
 
     #[test]
+    fn visible_output_views_all_shown_when_under_threshold() {
+        let outputs: Vec<OutputInfo> = (0..3)
+            .map(|i| OutputInfo {
+                index: i,
+                value: 500,
+                address: String::new(),
+                role: OutputRole::Received,
+            })
+            .collect();
+        let (views, has_more) = visible_output_views(&outputs, false, 5, "DASH");
+        assert_eq!(views.len(), 3);
+        assert!(!has_more);
+    }
+
+    #[test]
     fn visible_output_views_truncated_when_collapsed() {
         let outputs: Vec<OutputInfo> = (0..7)
             .map(|i| OutputInfo {
