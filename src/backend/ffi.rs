@@ -1861,6 +1861,21 @@ mod tests {
     }
 
     #[test]
+    fn extract_ffi_inputs_oversized_count_skips_extraction() {
+        let mut detail = FFIInputDetail {
+            index: 0,
+            value: 0,
+            address: ptr::null_mut(),
+        };
+        let mut record = empty_record();
+        record.input_details = &mut detail as *mut _;
+        record.input_details_count = MAX_DETAIL_COUNT + 1;
+
+        let result = extract_ffi_inputs(&record);
+        assert!(result.is_empty());
+    }
+
+    #[test]
     fn extract_ffi_outputs_null_pointer_returns_empty() {
         let record = empty_record();
         let result = extract_ffi_outputs(&record, Network::Mainnet);
