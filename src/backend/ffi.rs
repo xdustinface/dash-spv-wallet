@@ -1707,15 +1707,24 @@ fn extract_ffi_outputs(record: &FFITransactionRecord, network: Network) -> Vec<O
     // Attempt to deserialize the raw transaction so we can read output values/addresses.
     let tx: Option<dashcore::blockdata::transaction::Transaction> =
         if !record.tx_data.is_null() && record.tx_len > 0 {
-            // Safety: tx_data is a valid pointer for tx_len bytes.
-            let bytes = unsafe { std::slice::from_raw_parts(record.tx_data, record.tx_len) };
-            let result = dashcore::consensus::deserialize(bytes);
-            if result.is_err() {
+            if record.tx_len > 1_048_576 {
                 tracing::warn!(
-                    "FFI: failed to deserialize tx_data; output values/addresses will be empty"
+                    "FFI: tx_len {} exceeds maximum; skipping output enrichment",
+                    record.tx_len
                 );
+                None
+            } else {
+                // Safety: tx_data is a valid pointer for tx_len bytes.
+                let bytes =
+                    unsafe { std::slice::from_raw_parts(record.tx_data, record.tx_len) };
+                let result = dashcore::consensus::deserialize(bytes);
+                if result.is_err() {
+                    tracing::warn!(
+                        "FFI: failed to deserialize tx_data; output values/addresses will be empty"
+                    );
+                }
+                result.ok()
             }
-            result.ok()
         } else {
             None
         };
@@ -1723,9 +1732,11 @@ fn extract_ffi_outputs(record: &FFITransactionRecord, network: Network) -> Vec<O
     details
         .iter()
         .map(|d| {
-            let (value, address) = tx
-                .as_ref()
-                .and_then(|t| t.output.get(d.index as usize))
+            let out = tx.as_ref().and_then(|t| t.output.get(d.index as usize));
+            if out.is_none() && tx.is_some() {
+                tracing::warn!("FFI: output index {} out of bounds", d.index);
+            }
+            let (value, address) = out
                 .map(|o| {
                     let addr = dashcore::Address::from_script(&o.script_pubkey, network)
                         .ok()
@@ -1757,9 +1768,123 @@ mod tests {
     use std::ffi::CString;
     use std::ptr;
 
-    use key_wallet_ffi::types::{FFITransactionDirection, FFITransactionType};
+    use key_wallet_ffi::types::{
+        FFIBlockInfo, FFIInputDetail, FFIOutputDetail, FFITransactionContext,
+        FFITransactionContextType, FFITransactionDirection, FFITransactionType,
+    };
 
     use super::*;
+
+    fn empty_record() -> FFITransactionRecord {
+        FFITransactionRecord {
+            txid: [0u8; 32],
+            net_amount: 0,
+            context: FFITransactionContext {
+                context_type: FFITransactionContextType::Mempool,
+                block_info: FFIBlockInfo::empty(),
+                islock_data: ptr::null(),
+                islock_len: 0,
+            },
+            transaction_type: FFITransactionType::Standard,
+            direction: FFITransactionDirection::Incoming,
+            fee: 0,
+            input_details: ptr::null_mut(),
+            input_details_count: 0,
+            output_details: ptr::null_mut(),
+            output_details_count: 0,
+            tx_data: ptr::null_mut(),
+            tx_len: 0,
+            label: ptr::null_mut(),
+        }
+    }
+
+    #[test]
+    fn extract_ffi_inputs_null_pointer_returns_empty() {
+        let record = empty_record();
+        let result = extract_ffi_inputs(&record);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_ffi_inputs_maps_index_value_address() {
+        let addr = CString::new("XqN8a73jYfHtFbEjz2XYBfrCHn6YQwBGsP").unwrap();
+        let mut detail = FFIInputDetail {
+            index: 2,
+            value: 150_000_000,
+            address: addr.as_ptr() as *mut _,
+        };
+        let mut record = empty_record();
+        record.input_details = &mut detail as *mut _;
+        record.input_details_count = 1;
+
+        let result = extract_ffi_inputs(&record);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].index, 2);
+        assert_eq!(result[0].value, 150_000_000);
+        assert_eq!(result[0].address, "XqN8a73jYfHtFbEjz2XYBfrCHn6YQwBGsP");
+    }
+
+    #[test]
+    fn extract_ffi_inputs_null_address_falls_back_to_empty_string() {
+        let mut detail = FFIInputDetail {
+            index: 0,
+            value: 0,
+            address: ptr::null_mut(),
+        };
+        let mut record = empty_record();
+        record.input_details = &mut detail as *mut _;
+        record.input_details_count = 1;
+
+        let result = extract_ffi_inputs(&record);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].address, "");
+    }
+
+    #[test]
+    fn extract_ffi_outputs_null_pointer_returns_empty() {
+        let record = empty_record();
+        let result = extract_ffi_outputs(&record, Network::Mainnet);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_ffi_outputs_bad_tx_data_falls_back_to_zero_value_empty_address() {
+        let garbage: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF];
+        let mut detail = FFIOutputDetail {
+            index: 0,
+            role: FFIOutputRole::Received,
+        };
+        let mut record = empty_record();
+        record.output_details = &mut detail as *mut _;
+        record.output_details_count = 1;
+        record.tx_data = garbage.as_ptr() as *mut _;
+        record.tx_len = garbage.len();
+
+        let result = extract_ffi_outputs(&record, Network::Mainnet);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].value, 0);
+        assert_eq!(result[0].address, "");
+        assert_eq!(result[0].role, OutputRole::Received);
+    }
+
+    #[test]
+    fn extract_ffi_outputs_oversized_tx_len_skips_enrichment() {
+        let mut detail = FFIOutputDetail {
+            index: 0,
+            role: FFIOutputRole::Change,
+        };
+        let dummy_byte: u8 = 0;
+        let mut record = empty_record();
+        record.output_details = &mut detail as *mut _;
+        record.output_details_count = 1;
+        record.tx_data = &dummy_byte as *const u8 as *mut _;
+        record.tx_len = 2_000_000;
+
+        let result = extract_ffi_outputs(&record, Network::Mainnet);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].value, 0);
+        assert_eq!(result[0].address, "");
+    }
 
     #[test]
     fn ffi_direction_to_direction_maps_all_variants() {
