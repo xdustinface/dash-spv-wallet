@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use dioxus::prelude::*;
 
 use crate::backend::types::{InputInfo, OutputInfo, TransactionDirection, TransactionInfo};
@@ -161,9 +163,9 @@ pub fn Transactions() -> Element {
                                     confirmations,
                                     height: tx.height,
                                     is_expanded,
-                                    addresses: tx.addresses.clone(),
-                                    inputs: tx.inputs.clone(),
-                                    outputs: tx.outputs.clone(),
+                                    addresses: tx.addresses,
+                                    inputs: Rc::new(tx.inputs),
+                                    outputs: Rc::new(tx.outputs),
                                     unit: unit.to_string(),
                                     onclick: move |_| {
                                         if *expanded_txid.read() == Some(txid) {
@@ -207,8 +209,8 @@ fn TransactionRow(
     height: Option<u32>,
     is_expanded: bool,
     addresses: Vec<String>,
-    inputs: Vec<InputInfo>,
-    outputs: Vec<OutputInfo>,
+    inputs: Rc<Vec<InputInfo>>,
+    outputs: Rc<Vec<OutputInfo>>,
     unit: String,
     onclick: EventHandler<MouseEvent>,
 ) -> Element {
