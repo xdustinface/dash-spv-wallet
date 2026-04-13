@@ -283,6 +283,8 @@ mod tests {
                     is_instant_send: false,
                     is_chain_locked: false,
                     label: None,
+                    inputs: Vec::new(),
+                    outputs: Vec::new(),
                 })),
                 EventCategory::Wallet,
             ),

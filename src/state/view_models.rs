@@ -1,4 +1,6 @@
-use crate::backend::types::{TransactionDirection, TransactionInfo, TransactionType};
+use crate::backend::types::{
+    InputInfo, OutputInfo, OutputRole, TransactionDirection, TransactionInfo, TransactionType,
+};
 
 const SATS_PER_DASH: u64 = 100_000_000;
 
@@ -340,6 +342,106 @@ pub fn format_transaction(
     }
 }
 
+/// Display-ready transaction input.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InputView {
+    pub index: u32,
+    pub address_short: String,
+    pub amount_display: String,
+}
+
+/// Display-ready transaction output.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutputView {
+    pub index: u32,
+    pub address_short: String,
+    pub amount_display: String,
+    pub role_label: &'static str,
+    pub role_color: &'static str,
+}
+
+/// Format a transaction input for display.
+pub fn format_input(input: &InputInfo, unit: &str) -> InputView {
+    InputView {
+        index: input.index,
+        address_short: format_address_short(&input.address),
+        amount_display: format_balance(input.value, unit),
+    }
+}
+
+/// Format a transaction output for display.
+pub fn format_output(output: &OutputInfo, unit: &str) -> OutputView {
+    let (role_label, role_color) = role_display(output.role);
+    OutputView {
+        index: output.index,
+        address_short: format_address_short(&output.address),
+        amount_display: format_balance(output.value, unit),
+        role_label,
+        role_color,
+    }
+}
+
+/// The number of inputs/outputs shown before a "Show all" toggle appears.
+pub const COLLAPSE_THRESHOLD: usize = 5;
+
+/// Return the visible input views and whether more are hidden.
+///
+/// When `expanded` is false and the input count exceeds `threshold`, only
+/// the first `threshold` inputs are included and `has_more` is `true`.
+pub fn visible_input_views(
+    inputs: &[InputInfo],
+    expanded: bool,
+    threshold: usize,
+    unit: &str,
+) -> (Vec<InputView>, bool) {
+    let has_more = inputs.len() > threshold;
+    let count = if expanded || !has_more {
+        inputs.len()
+    } else {
+        threshold
+    };
+    let views = inputs
+        .iter()
+        .take(count)
+        .map(|i| format_input(i, unit))
+        .collect();
+    (views, has_more)
+}
+
+/// Return the visible output views and whether more are hidden.
+///
+/// When `expanded` is false and the output count exceeds `threshold`, only
+/// the first `threshold` outputs are included and `has_more` is `true`.
+pub fn visible_output_views(
+    outputs: &[OutputInfo],
+    expanded: bool,
+    threshold: usize,
+    unit: &str,
+) -> (Vec<OutputView>, bool) {
+    let has_more = outputs.len() > threshold;
+    let count = if expanded || !has_more {
+        outputs.len()
+    } else {
+        threshold
+    };
+    let views = outputs
+        .iter()
+        .take(count)
+        .map(|o| format_output(o, unit))
+        .collect();
+    (views, has_more)
+}
+
+/// Map an `OutputRole` to a human-readable label and Tailwind color class.
+fn role_display(role: OutputRole) -> (&'static str, &'static str) {
+    match role {
+        OutputRole::Received => ("Received", "bg-success"),
+        OutputRole::Change => ("Change", "bg-muted"),
+        OutputRole::Sent => ("Sent", "bg-error"),
+        OutputRole::Unspendable => ("Unspendable", "bg-disabled"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use dashcore::hashes::Hash;
@@ -533,6 +635,8 @@ mod tests {
             is_instant_send: true,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let view = format_transaction(&tx, 1000, "DASH");
@@ -571,6 +675,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let view = format_transaction(&tx, 1000, "DASH");
@@ -604,6 +710,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let view = format_transaction(&tx, 1000, "tDASH");
@@ -625,6 +733,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let view = format_transaction(&tx, 1000, "DASH");
@@ -654,6 +764,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let view = format_transaction(&tx, 1000, "DASH");
@@ -682,6 +794,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         assert_eq!(
@@ -800,6 +914,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         }
     }
 
@@ -890,5 +1006,173 @@ mod tests {
     fn format_timestamp_absolute_leap_year() {
         // 2024-02-29 00:00:00 UTC = 1709164800
         assert_eq!(format_timestamp_absolute(1709164800), "2024-02-29 00:00:00",);
+    }
+
+    // -- format_input / format_output --
+
+    #[test]
+    fn format_input_displays_correctly() {
+        let input = InputInfo {
+            index: 0,
+            value: 150_000_000,
+            address: "XqN8a73jYfHtFbEjz2XYBfrCHn6YQwBGsP".into(),
+        };
+        let view = format_input(&input, "DASH");
+        assert_eq!(view.index, 0);
+        assert_eq!(view.address_short, "XqN8...BGsP");
+        assert_eq!(view.amount_display, "1.5 DASH");
+    }
+
+    #[test]
+    fn format_output_received() {
+        let output = OutputInfo {
+            index: 0,
+            value: 100_000_000,
+            address: "XqN8a73jYfHtFbEjz2XYBfrCHn6YQwBGsP".into(),
+            role: OutputRole::Received,
+        };
+        let view = format_output(&output, "DASH");
+        assert_eq!(view.index, 0);
+        assert_eq!(view.address_short, "XqN8...BGsP");
+        assert_eq!(view.amount_display, "1.0 DASH");
+        assert_eq!(view.role_label, "Received");
+        assert_eq!(view.role_color, "bg-success");
+    }
+
+    #[test]
+    fn visible_input_views_all_shown_when_under_threshold() {
+        let inputs: Vec<InputInfo> = (0..3)
+            .map(|i| InputInfo {
+                index: i,
+                value: 1_000,
+                address: String::new(),
+            })
+            .collect();
+        let (views, has_more) = visible_input_views(&inputs, false, 5, "DASH");
+        assert_eq!(views.len(), 3);
+        assert!(!has_more);
+    }
+
+    #[test]
+    fn visible_input_views_truncated_when_collapsed() {
+        let inputs: Vec<InputInfo> = (0..8)
+            .map(|i| InputInfo {
+                index: i,
+                value: 1_000,
+                address: String::new(),
+            })
+            .collect();
+        let (views, has_more) = visible_input_views(&inputs, false, 5, "DASH");
+        assert_eq!(views.len(), 5);
+        assert!(has_more);
+    }
+
+    #[test]
+    fn visible_input_views_all_shown_when_expanded() {
+        let inputs: Vec<InputInfo> = (0..8)
+            .map(|i| InputInfo {
+                index: i,
+                value: 1_000,
+                address: String::new(),
+            })
+            .collect();
+        let (views, has_more) = visible_input_views(&inputs, true, 5, "DASH");
+        assert_eq!(views.len(), 8);
+        assert!(has_more);
+    }
+
+    #[test]
+    fn visible_output_views_all_shown_when_under_threshold() {
+        let outputs: Vec<OutputInfo> = (0..3)
+            .map(|i| OutputInfo {
+                index: i,
+                value: 500,
+                address: String::new(),
+                role: OutputRole::Received,
+            })
+            .collect();
+        let (views, has_more) = visible_output_views(&outputs, false, 5, "DASH");
+        assert_eq!(views.len(), 3);
+        assert!(!has_more);
+    }
+
+    #[test]
+    fn visible_output_views_truncated_when_collapsed() {
+        let outputs: Vec<OutputInfo> = (0..7)
+            .map(|i| OutputInfo {
+                index: i,
+                value: 500,
+                address: String::new(),
+                role: OutputRole::Received,
+            })
+            .collect();
+        let (views, has_more) = visible_output_views(&outputs, false, 5, "DASH");
+        assert_eq!(views.len(), 5);
+        assert!(has_more);
+    }
+
+    #[test]
+    fn visible_output_views_all_shown_when_expanded() {
+        let outputs: Vec<OutputInfo> = (0..7)
+            .map(|i| OutputInfo {
+                index: i,
+                value: 500,
+                address: String::new(),
+                role: OutputRole::Received,
+            })
+            .collect();
+        let (views, has_more) = visible_output_views(&outputs, true, 5, "DASH");
+        assert_eq!(views.len(), 7);
+        assert!(has_more);
+    }
+
+    #[test]
+    fn visible_input_views_equal_to_threshold_shows_all() {
+        let inputs: Vec<InputInfo> = (0..5)
+            .map(|i| InputInfo {
+                index: i,
+                value: 1_000,
+                address: String::new(),
+            })
+            .collect();
+        let (views, has_more) = visible_input_views(&inputs, false, 5, "DASH");
+        assert_eq!(views.len(), 5);
+        assert!(!has_more);
+    }
+
+    #[test]
+    fn visible_output_views_equal_to_threshold_shows_all() {
+        let outputs: Vec<OutputInfo> = (0..5)
+            .map(|i| OutputInfo {
+                index: i,
+                value: 500,
+                address: String::new(),
+                role: OutputRole::Received,
+            })
+            .collect();
+        let (views, has_more) = visible_output_views(&outputs, false, 5, "DASH");
+        assert_eq!(views.len(), 5);
+        assert!(!has_more);
+    }
+
+    #[test]
+    fn format_output_all_roles() {
+        let make = |role| OutputInfo {
+            index: 0,
+            value: 0,
+            address: String::new(),
+            role,
+        };
+        let change = format_output(&make(OutputRole::Change), "DASH");
+        assert_eq!(change.role_label, "Change");
+        assert_eq!(change.role_color, "bg-muted");
+
+        let sent = format_output(&make(OutputRole::Sent), "DASH");
+        assert_eq!(sent.role_label, "Sent");
+        assert_eq!(sent.role_color, "bg-error");
+
+        let unspendable = format_output(&make(OutputRole::Unspendable), "DASH");
+        assert_eq!(unspendable.role_label, "Unspendable");
+        assert_eq!(unspendable.role_color, "bg-disabled");
     }
 }

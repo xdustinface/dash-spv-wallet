@@ -14,7 +14,9 @@ use dash_spv::sync::SyncEvent;
 use dash_spv::{ClientConfig, DashSpvClient, MempoolStrategy};
 use dashcore::hashes::Hash;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
-use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::managed_account::transaction_record::{
+    OutputRole as UpstreamOutputRole, TransactionRecord,
+};
 use key_wallet::mnemonic::Language;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -34,8 +36,8 @@ use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent, event_channel};
 use super::r#trait::SpvBackend;
 use super::types::{
-    Network, SyncProgress, TransactionDirection, TransactionInfo, TransactionType,
-    WalletCoreBalance,
+    InputInfo, Network, OutputInfo, OutputRole, SyncProgress, TransactionDirection,
+    TransactionInfo, TransactionType, WalletCoreBalance,
 };
 use crate::config::AppConfig;
 
@@ -50,6 +52,7 @@ type SpvClient = DashSpvClient<
 struct NativeEventHandler {
     event_tx: EventSender,
     progress: Arc<RwLock<SyncProgress>>,
+    network: Network,
 }
 
 impl EventHandler for NativeEventHandler {
@@ -73,7 +76,9 @@ impl EventHandler for NativeEventHandler {
     }
 
     fn on_wallet_event(&self, event: &WalletEvent) {
-        let _ = self.event_tx.send(map_wallet_event(event.clone()));
+        let _ = self
+            .event_tx
+            .send(map_wallet_event(event.clone(), self.network));
     }
 
     fn on_error(&self, error: &str) {
@@ -181,6 +186,7 @@ impl SpvBackend for NativeBackend {
         let event_handler = Arc::new(NativeEventHandler {
             event_tx: self.event_tx.clone(),
             progress: self.progress.clone(),
+            network: self.config.network,
         });
 
         let client = Arc::new(
@@ -370,7 +376,7 @@ impl SpvBackend for NativeBackend {
 
         let mut transactions: Vec<TransactionInfo> = records
             .into_iter()
-            .map(|r| TransactionInfo::from_record(r, 0))
+            .map(|r| TransactionInfo::from_record(r, 0, self.config.network))
             .collect();
 
         // Sort: unconfirmed first, then by timestamp descending
@@ -651,7 +657,7 @@ fn map_network_event(event: NetworkEvent) -> SpvEvent {
     }
 }
 
-fn map_wallet_event(event: WalletEvent) -> SpvEvent {
+fn map_wallet_event(event: WalletEvent, network: Network) -> SpvEvent {
     match event {
         WalletEvent::TransactionReceived {
             wallet_id: _,
@@ -665,6 +671,7 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
             SpvEvent::TransactionReceived(Box::new(TransactionInfo::from_record(
                 &record,
                 fallback_timestamp,
+                network,
             )))
         }
         WalletEvent::TransactionStatusChanged { txid, status, .. } => {
@@ -687,6 +694,8 @@ fn map_wallet_event(event: WalletEvent) -> SpvEvent {
                 is_instant_send,
                 is_chain_locked,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             }))
         }
         WalletEvent::BalanceUpdated {
@@ -711,10 +720,12 @@ impl TransactionInfo {
     /// timestamp (mempool / instant-send).  Pass `0` for cold-start loads
     /// (renders as "Pending") or the current unix time for live events
     /// (renders as "just now").
-    fn from_record(record: &TransactionRecord, fallback_timestamp: u64) -> Self {
+    fn from_record(record: &TransactionRecord, fallback_timestamp: u64, network: Network) -> Self {
         let (height, timestamp, block_hash, is_instant_send, is_chain_locked) =
             extract_context_fields(&record.context);
         let addresses = extract_record_addresses(record);
+        let inputs = extract_record_inputs(record);
+        let outputs = extract_record_outputs(record, network);
         TransactionInfo {
             txid: record.txid,
             amount: record.net_amount,
@@ -728,6 +739,8 @@ impl TransactionInfo {
             is_instant_send,
             is_chain_locked,
             label: record.label.clone(),
+            inputs,
+            outputs,
         }
     }
 }
@@ -742,6 +755,57 @@ fn extract_record_addresses(record: &TransactionRecord) -> Vec<String> {
     addrs.sort();
     addrs.dedup();
     addrs
+}
+
+/// Build `InputInfo` entries from a transaction record's input details.
+fn extract_record_inputs(record: &TransactionRecord) -> Vec<InputInfo> {
+    record
+        .input_details
+        .iter()
+        .map(|d| InputInfo {
+            index: d.index,
+            value: d.value,
+            address: d.address.to_string(),
+        })
+        .collect()
+}
+
+/// Build `OutputInfo` entries from a transaction record's output details,
+/// enriching them with value and address from the raw transaction outputs.
+fn extract_record_outputs(record: &TransactionRecord, network: Network) -> Vec<OutputInfo> {
+    record
+        .output_details
+        .iter()
+        .map(|d| {
+            let tx_out = record.transaction.output.get(d.index as usize);
+            if tx_out.is_none() {
+                tracing::warn!(
+                    requested_index = d.index,
+                    actual_len = record.transaction.output.len(),
+                    "native output index out of bounds, returning zero value and empty address"
+                );
+            }
+            let value = tx_out.map_or(0, |o| o.value);
+            let address = tx_out
+                .and_then(|o| dashcore::Address::from_script(&o.script_pubkey, network).ok())
+                .map_or_else(String::new, |a| a.to_string());
+            OutputInfo {
+                index: d.index,
+                value,
+                address,
+                role: map_output_role(d.role),
+            }
+        })
+        .collect()
+}
+
+fn map_output_role(role: UpstreamOutputRole) -> OutputRole {
+    match role {
+        UpstreamOutputRole::Received => OutputRole::Received,
+        UpstreamOutputRole::Change => OutputRole::Change,
+        UpstreamOutputRole::Sent => OutputRole::Sent,
+        UpstreamOutputRole::Unspendable => OutputRole::Unspendable,
+    }
 }
 
 /// Extract UI-relevant fields from a `TransactionContext`.
@@ -780,7 +844,9 @@ mod tests {
     use dashcore::ephemerealdata::instant_lock::InstantLock;
     use dashcore::hashes::Hash;
     use dashcore::{Address, BlockHash, PublicKey, Txid};
-    use key_wallet::managed_account::transaction_record::{InputDetail, TransactionRecord};
+    use key_wallet::managed_account::transaction_record::{
+        InputDetail, OutputDetail, OutputRole as UpstreamTestOutputRole, TransactionRecord,
+    };
     use key_wallet::transaction_checking::TransactionContext;
     use key_wallet::transaction_checking::transaction_context::BlockInfo;
     use key_wallet::transaction_checking::transaction_router::TransactionType;
@@ -1075,7 +1141,7 @@ mod tests {
             account_index: 0,
             record: Box::new(record),
         };
-        let mapped = map_wallet_event(event);
+        let mapped = map_wallet_event(event, Network::Mainnet);
         match mapped {
             SpvEvent::TransactionReceived(info) => {
                 assert_eq!(info.txid, txid);
@@ -1103,7 +1169,7 @@ mod tests {
                 1700000000,
             )),
         };
-        let mapped = map_wallet_event(event);
+        let mapped = map_wallet_event(event, Network::Mainnet);
         match mapped {
             SpvEvent::TransactionReceived(info) => {
                 assert_eq!(info.amount, 0);
@@ -1126,7 +1192,7 @@ mod tests {
             immature: 25_000,
             locked: 10_000,
         };
-        let mapped = map_wallet_event(event);
+        let mapped = map_wallet_event(event, Network::Mainnet);
         assert_eq!(
             mapped,
             SpvEvent::BalanceUpdated(WalletCoreBalance::new(100_000, 50_000, 25_000, 10_000))
@@ -1147,7 +1213,7 @@ mod tests {
             42000,
         );
 
-        let info = TransactionInfo::from_record(&record, 9999999999);
+        let info = TransactionInfo::from_record(&record, 9999999999, Network::Mainnet);
 
         assert_eq!(info.timestamp, 1700000000);
         assert_eq!(info.height, Some(500));
@@ -1168,7 +1234,7 @@ mod tests {
             10000,
         );
 
-        let info = TransactionInfo::from_record(&record, 0);
+        let info = TransactionInfo::from_record(&record, 0, Network::Mainnet);
 
         assert_eq!(info.timestamp, 0);
         assert_eq!(info.height, None);
@@ -1224,5 +1290,105 @@ mod tests {
         assert_eq!(addresses.len(), 2);
         assert!(addresses.contains(&addr_a.to_string()));
         assert!(addresses.contains(&addr_b.to_string()));
+    }
+
+    #[test]
+    fn extract_record_inputs_maps_index_value_address() {
+        let addr = test_address();
+        let input_details = vec![
+            InputDetail {
+                index: 0,
+                value: 50_000,
+                address: addr.clone(),
+            },
+            InputDetail {
+                index: 1,
+                value: 75_000,
+                address: addr.clone(),
+            },
+        ];
+
+        let tx = Transaction::dummy_empty();
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            input_details,
+            Vec::new(),
+            125_000,
+        );
+
+        let inputs = extract_record_inputs(&record);
+        assert_eq!(inputs.len(), 2);
+        assert_eq!(inputs[0].index, 0);
+        assert_eq!(inputs[0].value, 50_000);
+        assert_eq!(inputs[0].address, addr.to_string());
+        assert_eq!(inputs[1].index, 1);
+        assert_eq!(inputs[1].value, 75_000);
+    }
+
+    #[test]
+    fn extract_record_outputs_enriches_value_and_address_from_tx() {
+        let addr = test_address();
+        let tx = Transaction::dummy(&addr, 0..1, &[99_774, 226]);
+        let output_details = vec![
+            OutputDetail {
+                index: 0,
+                role: UpstreamTestOutputRole::Received,
+            },
+            OutputDetail {
+                index: 1,
+                role: UpstreamTestOutputRole::Change,
+            },
+        ];
+
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            output_details,
+            99_774,
+        );
+
+        let outputs = extract_record_outputs(&record, Network::Testnet);
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs[0].index, 0);
+        assert_eq!(outputs[0].value, 99_774);
+        assert_eq!(outputs[0].address, addr.to_string());
+        assert_eq!(outputs[0].role, OutputRole::Received);
+        assert_eq!(outputs[1].index, 1);
+        assert_eq!(outputs[1].value, 226);
+        assert_eq!(outputs[1].role, OutputRole::Change);
+    }
+
+    #[test]
+    fn extract_record_outputs_oob_index_falls_back_to_zero() {
+        let addr = test_address();
+        let tx = Transaction::dummy(&addr, 0..1, &[50_000]);
+        // index 99 is out of bounds for a 1-output tx
+        let output_details = vec![OutputDetail {
+            index: 99,
+            role: UpstreamTestOutputRole::Sent,
+        }];
+
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            output_details,
+            0,
+        );
+
+        let outputs = extract_record_outputs(&record, Network::Testnet);
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].index, 99);
+        assert_eq!(outputs[0].value, 0);
+        assert_eq!(outputs[0].address, "");
+        assert_eq!(outputs[0].role, OutputRole::Sent);
     }
 }

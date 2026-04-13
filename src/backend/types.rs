@@ -5,6 +5,43 @@ pub use key_wallet::WalletCoreBalance;
 pub use key_wallet::managed_account::transaction_record::TransactionDirection;
 pub use key_wallet::transaction_checking::transaction_router::TransactionType;
 
+/// Role of a transaction output from the wallet's perspective.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputRole {
+    /// Output to our external/receive address.
+    Received,
+    /// Output to our internal/change address.
+    Change,
+    /// Output to counterparty address.
+    Sent,
+    /// Unspendable output (OP_RETURN, non-standard, bare multisig).
+    Unspendable,
+}
+
+/// Wallet-context metadata for a transaction input.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InputInfo {
+    /// Index into the transaction's input array.
+    pub index: u32,
+    /// Value of the UTXO being spent (satoshis).
+    pub value: u64,
+    /// Address that owned the spent UTXO.
+    pub address: String,
+}
+
+/// Wallet-context metadata for a transaction output.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutputInfo {
+    /// Index into the transaction's output array.
+    pub index: u32,
+    /// Value of this output (satoshis).
+    pub value: u64,
+    /// Address receiving this output.
+    pub address: String,
+    /// Role from the wallet's perspective.
+    pub role: OutputRole,
+}
+
 /// A UI-facing transaction record assembled from wallet events and sync state.
 ///
 /// This combines data from key-wallet's `TransactionRecord` (txid, amount, height,
@@ -23,6 +60,8 @@ pub struct TransactionInfo {
     pub is_instant_send: bool,
     pub is_chain_locked: bool,
     pub label: Option<String>,
+    pub inputs: Vec<InputInfo>,
+    pub outputs: Vec<OutputInfo>,
 }
 
 impl TransactionInfo {

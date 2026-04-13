@@ -125,6 +125,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: true,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         }));
 
         dispatch_event(&event, &mut conn, &mut wallet, &mut net, &mut log);
@@ -381,6 +383,8 @@ mod tests {
                 is_instant_send: true,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             })),
             SpvEvent::BalanceUpdated(WalletCoreBalance::new(1_000_000, 0, 0, 0)),
             SpvEvent::SyncComplete {

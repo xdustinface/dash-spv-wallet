@@ -1,10 +1,13 @@
+use std::rc::Rc;
+
 use dioxus::prelude::*;
 
-use crate::backend::types::{TransactionDirection, TransactionInfo};
+use crate::backend::types::{InputInfo, OutputInfo, TransactionDirection, TransactionInfo};
 use crate::config::AppConfig;
 use crate::state::network::NetworkInfo;
 use crate::state::view_models::{
-    TransactionView, format_address_responsive, format_transaction, matches_search,
+    COLLAPSE_THRESHOLD, TransactionView, format_address_responsive, format_transaction,
+    matches_search, visible_input_views, visible_output_views,
 };
 use crate::state::wallet::WalletState;
 
@@ -160,7 +163,10 @@ pub fn Transactions() -> Element {
                                     confirmations,
                                     height: tx.height,
                                     is_expanded,
-                                    addresses: tx.addresses.clone(),
+                                    addresses: tx.addresses,
+                                    inputs: Rc::new(tx.inputs),
+                                    outputs: Rc::new(tx.outputs),
+                                    unit: unit.to_string(),
                                     onclick: move |_| {
                                         if *expanded_txid.read() == Some(txid) {
                                             expanded_txid.set(None);
@@ -203,8 +209,14 @@ fn TransactionRow(
     height: Option<u32>,
     is_expanded: bool,
     addresses: Vec<String>,
+    inputs: Rc<Vec<InputInfo>>,
+    outputs: Rc<Vec<OutputInfo>>,
+    unit: String,
     onclick: EventHandler<MouseEvent>,
 ) -> Element {
+    let mut inputs_expanded = use_signal(|| false);
+    let mut outputs_expanded = use_signal(|| false);
+
     let border = view.border_class;
     let icon_class = view.direction_icon_class;
     let icon = view.direction_icon;
@@ -297,6 +309,97 @@ fn TransactionRow(
                             p { class: "font-mono text-xs select-all", "{addr}" }
                         }
                     }
+
+                    if !inputs.is_empty() {
+                        {
+                            let input_count = inputs.len();
+                            let (input_views, has_more_inputs) = visible_input_views(
+                                &inputs,
+                                *inputs_expanded.read(),
+                                COLLAPSE_THRESHOLD,
+                                &unit,
+                            );
+                            let show_all_inputs = *inputs_expanded.read() || !has_more_inputs;
+                            rsx! {
+                                div { class: "mt-2 pt-2 border-t border-edge",
+                                    span { class: "text-muted font-medium block mb-1", "Inputs ({input_count})" }
+                                    div { class: "space-y-1",
+                                        for iv in &input_views {
+                                            div { class: "flex items-center gap-2 text-xs",
+                                                span { class: "text-disabled w-6", "#{iv.index}" }
+                                                span { class: "font-mono truncate flex-1", "{iv.address_short}" }
+                                                span { class: "text-foreground font-medium", "{iv.amount_display}" }
+                                            }
+                                        }
+                                    }
+                                    if has_more_inputs {
+                                        button {
+                                            class: "text-dash text-xs mt-1 hover:underline",
+                                            onclick: move |e| {
+                                                e.stop_propagation();
+                                                let current = *inputs_expanded.read();
+                                                inputs_expanded.set(!current);
+                                            },
+                                            if show_all_inputs {
+                                                "Show less"
+                                            } else {
+                                                "Show all {input_count} inputs"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !outputs.is_empty() {
+                        {
+                            let output_count = outputs.len();
+                            let (output_views, has_more_outputs) = visible_output_views(
+                                &outputs,
+                                *outputs_expanded.read(),
+                                COLLAPSE_THRESHOLD,
+                                &unit,
+                            );
+                            let show_all_outputs = *outputs_expanded.read() || !has_more_outputs;
+                            rsx! {
+                                div { class: "mt-2 pt-2 border-t border-edge",
+                                    span { class: "text-muted font-medium block mb-1", "Outputs ({output_count})" }
+                                    div { class: "space-y-1",
+                                        for ov in &output_views {
+                                            div { class: "flex items-center gap-2 text-xs",
+                                                span { class: "text-disabled w-6", "#{ov.index}" }
+                                                span { class: "font-mono truncate flex-1", "{ov.address_short}" }
+                                                span { class: "text-foreground font-medium", "{ov.amount_display}" }
+                                                span { class: "{ov.role_color} text-foreground rounded-full px-2 py-0.5 text-xs",
+                                                    "{ov.role_label}"
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if has_more_outputs {
+                                        button {
+                                            class: "text-dash text-xs mt-1 hover:underline",
+                                            onclick: move |e| {
+                                                e.stop_propagation();
+                                                let current = *outputs_expanded.read();
+                                                outputs_expanded.set(!current);
+                                            },
+                                            if show_all_outputs {
+                                                "Show less"
+                                            } else {
+                                                "Show all {output_count} outputs"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    div { class: "mt-2 pt-2 border-t border-edge text-center",
+                        span { class: "text-muted text-xs", "View full details" }
+                    }
                 }
             }
         }
@@ -326,6 +429,8 @@ mod tests {
                 is_instant_send: false,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             },
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([0xBB; 32]),
@@ -340,6 +445,8 @@ mod tests {
                 is_instant_send: false,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             },
             TransactionInfo {
                 txid: dashcore::Txid::from_byte_array([0xCC; 32]),
@@ -354,6 +461,8 @@ mod tests {
                 is_instant_send: true,
                 is_chain_locked: false,
                 label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
             },
         ]
     }
@@ -431,6 +540,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         });
 
         let result = apply_filters(&txs, Some(TransactionDirection::Internal), "", "DASH");
@@ -454,6 +565,8 @@ mod tests {
             is_instant_send: false,
             is_chain_locked: false,
             label: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
         });
 
         let result = apply_filters(&txs, Some(TransactionDirection::CoinJoin), "", "DASH");
