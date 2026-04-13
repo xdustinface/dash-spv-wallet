@@ -671,6 +671,43 @@ mod tests {
     }
 
     #[test]
+    fn mock_transaction_populates_io_structure() {
+        let amount = 100_000;
+
+        let incoming = mock_transaction(0, TransactionDirection::Incoming, amount);
+        assert!(!incoming.inputs.is_empty(), "incoming tx must have inputs");
+        assert!(
+            !incoming.outputs.is_empty(),
+            "incoming tx must have outputs"
+        );
+        assert!(
+            incoming
+                .outputs
+                .iter()
+                .any(|o| o.role == OutputRole::Received),
+            "incoming tx must have a Received output",
+        );
+
+        let outgoing = mock_transaction(1, TransactionDirection::Outgoing, amount);
+        assert!(!outgoing.inputs.is_empty(), "outgoing tx must have inputs");
+        assert!(
+            !outgoing.outputs.is_empty(),
+            "outgoing tx must have outputs"
+        );
+        assert!(
+            outgoing.outputs.iter().any(|o| o.role == OutputRole::Sent),
+            "outgoing tx must have a Sent output",
+        );
+        assert!(
+            outgoing
+                .outputs
+                .iter()
+                .any(|o| o.role == OutputRole::Change),
+            "outgoing tx must have a Change output",
+        );
+    }
+
+    #[test]
     fn cache_size_returns_zero() {
         let backend = MockBackend::builder(Network::Testnet).build();
         assert_eq!(backend.cache_size().unwrap(), 0);
