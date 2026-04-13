@@ -351,7 +351,7 @@ fn mock_io(
             ];
             (inputs, outputs)
         }
-        _ => (Vec::new(), Vec::new()),
+        TransactionDirection::Internal | TransactionDirection::CoinJoin => (Vec::new(), Vec::new()),
     }
 }
 
@@ -704,6 +704,26 @@ mod tests {
                 .iter()
                 .any(|o| o.role == OutputRole::Change),
             "outgoing tx must have a Change output",
+        );
+
+        let internal = mock_transaction(2, TransactionDirection::Internal, amount);
+        assert!(
+            internal.inputs.is_empty(),
+            "internal tx must have empty inputs"
+        );
+        assert!(
+            internal.outputs.is_empty(),
+            "internal tx must have empty outputs"
+        );
+
+        let coinjoin = mock_transaction(3, TransactionDirection::CoinJoin, amount);
+        assert!(
+            coinjoin.inputs.is_empty(),
+            "coinjoin tx must have empty inputs"
+        );
+        assert!(
+            coinjoin.outputs.is_empty(),
+            "coinjoin tx must have empty outputs"
         );
     }
 
