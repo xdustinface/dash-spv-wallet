@@ -714,6 +714,24 @@ mod tests {
     }
 
     #[test]
+    fn load_with_cli_first_run_writes_to_specified_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("nonexistent.toml");
+        assert!(!config_path.exists(), "precondition: path must not exist");
+
+        let cli = Cli::default();
+        let config = AppConfig::load_with_cli(cli, &config_path).unwrap();
+
+        assert!(
+            config_path.exists(),
+            "load_with_cli must write defaults to the given path"
+        );
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        let on_disk: AppConfig = toml::from_str(&contents).unwrap();
+        assert_eq!(on_disk.network, config.network);
+    }
+
+    #[test]
     fn config_error_implements_std_error() {
         let io_err = ConfigError::Io(io::Error::new(io::ErrorKind::PermissionDenied, "denied"));
         let std_err: &dyn std::error::Error = &io_err;
