@@ -1663,7 +1663,7 @@ fn extract_ffi_input_addresses(record: &FFITransactionRecord) -> Vec<String> {
     addrs
 }
 
-const MAX_DETAIL_COUNT: usize = 1_000_000;
+const MAX_DETAIL_COUNT: usize = 10_000;
 
 /// Extract `InputInfo` entries from an `FFITransactionRecord`.
 fn extract_ffi_inputs(record: &FFITransactionRecord) -> Vec<InputInfo> {
