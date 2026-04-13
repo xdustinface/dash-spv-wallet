@@ -281,7 +281,7 @@ impl AppConfig {
     }
 
     /// Save the current configuration to `path`.
-    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
+    pub(crate) fn save(&self, path: &Path) -> Result<(), ConfigError> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(ConfigError::Io)?;
         }
