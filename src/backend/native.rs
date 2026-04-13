@@ -778,6 +778,13 @@ fn extract_record_outputs(record: &TransactionRecord, network: Network) -> Vec<O
         .iter()
         .map(|d| {
             let tx_out = record.transaction.output.get(d.index as usize);
+            if tx_out.is_none() {
+                tracing::warn!(
+                    requested_index = d.index,
+                    actual_len = record.transaction.output.len(),
+                    "native output index out of bounds, returning zero value and empty address"
+                );
+            }
             let value = tx_out.map_or(0, |o| o.value);
             let address = tx_out
                 .and_then(|o| dashcore::Address::from_script(&o.script_pubkey, network).ok())
