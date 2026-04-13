@@ -1715,8 +1715,7 @@ fn extract_ffi_outputs(record: &FFITransactionRecord, network: Network) -> Vec<O
                 None
             } else {
                 // Safety: tx_data is a valid pointer for tx_len bytes.
-                let bytes =
-                    unsafe { std::slice::from_raw_parts(record.tx_data, record.tx_len) };
+                let bytes = unsafe { std::slice::from_raw_parts(record.tx_data, record.tx_len) };
                 let result = dashcore::consensus::deserialize(bytes);
                 if result.is_err() {
                     tracing::warn!(
