@@ -321,20 +321,12 @@ fn mock_io(
                 value: amount + 1000,
                 address: "XexternalSender0000000000000000001".into(),
             }];
-            let outputs = vec![
-                OutputInfo {
-                    index: 0,
-                    value: amount,
-                    address: addr.to_string(),
-                    role: OutputRole::Received,
-                },
-                OutputInfo {
-                    index: 1,
-                    value: 1000,
-                    address: "XexternalSender0000000000000000001".into(),
-                    role: OutputRole::Sent,
-                },
-            ];
+            let outputs = vec![OutputInfo {
+                index: 0,
+                value: amount,
+                address: addr.to_string(),
+                role: OutputRole::Received,
+            }];
             (inputs, outputs)
         }
         TransactionDirection::Outgoing => {
