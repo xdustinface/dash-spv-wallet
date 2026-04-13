@@ -179,10 +179,12 @@ pub fn Transactions() -> Element {
                                         }
                                     },
                                     on_toggle_inputs: move |_| {
-                                        inputs_expanded.set(!*inputs_expanded.read());
+                                        let current = *inputs_expanded.read();
+                                        inputs_expanded.set(!current);
                                     },
                                     on_toggle_outputs: move |_| {
-                                        outputs_expanded.set(!*outputs_expanded.read());
+                                        let current = *outputs_expanded.read();
+                                        outputs_expanded.set(!current);
                                     },
                                 }
                             }
