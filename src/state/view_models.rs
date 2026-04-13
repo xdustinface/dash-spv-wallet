@@ -381,6 +381,57 @@ pub fn format_output(output: &OutputInfo, unit: &str) -> OutputView {
     }
 }
 
+/// The number of inputs/outputs shown before a "Show all" toggle appears.
+pub const COLLAPSE_THRESHOLD: usize = 5;
+
+/// Return the visible input views and whether more are hidden.
+///
+/// When `expanded` is false and the input count exceeds `threshold`, only
+/// the first `threshold` inputs are included and `has_more` is `true`.
+pub fn visible_input_views(
+    inputs: &[InputInfo],
+    expanded: bool,
+    threshold: usize,
+    unit: &str,
+) -> (Vec<InputView>, bool) {
+    let has_more = inputs.len() > threshold;
+    let count = if expanded || !has_more {
+        inputs.len()
+    } else {
+        threshold
+    };
+    let views = inputs
+        .iter()
+        .take(count)
+        .map(|i| format_input(i, unit))
+        .collect();
+    (views, has_more)
+}
+
+/// Return the visible output views and whether more are hidden.
+///
+/// When `expanded` is false and the output count exceeds `threshold`, only
+/// the first `threshold` outputs are included and `has_more` is `true`.
+pub fn visible_output_views(
+    outputs: &[OutputInfo],
+    expanded: bool,
+    threshold: usize,
+    unit: &str,
+) -> (Vec<OutputView>, bool) {
+    let has_more = outputs.len() > threshold;
+    let count = if expanded || !has_more {
+        outputs.len()
+    } else {
+        threshold
+    };
+    let views = outputs
+        .iter()
+        .take(count)
+        .map(|o| format_output(o, unit))
+        .collect();
+    (views, has_more)
+}
+
 /// Map an `OutputRole` to a human-readable label and Tailwind color class.
 fn role_display(role: OutputRole) -> (&'static str, &'static str) {
     match role {
@@ -986,6 +1037,78 @@ mod tests {
         assert_eq!(view.amount_display, "1.0 DASH");
         assert_eq!(view.role_label, "Received");
         assert_eq!(view.role_color, "bg-success");
+    }
+
+    #[test]
+    fn visible_input_views_all_shown_when_under_threshold() {
+        let inputs: Vec<InputInfo> = (0..3)
+            .map(|i| InputInfo {
+                index: i,
+                value: 1_000,
+                address: String::new(),
+            })
+            .collect();
+        let (views, has_more) = visible_input_views(&inputs, false, 5, "DASH");
+        assert_eq!(views.len(), 3);
+        assert!(!has_more);
+    }
+
+    #[test]
+    fn visible_input_views_truncated_when_collapsed() {
+        let inputs: Vec<InputInfo> = (0..8)
+            .map(|i| InputInfo {
+                index: i,
+                value: 1_000,
+                address: String::new(),
+            })
+            .collect();
+        let (views, has_more) = visible_input_views(&inputs, false, 5, "DASH");
+        assert_eq!(views.len(), 5);
+        assert!(has_more);
+    }
+
+    #[test]
+    fn visible_input_views_all_shown_when_expanded() {
+        let inputs: Vec<InputInfo> = (0..8)
+            .map(|i| InputInfo {
+                index: i,
+                value: 1_000,
+                address: String::new(),
+            })
+            .collect();
+        let (views, has_more) = visible_input_views(&inputs, true, 5, "DASH");
+        assert_eq!(views.len(), 8);
+        assert!(has_more);
+    }
+
+    #[test]
+    fn visible_output_views_truncated_when_collapsed() {
+        let outputs: Vec<OutputInfo> = (0..7)
+            .map(|i| OutputInfo {
+                index: i,
+                value: 500,
+                address: String::new(),
+                role: OutputRole::Received,
+            })
+            .collect();
+        let (views, has_more) = visible_output_views(&outputs, false, 5, "DASH");
+        assert_eq!(views.len(), 5);
+        assert!(has_more);
+    }
+
+    #[test]
+    fn visible_output_views_all_shown_when_expanded() {
+        let outputs: Vec<OutputInfo> = (0..7)
+            .map(|i| OutputInfo {
+                index: i,
+                value: 500,
+                address: String::new(),
+                role: OutputRole::Received,
+            })
+            .collect();
+        let (views, has_more) = visible_output_views(&outputs, true, 5, "DASH");
+        assert_eq!(views.len(), 7);
+        assert!(has_more);
     }
 
     #[test]

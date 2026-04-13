@@ -4,8 +4,8 @@ use crate::backend::types::{InputInfo, OutputInfo, TransactionDirection, Transac
 use crate::config::AppConfig;
 use crate::state::network::NetworkInfo;
 use crate::state::view_models::{
-    TransactionView, format_address_responsive, format_input, format_output, format_transaction,
-    matches_search,
+    COLLAPSE_THRESHOLD, TransactionView, format_address_responsive, format_transaction,
+    matches_search, visible_input_views, visible_output_views,
 };
 use crate::state::wallet::WalletState;
 
@@ -55,8 +55,6 @@ pub fn Transactions() -> Element {
     let mut active_filter = use_signal(|| None::<TransactionDirection>);
     let mut visible_count = use_signal(|| PAGE_SIZE);
     let mut expanded_txid = use_signal(|| None::<dashcore::Txid>);
-    let mut inputs_expanded = use_signal(|| false);
-    let mut outputs_expanded = use_signal(|| false);
 
     let transactions = wallet.read().transactions.clone();
     let current_height = network_info.read().chain_tip;
@@ -167,24 +165,12 @@ pub fn Transactions() -> Element {
                                     inputs: tx.inputs.clone(),
                                     outputs: tx.outputs.clone(),
                                     unit: unit.to_string(),
-                                    inputs_expanded: *inputs_expanded.read(),
-                                    outputs_expanded: *outputs_expanded.read(),
                                     onclick: move |_| {
                                         if *expanded_txid.read() == Some(txid) {
                                             expanded_txid.set(None);
                                         } else {
                                             expanded_txid.set(Some(txid));
-                                            inputs_expanded.set(false);
-                                            outputs_expanded.set(false);
                                         }
-                                    },
-                                    on_toggle_inputs: move |_| {
-                                        let current = *inputs_expanded.read();
-                                        inputs_expanded.set(!current);
-                                    },
-                                    on_toggle_outputs: move |_| {
-                                        let current = *outputs_expanded.read();
-                                        outputs_expanded.set(!current);
                                     },
                                 }
                             }
@@ -224,12 +210,11 @@ fn TransactionRow(
     inputs: Vec<InputInfo>,
     outputs: Vec<OutputInfo>,
     unit: String,
-    inputs_expanded: bool,
-    outputs_expanded: bool,
     onclick: EventHandler<MouseEvent>,
-    on_toggle_inputs: EventHandler<MouseEvent>,
-    on_toggle_outputs: EventHandler<MouseEvent>,
 ) -> Element {
+    let mut inputs_expanded = use_signal(|| false);
+    let mut outputs_expanded = use_signal(|| false);
+
     let border = view.border_class;
     let icon_class = view.direction_icon_class;
     let icon = view.direction_icon;
@@ -326,18 +311,13 @@ fn TransactionRow(
                     if !inputs.is_empty() {
                         {
                             let input_count = inputs.len();
-                            let collapse_threshold = 5;
-                            let show_all_inputs = inputs_expanded || input_count <= collapse_threshold;
-                            let visible_inputs = if show_all_inputs {
-                                input_count
-                            } else {
-                                collapse_threshold
-                            };
-                            let input_views: Vec<_> = inputs
-                                .iter()
-                                .take(visible_inputs)
-                                .map(|inp| format_input(inp, &unit))
-                                .collect();
+                            let (input_views, has_more_inputs) = visible_input_views(
+                                &inputs,
+                                *inputs_expanded.read(),
+                                COLLAPSE_THRESHOLD,
+                                &unit,
+                            );
+                            let show_all_inputs = *inputs_expanded.read() || !has_more_inputs;
                             rsx! {
                                 div { class: "mt-2 pt-2 border-t border-edge",
                                     span { class: "text-muted font-medium block mb-1", "Inputs ({input_count})" }
@@ -350,10 +330,14 @@ fn TransactionRow(
                                             }
                                         }
                                     }
-                                    if input_count > collapse_threshold {
+                                    if has_more_inputs {
                                         button {
                                             class: "text-dash text-xs mt-1 hover:underline",
-                                            onclick: move |e| on_toggle_inputs.call(e),
+                                            onclick: move |e| {
+                                                e.stop_propagation();
+                                                let current = *inputs_expanded.read();
+                                                inputs_expanded.set(!current);
+                                            },
                                             if show_all_inputs {
                                                 "Show less"
                                             } else {
@@ -369,18 +353,13 @@ fn TransactionRow(
                     if !outputs.is_empty() {
                         {
                             let output_count = outputs.len();
-                            let collapse_threshold = 5;
-                            let show_all_outputs = outputs_expanded || output_count <= collapse_threshold;
-                            let visible_outputs = if show_all_outputs {
-                                output_count
-                            } else {
-                                collapse_threshold
-                            };
-                            let output_views: Vec<_> = outputs
-                                .iter()
-                                .take(visible_outputs)
-                                .map(|out| format_output(out, &unit))
-                                .collect();
+                            let (output_views, has_more_outputs) = visible_output_views(
+                                &outputs,
+                                *outputs_expanded.read(),
+                                COLLAPSE_THRESHOLD,
+                                &unit,
+                            );
+                            let show_all_outputs = *outputs_expanded.read() || !has_more_outputs;
                             rsx! {
                                 div { class: "mt-2 pt-2 border-t border-edge",
                                     span { class: "text-muted font-medium block mb-1", "Outputs ({output_count})" }
@@ -396,10 +375,14 @@ fn TransactionRow(
                                             }
                                         }
                                     }
-                                    if output_count > collapse_threshold {
+                                    if has_more_outputs {
                                         button {
                                             class: "text-dash text-xs mt-1 hover:underline",
-                                            onclick: move |e| on_toggle_outputs.call(e),
+                                            onclick: move |e| {
+                                                e.stop_propagation();
+                                                let current = *outputs_expanded.read();
+                                                outputs_expanded.set(!current);
+                                            },
                                             if show_all_outputs {
                                                 "Show less"
                                             } else {
@@ -413,9 +396,7 @@ fn TransactionRow(
                     }
 
                     div { class: "mt-2 pt-2 border-t border-edge text-center",
-                        span { class: "text-dash text-xs cursor-pointer hover:underline",
-                            "View full details"
-                        }
+                        span { class: "text-muted text-xs", "View full details" }
                     }
                 }
             }
