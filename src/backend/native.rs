@@ -837,7 +837,9 @@ mod tests {
     use dashcore::ephemerealdata::instant_lock::InstantLock;
     use dashcore::hashes::Hash;
     use dashcore::{Address, BlockHash, PublicKey, Txid};
-    use key_wallet::managed_account::transaction_record::{InputDetail, TransactionRecord};
+    use key_wallet::managed_account::transaction_record::{
+        InputDetail, OutputDetail, OutputRole as UpstreamTestOutputRole, TransactionRecord,
+    };
     use key_wallet::transaction_checking::TransactionContext;
     use key_wallet::transaction_checking::transaction_context::BlockInfo;
     use key_wallet::transaction_checking::transaction_router::TransactionType;
@@ -1281,5 +1283,105 @@ mod tests {
         assert_eq!(addresses.len(), 2);
         assert!(addresses.contains(&addr_a.to_string()));
         assert!(addresses.contains(&addr_b.to_string()));
+    }
+
+    #[test]
+    fn extract_record_inputs_maps_index_value_address() {
+        let addr = test_address();
+        let input_details = vec![
+            InputDetail {
+                index: 0,
+                value: 50_000,
+                address: addr.clone(),
+            },
+            InputDetail {
+                index: 1,
+                value: 75_000,
+                address: addr.clone(),
+            },
+        ];
+
+        let tx = Transaction::dummy_empty();
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            input_details,
+            Vec::new(),
+            125_000,
+        );
+
+        let inputs = extract_record_inputs(&record);
+        assert_eq!(inputs.len(), 2);
+        assert_eq!(inputs[0].index, 0);
+        assert_eq!(inputs[0].value, 50_000);
+        assert_eq!(inputs[0].address, addr.to_string());
+        assert_eq!(inputs[1].index, 1);
+        assert_eq!(inputs[1].value, 75_000);
+    }
+
+    #[test]
+    fn extract_record_outputs_enriches_value_and_address_from_tx() {
+        let addr = test_address();
+        let tx = Transaction::dummy(&addr, 0..1, &[99_774, 226]);
+        let output_details = vec![
+            OutputDetail {
+                index: 0,
+                role: UpstreamTestOutputRole::Received,
+            },
+            OutputDetail {
+                index: 1,
+                role: UpstreamTestOutputRole::Change,
+            },
+        ];
+
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            output_details,
+            99_774,
+        );
+
+        let outputs = extract_record_outputs(&record, Network::Testnet);
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs[0].index, 0);
+        assert_eq!(outputs[0].value, 99_774);
+        assert_eq!(outputs[0].address, addr.to_string());
+        assert_eq!(outputs[0].role, OutputRole::Received);
+        assert_eq!(outputs[1].index, 1);
+        assert_eq!(outputs[1].value, 226);
+        assert_eq!(outputs[1].role, OutputRole::Change);
+    }
+
+    #[test]
+    fn extract_record_outputs_oob_index_falls_back_to_zero() {
+        let addr = test_address();
+        let tx = Transaction::dummy(&addr, 0..1, &[50_000]);
+        // index 99 is out of bounds for a 1-output tx
+        let output_details = vec![OutputDetail {
+            index: 99,
+            role: UpstreamTestOutputRole::Sent,
+        }];
+
+        let record = TransactionRecord::new(
+            tx,
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            output_details,
+            0,
+        );
+
+        let outputs = extract_record_outputs(&record, Network::Testnet);
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].index, 99);
+        assert_eq!(outputs[0].value, 0);
+        assert_eq!(outputs[0].address, "");
+        assert_eq!(outputs[0].role, OutputRole::Sent);
     }
 }
