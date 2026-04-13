@@ -1663,9 +1663,19 @@ fn extract_ffi_input_addresses(record: &FFITransactionRecord) -> Vec<String> {
     addrs
 }
 
+const MAX_DETAIL_COUNT: usize = 1_000_000;
+
 /// Extract `InputInfo` entries from an `FFITransactionRecord`.
 fn extract_ffi_inputs(record: &FFITransactionRecord) -> Vec<InputInfo> {
     if record.input_details.is_null() || record.input_details_count == 0 {
+        return Vec::new();
+    }
+    if record.input_details_count > MAX_DETAIL_COUNT {
+        tracing::warn!(
+            count = record.input_details_count,
+            max = MAX_DETAIL_COUNT,
+            "FFI input_details_count exceeds safety bound, ignoring"
+        );
         return Vec::new();
     }
     // Safety: input_details is a valid pointer to an array of input_details_count elements.
@@ -1698,6 +1708,14 @@ fn extract_ffi_inputs(record: &FFITransactionRecord) -> Vec<InputInfo> {
 /// record.
 fn extract_ffi_outputs(record: &FFITransactionRecord, network: Network) -> Vec<OutputInfo> {
     if record.output_details.is_null() || record.output_details_count == 0 {
+        return Vec::new();
+    }
+    if record.output_details_count > MAX_DETAIL_COUNT {
+        tracing::warn!(
+            count = record.output_details_count,
+            max = MAX_DETAIL_COUNT,
+            "FFI output_details_count exceeds safety bound, ignoring"
+        );
         return Vec::new();
     }
     // Safety: output_details is a valid pointer to an array of output_details_count elements.
@@ -1767,6 +1785,9 @@ mod tests {
     use std::ffi::CString;
     use std::ptr;
 
+    use dashcore::consensus::serialize;
+    use dashcore::key::PublicKey;
+    use dashcore::{Address, Transaction};
     use key_wallet_ffi::types::{
         FFIBlockInfo, FFIInputDetail, FFIOutputDetail, FFITransactionContext,
         FFITransactionContextType, FFITransactionDirection, FFITransactionType,
@@ -1883,6 +1904,45 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].value, 0);
         assert_eq!(result[0].address, "");
+    }
+
+    #[test]
+    fn extract_ffi_outputs_valid_tx_extracts_value_and_address() {
+        let pk = PublicKey::from_slice(&[
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x01,
+        ])
+        .unwrap();
+        let addr = Address::p2pkh(&pk, dashcore::Network::Testnet);
+        let tx = Transaction::dummy(&addr, 0..1, &[99_774, 226]);
+        let tx_bytes = serialize(&tx);
+
+        let mut details = [
+            FFIOutputDetail {
+                index: 0,
+                role: FFIOutputRole::Received,
+            },
+            FFIOutputDetail {
+                index: 1,
+                role: FFIOutputRole::Change,
+            },
+        ];
+        let mut record = empty_record();
+        record.output_details = details.as_mut_ptr();
+        record.output_details_count = details.len();
+        record.tx_data = tx_bytes.as_ptr() as *mut _;
+        record.tx_len = tx_bytes.len();
+
+        let result = extract_ffi_outputs(&record, Network::Testnet);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].index, 0);
+        assert_eq!(result[0].value, 99_774);
+        assert_eq!(result[0].address, addr.to_string());
+        assert_eq!(result[0].role, OutputRole::Received);
+        assert_eq!(result[1].index, 1);
+        assert_eq!(result[1].value, 226);
+        assert_eq!(result[1].role, OutputRole::Change);
     }
 
     #[test]
