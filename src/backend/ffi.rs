@@ -1876,6 +1876,20 @@ mod tests {
     }
 
     #[test]
+    fn extract_ffi_outputs_oversized_count_skips_extraction() {
+        let mut detail = FFIOutputDetail {
+            index: 0,
+            role: FFIOutputRole::Received,
+        };
+        let mut record = empty_record();
+        record.output_details = &mut detail as *mut _;
+        record.output_details_count = MAX_DETAIL_COUNT + 1;
+
+        let result = extract_ffi_outputs(&record, Network::Mainnet);
+        assert!(result.is_empty());
+    }
+
+    #[test]
     fn extract_ffi_outputs_null_pointer_returns_empty() {
         let record = empty_record();
         let result = extract_ffi_outputs(&record, Network::Mainnet);

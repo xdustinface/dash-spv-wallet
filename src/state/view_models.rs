@@ -1127,6 +1127,35 @@ mod tests {
     }
 
     #[test]
+    fn visible_input_views_equal_to_threshold_shows_all() {
+        let inputs: Vec<InputInfo> = (0..5)
+            .map(|i| InputInfo {
+                index: i,
+                value: 1_000,
+                address: String::new(),
+            })
+            .collect();
+        let (views, has_more) = visible_input_views(&inputs, false, 5, "DASH");
+        assert_eq!(views.len(), 5);
+        assert!(!has_more);
+    }
+
+    #[test]
+    fn visible_output_views_equal_to_threshold_shows_all() {
+        let outputs: Vec<OutputInfo> = (0..5)
+            .map(|i| OutputInfo {
+                index: i,
+                value: 500,
+                address: String::new(),
+                role: OutputRole::Received,
+            })
+            .collect();
+        let (views, has_more) = visible_output_views(&outputs, false, 5, "DASH");
+        assert_eq!(views.len(), 5);
+        assert!(!has_more);
+    }
+
+    #[test]
     fn format_output_all_roles() {
         let make = |role| OutputInfo {
             index: 0,
