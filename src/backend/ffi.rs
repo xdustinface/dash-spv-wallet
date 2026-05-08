@@ -186,6 +186,8 @@ impl SpvBackend for FfiBackend {
             }
 
             if !peers.is_empty() {
+                // dash_spv_ffi_config_clear_peers was removed upstream; any default seed peers
+                // from config_new are not cleared before user peers are added.
                 for peer in &peers {
                     let c_peer = CString::new(peer.as_str())
                         .map_err(|e| BackendError::Internal(e.to_string()))?;
@@ -821,7 +823,7 @@ impl SpvBackend for FfiBackend {
                         is_confirmed: ffi_utxo.confirmations > 0,
                         is_instantlocked: false,
                         is_locked: false,
-                        is_trusted: false,
+                        is_trusted: ffi_utxo.confirmations > 0,
                     });
                 }
 
@@ -1559,7 +1561,7 @@ extern "C" fn on_transaction_detected(
 
 extern "C" fn on_transaction_instant_locked(
     _wallet_id: *const c_char,
-    _txid: *const [u8; 32],
+    txid: *const [u8; 32],
     _islock_data: *const u8,
     _islock_len: usize,
     balance: *const key_wallet_ffi::types::FFIBalance,
@@ -1569,6 +1571,28 @@ extern "C" fn on_transaction_instant_locked(
 ) {
     // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
     let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    if !txid.is_null() {
+        // Safety: txid is a valid pointer for the duration of the callback.
+        let txid_bytes = unsafe { *txid };
+        let _ = ctx
+            .event_tx
+            .send(SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+                txid: dashcore::Txid::from_byte_array(txid_bytes),
+                is_instant_send: true,
+                amount: 0,
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
+                timestamp: 0,
+                height: None,
+                fee: None,
+                addresses: Vec::new(),
+                block_hash: None,
+                is_chain_locked: false,
+                label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+            })));
+    }
     if !balance.is_null() {
         // Safety: balance is a valid pointer for the duration of the callback.
         let b = unsafe { &*balance };
@@ -2162,6 +2186,98 @@ mod tests {
     }
 
     #[test]
+    fn on_transaction_detected_null_record_emits_only_balance() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+        let balance = FFIBalance {
+            confirmed: 5_000,
+            unconfirmed: 0,
+            immature: 0,
+            locked: 0,
+            total: 5_000,
+        };
+
+        on_transaction_detected(
+            ptr::null(),
+            ptr::null(),
+            &balance as *const _,
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        let ev = rx.try_recv().unwrap();
+        assert!(
+            matches!(ev, SpvEvent::BalanceUpdated(_)),
+            "null record must emit only balance"
+        );
+        assert!(rx.try_recv().is_err(), "expected exactly 1 event");
+    }
+
+    #[test]
+    fn on_transaction_detected_null_balance_emits_only_received() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+        let mut record = empty_record();
+        record.net_amount = 10_000;
+
+        on_transaction_detected(
+            ptr::null(),
+            &record as *const _,
+            ptr::null(),
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            user_data,
+        );
+        clear_borrowed_pointers(&mut record);
+
+        let ev = rx.try_recv().unwrap();
+        match ev {
+            SpvEvent::TransactionReceived(info) => assert_eq!(info.amount, 10_000),
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+        assert!(rx.try_recv().is_err(), "expected exactly 1 event");
+    }
+
+    #[test]
+    fn on_transaction_detected_both_null_emits_nothing() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+
+        on_transaction_detected(
+            ptr::null(),
+            ptr::null(),
+            ptr::null(),
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        assert!(rx.try_recv().is_err(), "expected no events");
+    }
+
+    #[test]
     fn on_wallet_block_processed_emits_records_then_balance() {
         let (tx, mut rx) = super::super::events::event_channel(32);
         let ctx = CallbackContext {
@@ -2183,24 +2299,22 @@ mod tests {
             total: 30_000,
         };
 
-        unsafe {
-            on_wallet_block_processed(
-                ptr::null(),
-                100,
-                &r1 as *const _,
-                1,
-                &r2 as *const _,
-                1,
-                ptr::null(),
-                0,
-                &balance as *const _,
-                ptr::null(),
-                0,
-                ptr::null(),
-                0,
-                user_data,
-            );
-        }
+        on_wallet_block_processed(
+            ptr::null(),
+            100,
+            &r1 as *const _,
+            1,
+            &r2 as *const _,
+            1,
+            ptr::null(),
+            0,
+            &balance as *const _,
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            user_data,
+        );
 
         let ev0 = rx.try_recv().unwrap();
         let ev1 = rx.try_recv().unwrap();
@@ -2237,24 +2351,22 @@ mod tests {
             total: 1_000,
         };
 
-        unsafe {
-            on_wallet_block_processed(
-                ptr::null(),
-                1,
-                &record as *const _,
-                (MAX_DETAIL_COUNT as u32) + 1,
-                ptr::null(),
-                0,
-                ptr::null(),
-                0,
-                &balance as *const _,
-                ptr::null(),
-                0,
-                ptr::null(),
-                0,
-                user_data,
-            );
-        }
+        on_wallet_block_processed(
+            ptr::null(),
+            1,
+            &record as *const _,
+            (MAX_DETAIL_COUNT as u32) + 1,
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            &balance as *const _,
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            user_data,
+        );
 
         let ev = rx.try_recv().unwrap();
         assert!(
