@@ -657,7 +657,7 @@ mod tests {
         let result = backend.get_balance().unwrap();
         assert_eq!(result, balance);
         assert_eq!(result.total(), 1_075_000);
-        assert_eq!(result.spendable(), 1_000_000);
+        assert_eq!(result.spendable(), 1_050_000);
     }
 
     #[tokio::test]

@@ -18,11 +18,12 @@ path = "src/main.rs"
 [dependencies]
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", features = ["serde"] }
 dash-spv = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", features = ["keep-finalized-transactions"] }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", features = ["keep-finalized-transactions"] }
 
 dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", optional = true }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", optional = true }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", optional = true, features = ["keep-finalized-transactions"] }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", features = ["ffi"], optional = true }
 
 dioxus = { version = "0.7", features = ["desktop", "router"] }
 clap = { version = "4", features = ["derive"] }
@@ -35,7 +36,7 @@ toml = "0.8"
 tracing = "0.1"
 
 [features]
-ffi = ["dep:dash-spv-ffi", "dep:key-wallet-ffi"]
+ffi = ["dep:dash-spv-ffi", "dep:key-wallet-ffi", "dep:dash-network"]
 
 [dev-dependencies]
 dash-spv = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.42-dev", features = ["test-utils"] }
@@ -51,6 +52,7 @@ key-wallet = { git = "https://github.com/xdustinface/rust-dashcore", branch = "f
 key-wallet-manager = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
 dash-spv-ffi = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
 key-wallet-ffi = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
+dash-network = { git = "https://github.com/xdustinface/rust-dashcore", branch = "feat/dash-spv-wallet" }
 
 # Use patched version with Windows support (crates.io 0.1.8 lacks unistd.h handling)
 [patch.crates-io]
