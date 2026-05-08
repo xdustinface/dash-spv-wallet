@@ -1467,7 +1467,6 @@ extern "C" fn on_peers_updated(connected_count: u32, best_height: u32, user_data
     });
 }
 
-/// Build a `TransactionInfo` from an `FFITransactionRecord`.
 fn ffi_record_to_info(r: &FFITransactionRecord, network: Network) -> TransactionInfo {
     let (is_instant_send, is_chain_locked) = ffi_transaction_context_flags(r.context.context_type);
 

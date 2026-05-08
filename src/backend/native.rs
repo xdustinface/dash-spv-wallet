@@ -810,6 +810,7 @@ fn extract_context_fields(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
     use std::net::SocketAddr;
 
     use dash_spv::network::NetworkEvent;
@@ -970,12 +971,12 @@ mod tests {
 
     #[test]
     fn map_sync_event_block_processed() {
-        let mut new_addresses = std::collections::BTreeMap::new();
+        let mut new_addresses = BTreeMap::new();
         new_addresses.insert([0u8; 32], vec![test_address()]);
         let event = SyncEvent::BlockProcessed {
             block_hash: BlockHash::all_zeros(),
             height: 100,
-            wallets: std::collections::BTreeSet::new(),
+            wallets: BTreeSet::new(),
             new_addresses,
             confirmed_txids: vec![],
         };
