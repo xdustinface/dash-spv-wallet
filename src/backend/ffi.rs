@@ -2214,10 +2214,15 @@ mod tests {
         );
 
         let ev = rx.try_recv().unwrap();
-        assert!(
-            matches!(ev, SpvEvent::BalanceUpdated(_)),
-            "null record must emit only balance"
-        );
+        match ev {
+            SpvEvent::BalanceUpdated(b) => {
+                assert_eq!(b.confirmed(), 5_000, "confirmed");
+                assert_eq!(b.unconfirmed(), 0, "unconfirmed");
+                assert_eq!(b.immature(), 0, "immature");
+                assert_eq!(b.locked(), 0, "locked");
+            }
+            other => panic!("expected BalanceUpdated, got {:?}", other),
+        }
         assert!(rx.try_recv().is_err(), "expected exactly 1 event");
     }
 
@@ -2329,7 +2334,15 @@ mod tests {
             SpvEvent::TransactionReceived(info) => assert_eq!(info.amount, 20_000),
             other => panic!("expected TransactionReceived, got {:?}", other),
         }
-        assert!(matches!(ev2, SpvEvent::BalanceUpdated(_)));
+        match ev2 {
+            SpvEvent::BalanceUpdated(b) => {
+                assert_eq!(b.confirmed(), 30_000, "confirmed");
+                assert_eq!(b.unconfirmed(), 0, "unconfirmed");
+                assert_eq!(b.immature(), 0, "immature");
+                assert_eq!(b.locked(), 0, "locked");
+            }
+            other => panic!("expected BalanceUpdated, got {:?}", other),
+        }
     }
 
     #[test]
@@ -2481,5 +2494,103 @@ mod tests {
         let s = CString::new("coffee payment").unwrap();
         let result = unsafe { extract_ffi_label(s.as_ptr()) };
         assert_eq!(result, Some("coffee payment".to_string()));
+    }
+
+    #[test]
+    fn on_transaction_instant_locked_null_txid_emits_only_balance() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+        let balance = FFIBalance {
+            confirmed: 1_000,
+            unconfirmed: 200,
+            immature: 50,
+            locked: 0,
+            total: 1_250,
+        };
+
+        on_transaction_instant_locked(
+            ptr::null(),
+            ptr::null(),
+            ptr::null(),
+            0,
+            &balance as *const _,
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        let ev = rx.try_recv().unwrap();
+        match ev {
+            SpvEvent::BalanceUpdated(b) => {
+                assert_eq!(b.confirmed(), 1_000, "confirmed");
+                assert_eq!(b.unconfirmed(), 200, "unconfirmed");
+                assert_eq!(b.immature(), 50, "immature");
+                assert_eq!(b.locked(), 0, "locked");
+            }
+            other => panic!("expected BalanceUpdated, got {:?}", other),
+        }
+        assert!(rx.try_recv().is_err(), "expected exactly 1 event");
+    }
+
+    #[test]
+    fn on_transaction_instant_locked_non_null_txid_emits_received_with_is_instant_send() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+        let txid: [u8; 32] = [0xAB; 32];
+
+        on_transaction_instant_locked(
+            ptr::null(),
+            &txid as *const _,
+            ptr::null(),
+            0,
+            ptr::null(),
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        let ev = rx.try_recv().unwrap();
+        match ev {
+            SpvEvent::TransactionReceived(info) => {
+                assert!(info.is_instant_send);
+                assert_eq!(info.amount, 0);
+            }
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+        assert!(rx.try_recv().is_err(), "expected exactly 1 event");
+    }
+
+    #[test]
+    fn on_transaction_instant_locked_both_null_emits_nothing() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+
+        on_transaction_instant_locked(
+            ptr::null(),
+            ptr::null(),
+            ptr::null(),
+            0,
+            ptr::null(),
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        assert!(rx.try_recv().is_err(), "expected no events");
     }
 }
