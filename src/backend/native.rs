@@ -37,7 +37,8 @@ use super::error::{BackendError, BackendResult};
 use super::events::{EventReceiver, EventSender, SpvEvent, event_channel};
 use super::r#trait::SpvBackend;
 use super::types::{
-    InputInfo, Network, OutputInfo, OutputRole, SyncProgress, TransactionInfo, WalletCoreBalance,
+    InputInfo, Network, OutputInfo, OutputRole, SyncProgress, TransactionDirection,
+    TransactionInfo, TransactionType, WalletCoreBalance,
 };
 use crate::config::AppConfig;
 
@@ -662,8 +663,26 @@ fn map_wallet_event(event: WalletEvent, network: Network) -> Vec<SpvEvent> {
             ))),
             SpvEvent::BalanceUpdated(balance),
         ],
-        WalletEvent::TransactionInstantLocked { balance, .. } => {
-            vec![SpvEvent::BalanceUpdated(balance)]
+        WalletEvent::TransactionInstantLocked { txid, balance, .. } => {
+            vec![
+                SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+                    txid,
+                    is_instant_send: true,
+                    amount: 0,
+                    direction: TransactionDirection::Incoming,
+                    transaction_type: TransactionType::Standard,
+                    timestamp: 0,
+                    height: None,
+                    fee: None,
+                    addresses: Vec::new(),
+                    block_hash: None,
+                    is_chain_locked: false,
+                    label: None,
+                    inputs: Vec::new(),
+                    outputs: Vec::new(),
+                })),
+                SpvEvent::BalanceUpdated(balance),
+            ]
         }
         WalletEvent::BlockProcessed {
             inserted,
@@ -1190,6 +1209,74 @@ mod tests {
             mapped[0],
             SpvEvent::BalanceUpdated(WalletCoreBalance::new(100_000, 50_000, 25_000, 10_000))
         );
+    }
+
+    #[test]
+    fn map_wallet_event_block_processed_with_records_emits_transaction_received() {
+        let tx1 = Transaction::dummy_empty();
+        let tx2 = Transaction::dummy_empty();
+        let txid1 = tx1.txid();
+        let txid2 = tx2.txid();
+        let record1 = make_record(
+            tx1,
+            TransactionContext::Mempool,
+            Vec::new(),
+            Vec::new(),
+            10_000,
+        );
+        let record2 = make_record(
+            tx2,
+            TransactionContext::Mempool,
+            Vec::new(),
+            Vec::new(),
+            20_000,
+        );
+        let balance = WalletCoreBalance::new(30_000, 0, 0, 0);
+        let event = WalletEvent::BlockProcessed {
+            wallet_id: [0; 32],
+            height: 200,
+            inserted: vec![record1],
+            updated: vec![record2],
+            matured: Vec::new(),
+            balance,
+            account_balances: Default::default(),
+            addresses_derived: Vec::new(),
+        };
+        let mapped = map_wallet_event(event, Network::Mainnet);
+        assert_eq!(mapped.len(), 3);
+        match &mapped[0] {
+            SpvEvent::TransactionReceived(info) => assert_eq!(info.txid, txid1),
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+        match &mapped[1] {
+            SpvEvent::TransactionReceived(info) => assert_eq!(info.txid, txid2),
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+        assert_eq!(mapped[2], SpvEvent::BalanceUpdated(balance));
+    }
+
+    #[test]
+    fn map_wallet_event_transaction_instant_locked_emits_received_and_balance() {
+        let txid = Txid::from_byte_array([7; 32]);
+        let balance = WalletCoreBalance::new(200_000, 0, 0, 0);
+        let event = WalletEvent::TransactionInstantLocked {
+            wallet_id: [0; 32],
+            txid,
+            instant_lock: InstantLock::default(),
+            balance,
+            account_balances: Default::default(),
+        };
+        let mapped = map_wallet_event(event, Network::Mainnet);
+        assert_eq!(mapped.len(), 2);
+        match &mapped[0] {
+            SpvEvent::TransactionReceived(info) => {
+                assert_eq!(info.txid, txid);
+                assert!(info.is_instant_send);
+                assert_eq!(info.amount, 0);
+            }
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+        assert_eq!(mapped[1], SpvEvent::BalanceUpdated(balance));
     }
 
     #[test]

@@ -1602,6 +1602,14 @@ extern "C" fn on_wallet_block_processed(
         if ptr.is_null() || count == 0 {
             return;
         }
+        if count as usize > MAX_DETAIL_COUNT {
+            tracing::warn!(
+                count,
+                max = MAX_DETAIL_COUNT,
+                "FFI record count exceeds safety bound, ignoring"
+            );
+            return;
+        }
         // Safety: ptr is valid for `count` elements for the duration of the callback.
         let records = unsafe { std::slice::from_raw_parts(ptr, count as usize) };
         for r in records {
@@ -1866,7 +1874,7 @@ mod tests {
     use dashcore::{Address, Transaction};
     use key_wallet_ffi::managed_account::FFIAccountType;
     use key_wallet_ffi::types::{
-        FFIBlockInfo, FFIInputDetail, FFIOutputDetail, FFITransactionContext,
+        FFIBalance, FFIBlockInfo, FFIInputDetail, FFIOutputDetail, FFITransactionContext,
         FFITransactionContextType, FFITransactionDirection, FFITransactionType,
     };
 
@@ -1953,13 +1961,13 @@ mod tests {
         record.input_details_count = 1;
 
         let result = extract_ffi_inputs(&record);
+        clear_borrowed_pointers(&mut record);
+        detail.address = ptr::null_mut();
+
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].index, 2);
         assert_eq!(result[0].value, 150_000_000);
         assert_eq!(result[0].address, "XqN8a73jYfHtFbEjz2XYBfrCHn6YQwBGsP");
-
-        clear_borrowed_pointers(&mut record);
-        detail.address = ptr::null_mut();
     }
 
     #[test]
@@ -1974,10 +1982,10 @@ mod tests {
         record.input_details_count = 1;
 
         let result = extract_ffi_inputs(&record);
+        clear_borrowed_pointers(&mut record);
+
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].address, "");
-
-        clear_borrowed_pointers(&mut record);
     }
 
     #[test]
@@ -1992,9 +2000,9 @@ mod tests {
         record.input_details_count = MAX_DETAIL_COUNT + 1;
 
         let result = extract_ffi_inputs(&record);
-        assert!(result.is_empty());
-
         clear_borrowed_pointers(&mut record);
+
+        assert!(result.is_empty());
     }
 
     #[test]
@@ -2005,9 +2013,9 @@ mod tests {
         record.output_details_count = MAX_DETAIL_COUNT + 1;
 
         let result = extract_ffi_outputs(&record, Network::Mainnet);
-        assert!(result.is_empty());
-
         clear_borrowed_pointers(&mut record);
+
+        assert!(result.is_empty());
     }
 
     #[test]
@@ -2028,12 +2036,12 @@ mod tests {
         record.tx_len = garbage.len();
 
         let result = extract_ffi_outputs(&record, Network::Mainnet);
+        clear_borrowed_pointers(&mut record);
+
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].value, 0);
         assert_eq!(result[0].address, "");
         assert_eq!(result[0].role, OutputRole::Received);
-
-        clear_borrowed_pointers(&mut record);
     }
 
     #[test]
@@ -2047,11 +2055,11 @@ mod tests {
         record.tx_len = 2_000_000;
 
         let result = extract_ffi_outputs(&record, Network::Mainnet);
+        clear_borrowed_pointers(&mut record);
+
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].value, 0);
         assert_eq!(result[0].address, "");
-
-        clear_borrowed_pointers(&mut record);
     }
 
     #[test]
@@ -2077,6 +2085,8 @@ mod tests {
         record.tx_len = tx_bytes.len();
 
         let result = extract_ffi_outputs(&record, Network::Testnet);
+        clear_borrowed_pointers(&mut record);
+
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].index, 0);
         assert_eq!(result[0].value, 99_774);
@@ -2085,8 +2095,6 @@ mod tests {
         assert_eq!(result[1].index, 1);
         assert_eq!(result[1].value, 226);
         assert_eq!(result[1].role, OutputRole::Change);
-
-        clear_borrowed_pointers(&mut record);
     }
 
     #[test]
@@ -2151,6 +2159,155 @@ mod tests {
             ffi_type_to_type(FFITransactionType::Ignored),
             TransactionType::Ignored,
         );
+    }
+
+    #[test]
+    fn on_wallet_block_processed_emits_records_then_balance() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+
+        let mut r1 = empty_record();
+        r1.net_amount = 10_000;
+        let mut r2 = empty_record();
+        r2.net_amount = 20_000;
+        let balance = FFIBalance {
+            confirmed: 30_000,
+            unconfirmed: 0,
+            immature: 0,
+            locked: 0,
+            total: 30_000,
+        };
+
+        unsafe {
+            on_wallet_block_processed(
+                ptr::null(),
+                100,
+                &r1 as *const _,
+                1,
+                &r2 as *const _,
+                1,
+                ptr::null(),
+                0,
+                &balance as *const _,
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                user_data,
+            );
+        }
+
+        let ev0 = rx.try_recv().unwrap();
+        let ev1 = rx.try_recv().unwrap();
+        let ev2 = rx.try_recv().unwrap();
+        assert!(rx.try_recv().is_err(), "expected exactly 3 events");
+
+        match ev0 {
+            SpvEvent::TransactionReceived(info) => assert_eq!(info.amount, 10_000),
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+        match ev1 {
+            SpvEvent::TransactionReceived(info) => assert_eq!(info.amount, 20_000),
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+        assert!(matches!(ev2, SpvEvent::BalanceUpdated(_)));
+    }
+
+    #[test]
+    fn on_wallet_block_processed_oversized_count_skips_records() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+
+        let record = empty_record();
+        let balance = FFIBalance {
+            confirmed: 1_000,
+            unconfirmed: 0,
+            immature: 0,
+            locked: 0,
+            total: 1_000,
+        };
+
+        unsafe {
+            on_wallet_block_processed(
+                ptr::null(),
+                1,
+                &record as *const _,
+                (MAX_DETAIL_COUNT as u32) + 1,
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                &balance as *const _,
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                user_data,
+            );
+        }
+
+        let ev = rx.try_recv().unwrap();
+        assert!(
+            matches!(ev, SpvEvent::BalanceUpdated(_)),
+            "oversized count must be skipped, only balance emitted"
+        );
+        assert!(rx.try_recv().is_err(), "expected exactly 1 event");
+    }
+
+    #[test]
+    fn ffi_record_to_info_mempool_uses_fallback_timestamp_and_no_height() {
+        let mut record = empty_record();
+        record.net_amount = 55_000;
+        record.direction = FFITransactionDirection::Incoming;
+        record.context.context_type = FFITransactionContextType::Mempool;
+
+        let info = ffi_record_to_info(&record, Network::Mainnet);
+
+        assert_eq!(info.amount, 55_000);
+        assert_eq!(info.height, None);
+        assert!(!info.is_instant_send);
+        assert!(!info.is_chain_locked);
+        assert!(info.timestamp > 0);
+    }
+
+    #[test]
+    fn ffi_record_to_info_instant_send_sets_flag() {
+        let mut record = empty_record();
+        record.context.context_type = FFITransactionContextType::InstantSend;
+
+        let info = ffi_record_to_info(&record, Network::Mainnet);
+
+        assert!(info.is_instant_send);
+        assert!(!info.is_chain_locked);
+        assert_eq!(info.height, None);
+    }
+
+    #[test]
+    fn ffi_record_to_info_in_block_uses_block_timestamp_and_height() {
+        let mut record = empty_record();
+        record.context.context_type = FFITransactionContextType::InBlock;
+        record.context.block_info = FFIBlockInfo {
+            height: 800,
+            block_hash: [1u8; 32],
+            timestamp: 1_700_000_000,
+        };
+
+        let info = ffi_record_to_info(&record, Network::Mainnet);
+
+        assert_eq!(info.height, Some(800));
+        assert_eq!(info.timestamp, 1_700_000_000);
+        assert!(!info.is_instant_send);
+        assert!(!info.is_chain_locked);
     }
 
     #[test]
