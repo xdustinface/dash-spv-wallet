@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use dash_network::ffi::FFINetwork;
 use dash_spv::sync::{
     BlockHeadersProgress, BlocksProgress, ChainLockProgress, FilterHeadersProgress,
     FiltersProgress, InstantSendProgress, MasternodesProgress, MempoolProgress, SyncState,
@@ -21,9 +22,8 @@ use dash_spv_ffi::client::{
     dash_spv_ffi_client_stop, dash_spv_ffi_wallet_manager_free,
 };
 use dash_spv_ffi::config::{
-    dash_spv_ffi_config_add_peer, dash_spv_ffi_config_clear_peers, dash_spv_ffi_config_destroy,
-    dash_spv_ffi_config_new, dash_spv_ffi_config_set_data_dir,
-    dash_spv_ffi_config_set_masternode_sync_enabled,
+    dash_spv_ffi_config_add_peer, dash_spv_ffi_config_destroy, dash_spv_ffi_config_new,
+    dash_spv_ffi_config_set_data_dir, dash_spv_ffi_config_set_masternode_sync_enabled,
     dash_spv_ffi_config_set_restrict_to_configured_peers, dash_spv_ffi_config_set_user_agent,
 };
 use dash_spv_ffi::error::dash_spv_ffi_get_last_error;
@@ -34,6 +34,7 @@ use dash_spv_ffi::types::{
 };
 use dashcore::hashes::Hash;
 use key_wallet::DerivationPathBuilder;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -51,7 +52,7 @@ use key_wallet_ffi::managed_wallet::{
 };
 use key_wallet_ffi::mnemonic::{mnemonic_free, mnemonic_generate};
 use key_wallet_ffi::types::{
-    FFIAccountType, FFINetwork, FFIOutputRole, FFITransactionContextType, FFITransactionDirection,
+    FFIAccountKind, FFIOutputRole, FFITransactionContextType, FFITransactionDirection,
     FFITransactionType,
 };
 use key_wallet_ffi::utxo::{managed_wallet_get_utxos, utxo_array_free};
@@ -185,9 +186,8 @@ impl SpvBackend for FfiBackend {
             }
 
             if !peers.is_empty() {
-                // Safety: config_ptr is valid.
-                unsafe { dash_spv_ffi_config_clear_peers(config_ptr) };
-
+                // dash_spv_ffi_config_clear_peers was removed upstream; any default seed peers
+                // from config_new are not cleared before user peers are added.
                 for peer in &peers {
                     let c_peer = CString::new(peer.as_str())
                         .map_err(|e| BackendError::Internal(e.to_string()))?;
@@ -323,8 +323,9 @@ impl SpvBackend for FfiBackend {
     }
 
     fn generate_mnemonic(&self) -> BackendResult<String> {
-        let mut error = WalletFFIError::success();
-        let ptr = mnemonic_generate(12, &mut error);
+        let mut error = WalletFFIError::default();
+        // Safety: error is a valid stack pointer.
+        let ptr = unsafe { mnemonic_generate(12, &mut error) };
         if ptr.is_null() {
             return Err(BackendError::Internal(read_wallet_ffi_error(&error)));
         }
@@ -357,7 +358,7 @@ impl SpvBackend for FfiBackend {
                 return Err(BackendError::Internal(get_last_ffi_error()));
             }
 
-            let mut error = WalletFFIError::success();
+            let mut error = WalletFFIError::default();
 
             // Safety: wm is valid (just obtained), c_mnemonic is a valid C string,
             // passphrase is null (empty passphrase), error is a valid stack variable.
@@ -410,7 +411,7 @@ impl SpvBackend for FfiBackend {
                 return Err(BackendError::Internal(get_last_ffi_error()));
             }
 
-            let mut error = WalletFFIError::success();
+            let mut error = WalletFFIError::default();
 
             // Safety: wm is valid, c_mnemonic is a valid C string.
             let ok = unsafe {
@@ -464,7 +465,7 @@ impl SpvBackend for FfiBackend {
 
             let mut wallet_ids_ptr: *mut u8 = std::ptr::null_mut();
             let mut count: usize = 0;
-            let mut error = WalletFFIError::success();
+            let mut error = WalletFFIError::default();
 
             let ok = unsafe {
                 wallet_manager_get_wallet_ids(
@@ -489,7 +490,7 @@ impl SpvBackend for FfiBackend {
             // Now get the balance
             let mut confirmed: u64 = 0;
             let mut unconfirmed: u64 = 0;
-            error = WalletFFIError::success();
+            error = WalletFFIError::default();
 
             let ok = unsafe {
                 wallet_manager_get_wallet_balance(
@@ -532,7 +533,7 @@ impl SpvBackend for FfiBackend {
 
             let mut wallet_ids_ptr: *mut u8 = std::ptr::null_mut();
             let mut count: usize = 0;
-            let mut error = WalletFFIError::success();
+            let mut error = WalletFFIError::default();
 
             let ok = unsafe {
                 wallet_manager_get_wallet_ids(wm_typed, &mut wallet_ids_ptr, &mut count, &mut error)
@@ -555,7 +556,7 @@ impl SpvBackend for FfiBackend {
                     wm_typed,
                     wallet_id.as_ptr(),
                     0,
-                    FFIAccountType::StandardBIP44,
+                    FFIAccountKind::StandardBIP44,
                 )
             };
 
@@ -730,7 +731,7 @@ impl SpvBackend for FfiBackend {
             // Get wallet ID from FFI
             let mut wallet_ids_ptr: *mut u8 = std::ptr::null_mut();
             let mut count: usize = 0;
-            let mut error = WalletFFIError::success();
+            let mut error = WalletFFIError::default();
 
             let ok = unsafe {
                 wallet_manager_get_wallet_ids(wm_typed, &mut wallet_ids_ptr, &mut count, &mut error)
@@ -748,7 +749,7 @@ impl SpvBackend for FfiBackend {
             }
 
             // Get managed wallet info for UTXOs
-            error = WalletFFIError::success();
+            error = WalletFFIError::default();
             let managed_info = unsafe {
                 wallet_manager_get_managed_wallet_info(wm_typed, ffi_wallet_id.as_ptr(), &mut error)
             };
@@ -761,7 +762,7 @@ impl SpvBackend for FfiBackend {
             // Get UTXOs
             let mut utxos_ptr: *mut key_wallet_ffi::utxo::FFIUTXO = std::ptr::null_mut();
             let mut utxo_count: usize = 0;
-            error = WalletFFIError::success();
+            error = WalletFFIError::default();
 
             let ok = unsafe {
                 managed_wallet_get_utxos(managed_info, &mut utxos_ptr, &mut utxo_count, &mut error)
@@ -822,6 +823,7 @@ impl SpvBackend for FfiBackend {
                         is_confirmed: ffi_utxo.confirmations > 0,
                         is_instantlocked: false,
                         is_locked: false,
+                        is_trusted: ffi_utxo.confirmations > 0,
                     });
                 }
 
@@ -829,7 +831,7 @@ impl SpvBackend for FfiBackend {
             }
 
             // Get wallet for change address generation
-            error = WalletFFIError::success();
+            error = WalletFFIError::default();
             let ffi_wallet =
                 unsafe { wallet_manager_get_wallet(wm_typed, ffi_wallet_id.as_ptr(), &mut error) };
 
@@ -842,7 +844,7 @@ impl SpvBackend for FfiBackend {
             }
 
             // Get change address
-            error = WalletFFIError::success();
+            error = WalletFFIError::default();
             let change_addr_ptr = unsafe {
                 managed_wallet_get_next_bip44_change_address(
                     managed_info,
@@ -908,7 +910,7 @@ impl SpvBackend for FfiBackend {
                     external_addresses,
                     internal_addresses,
                     ..
-                } = &account.account_type
+                } = account.managed_account_type()
                 {
                     if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
                         let path = DerivationPathBuilder::new()
@@ -938,7 +940,7 @@ impl SpvBackend for FfiBackend {
                     external_addresses,
                     internal_addresses,
                     ..
-                } = &account.account_type
+                } = account.managed_account_type()
                 {
                     if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
                         let path = DerivationPathBuilder::new()
@@ -1275,9 +1277,10 @@ fn build_network_callbacks(user_data: *mut c_void) -> FFINetworkEventCallbacks {
 
 fn build_wallet_callbacks(user_data: *mut c_void) -> FFIWalletEventCallbacks {
     FFIWalletEventCallbacks {
-        on_transaction_received: Some(on_transaction_received),
-        on_transaction_status_changed: None,
-        on_balance_updated: Some(on_balance_updated),
+        on_transaction_detected: Some(on_transaction_detected),
+        on_transaction_instant_locked: Some(on_transaction_instant_locked),
+        on_block_processed: Some(on_wallet_block_processed),
+        on_sync_height_advanced: None,
         user_data,
     }
 }
@@ -1466,22 +1469,7 @@ extern "C" fn on_peers_updated(connected_count: u32, best_height: u32, user_data
     });
 }
 
-extern "C" fn on_transaction_received(
-    _wallet_id: *const c_char,
-    _account_index: u32,
-    record: *const FFITransactionRecord,
-    user_data: *mut c_void,
-) {
-    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
-    let ctx = unsafe { &*(user_data as *const CallbackContext) };
-
-    if record.is_null() {
-        return;
-    }
-
-    // Safety: record is a valid pointer to an FFITransactionRecord (callback contract).
-    let r = unsafe { &*record };
-
+fn ffi_record_to_info(r: &FFITransactionRecord, network: Network) -> TransactionInfo {
     let (is_instant_send, is_chain_locked) = ffi_transaction_context_flags(r.context.context_type);
 
     let block_info = &r.context.block_info;
@@ -1489,7 +1477,7 @@ extern "C" fn on_transaction_received(
 
     let addresses = extract_ffi_input_addresses(r);
     let inputs = extract_ffi_inputs(r);
-    let outputs = extract_ffi_outputs(r, ctx.network);
+    let outputs = extract_ffi_outputs(r, network);
 
     // Safety: label is a valid C string for the duration of the callback.
     let label = unsafe { extract_ffi_label(r.label) };
@@ -1499,56 +1487,176 @@ extern "C" fn on_transaction_received(
         .unwrap_or_default()
         .as_secs();
 
-    let _ = ctx
-        .event_tx
-        .send(SpvEvent::TransactionReceived(Box::new(TransactionInfo {
-            txid: dashcore::Txid::from_byte_array(r.txid),
-            amount: r.net_amount,
-            direction: ffi_direction_to_direction(r.direction),
-            transaction_type: ffi_type_to_type(r.transaction_type),
-            timestamp: if has_block {
-                block_info.timestamp as u64
-            } else {
-                fallback_timestamp
-            },
-            height: if has_block {
-                Some(block_info.height)
-            } else {
-                None
-            },
-            fee: if r.fee > 0 { Some(r.fee) } else { None },
-            addresses,
-            block_hash: if has_block {
-                Some(dashcore::BlockHash::from_byte_array(block_info.block_hash))
-            } else {
-                None
-            },
-            is_instant_send,
-            is_chain_locked,
-            label,
-            inputs,
-            outputs,
-        })));
+    TransactionInfo {
+        txid: dashcore::Txid::from_byte_array(r.txid),
+        amount: r.net_amount,
+        direction: ffi_direction_to_direction(r.direction),
+        transaction_type: ffi_type_to_type(r.transaction_type),
+        timestamp: if has_block {
+            block_info.timestamp as u64
+        } else {
+            fallback_timestamp
+        },
+        height: if has_block {
+            Some(block_info.height)
+        } else {
+            None
+        },
+        fee: if r.fee > 0 { Some(r.fee) } else { None },
+        addresses,
+        block_hash: if has_block {
+            Some(dashcore::BlockHash::from_byte_array(block_info.block_hash))
+        } else {
+            None
+        },
+        is_instant_send,
+        is_chain_locked,
+        label,
+        inputs,
+        outputs,
+    }
 }
 
-extern "C" fn on_balance_updated(
+fn ffi_balance_to_core(balance: &key_wallet_ffi::types::FFIBalance) -> WalletCoreBalance {
+    WalletCoreBalance::new(
+        balance.confirmed,
+        balance.unconfirmed,
+        balance.immature,
+        balance.locked,
+    )
+}
+
+extern "C" fn on_transaction_detected(
     _wallet_id: *const c_char,
-    spendable: u64,
-    unconfirmed: u64,
-    immature: u64,
-    locked: u64,
+    record: *const FFITransactionRecord,
+    balance: *const key_wallet_ffi::types::FFIBalance,
+    _account_balances: *const dash_spv_ffi::callbacks::FFIAccountBalance,
+    _account_balances_count: u32,
+    _addresses_derived: *const dash_spv_ffi::callbacks::FFIDerivedAddress,
+    _addresses_derived_count: u32,
     user_data: *mut c_void,
 ) {
     // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
     let ctx = unsafe { &*(user_data as *const CallbackContext) };
-    let _ = ctx
-        .event_tx
-        .send(SpvEvent::BalanceUpdated(WalletCoreBalance::new(
-            spendable,
-            unconfirmed,
-            immature,
-            locked,
-        )));
+
+    if !record.is_null() {
+        // Safety: record is a valid pointer for the duration of the callback.
+        let r = unsafe { &*record };
+        let _ = ctx
+            .event_tx
+            .send(SpvEvent::TransactionReceived(Box::new(ffi_record_to_info(
+                r,
+                ctx.network,
+            ))));
+    }
+
+    if !balance.is_null() {
+        // Safety: balance is a valid pointer for the duration of the callback.
+        let b = unsafe { &*balance };
+        let _ = ctx
+            .event_tx
+            .send(SpvEvent::BalanceUpdated(ffi_balance_to_core(b)));
+    }
+}
+
+extern "C" fn on_transaction_instant_locked(
+    _wallet_id: *const c_char,
+    txid: *const [u8; 32],
+    _islock_data: *const u8,
+    _islock_len: usize,
+    balance: *const key_wallet_ffi::types::FFIBalance,
+    _account_balances: *const dash_spv_ffi::callbacks::FFIAccountBalance,
+    _account_balances_count: u32,
+    user_data: *mut c_void,
+) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+    if !txid.is_null() {
+        // Safety: txid is a valid pointer for the duration of the callback.
+        let txid_bytes = unsafe { *txid };
+        let _ = ctx
+            .event_tx
+            .send(SpvEvent::TransactionReceived(Box::new(TransactionInfo {
+                txid: dashcore::Txid::from_byte_array(txid_bytes),
+                is_instant_send: true,
+                amount: 0,
+                direction: TransactionDirection::Incoming,
+                transaction_type: TransactionType::Standard,
+                timestamp: 0,
+                height: None,
+                fee: None,
+                addresses: Vec::new(),
+                block_hash: None,
+                is_chain_locked: false,
+                label: None,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+            })));
+    }
+    if !balance.is_null() {
+        // Safety: balance is a valid pointer for the duration of the callback.
+        let b = unsafe { &*balance };
+        let _ = ctx
+            .event_tx
+            .send(SpvEvent::BalanceUpdated(ffi_balance_to_core(b)));
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+extern "C" fn on_wallet_block_processed(
+    _wallet_id: *const c_char,
+    _height: u32,
+    inserted: *const FFITransactionRecord,
+    inserted_count: u32,
+    updated: *const FFITransactionRecord,
+    updated_count: u32,
+    matured: *const FFITransactionRecord,
+    matured_count: u32,
+    balance: *const key_wallet_ffi::types::FFIBalance,
+    _account_balances: *const dash_spv_ffi::callbacks::FFIAccountBalance,
+    _account_balances_count: u32,
+    _addresses_derived: *const dash_spv_ffi::callbacks::FFIDerivedAddress,
+    _addresses_derived_count: u32,
+    user_data: *mut c_void,
+) {
+    // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
+    let ctx = unsafe { &*(user_data as *const CallbackContext) };
+
+    let send_records = |ptr: *const FFITransactionRecord, count: u32| {
+        if ptr.is_null() || count == 0 {
+            return;
+        }
+        if count as usize > MAX_DETAIL_COUNT {
+            tracing::warn!(
+                count,
+                max = MAX_DETAIL_COUNT,
+                "FFI record count exceeds safety bound, ignoring"
+            );
+            return;
+        }
+        // Safety: ptr is valid for `count` elements for the duration of the callback.
+        let records = unsafe { std::slice::from_raw_parts(ptr, count as usize) };
+        for r in records {
+            let _ = ctx
+                .event_tx
+                .send(SpvEvent::TransactionReceived(Box::new(ffi_record_to_info(
+                    r,
+                    ctx.network,
+                ))));
+        }
+    };
+
+    send_records(inserted, inserted_count);
+    send_records(updated, updated_count);
+    send_records(matured, matured_count);
+
+    if !balance.is_null() {
+        // Safety: balance is a valid pointer for the duration of the callback.
+        let b = unsafe { &*balance };
+        let _ = ctx
+            .event_tx
+            .send(SpvEvent::BalanceUpdated(ffi_balance_to_core(b)));
+    }
 }
 
 extern "C" fn on_progress_update(progress: *const FFISyncProgress, user_data: *mut c_void) {
@@ -1788,12 +1896,24 @@ mod tests {
     use dashcore::consensus::serialize;
     use dashcore::key::PublicKey;
     use dashcore::{Address, Transaction};
+    use key_wallet_ffi::managed_account::FFIAccountType;
     use key_wallet_ffi::types::{
-        FFIBlockInfo, FFIInputDetail, FFIOutputDetail, FFITransactionContext,
+        FFIBalance, FFIBlockInfo, FFIInputDetail, FFIOutputDetail, FFITransactionContext,
         FFITransactionContextType, FFITransactionDirection, FFITransactionType,
     };
 
     use super::*;
+
+    fn empty_account_type() -> FFIAccountType {
+        FFIAccountType {
+            kind: FFIAccountKind::StandardBIP44,
+            index: 0,
+            index_secondary: -1,
+            identity_user: ptr::null(),
+            identity_friend: ptr::null(),
+            key_class: -1,
+        }
+    }
 
     fn empty_record() -> FFITransactionRecord {
         FFITransactionRecord {
@@ -1808,6 +1928,7 @@ mod tests {
             transaction_type: FFITransactionType::Standard,
             direction: FFITransactionDirection::Incoming,
             fee: 0,
+            account_type: empty_account_type(),
             input_details: ptr::null_mut(),
             input_details_count: 0,
             output_details: ptr::null_mut(),
@@ -1816,6 +1937,32 @@ mod tests {
             tx_len: 0,
             label: ptr::null_mut(),
         }
+    }
+
+    fn empty_output_detail(index: u32, role: FFIOutputRole) -> FFIOutputDetail {
+        FFIOutputDetail {
+            index,
+            role,
+            value: 0,
+            address: ptr::null_mut(),
+        }
+    }
+
+    /// Reset borrowed pointer fields on a test-built record before drop.
+    ///
+    /// `FFITransactionRecord::Drop` calls `Box::from_raw` on `input_details`,
+    /// `output_details`, `tx_data`, and `label` whenever they are non-null and
+    /// the matching length is non-zero. Tests build the record with stack or
+    /// borrowed pointers, so we null them out before the record drops to keep
+    /// Drop a no-op.
+    fn clear_borrowed_pointers(record: &mut FFITransactionRecord) {
+        record.input_details = ptr::null_mut();
+        record.input_details_count = 0;
+        record.output_details = ptr::null_mut();
+        record.output_details_count = 0;
+        record.tx_data = ptr::null_mut();
+        record.tx_len = 0;
+        record.label = ptr::null_mut();
     }
 
     #[test]
@@ -1838,6 +1985,9 @@ mod tests {
         record.input_details_count = 1;
 
         let result = extract_ffi_inputs(&record);
+        clear_borrowed_pointers(&mut record);
+        detail.address = ptr::null_mut();
+
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].index, 2);
         assert_eq!(result[0].value, 150_000_000);
@@ -1856,6 +2006,8 @@ mod tests {
         record.input_details_count = 1;
 
         let result = extract_ffi_inputs(&record);
+        clear_borrowed_pointers(&mut record);
+
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].address, "");
     }
@@ -1872,20 +2024,21 @@ mod tests {
         record.input_details_count = MAX_DETAIL_COUNT + 1;
 
         let result = extract_ffi_inputs(&record);
+        clear_borrowed_pointers(&mut record);
+
         assert!(result.is_empty());
     }
 
     #[test]
     fn extract_ffi_outputs_oversized_count_skips_extraction() {
-        let mut detail = FFIOutputDetail {
-            index: 0,
-            role: FFIOutputRole::Received,
-        };
+        let mut detail = empty_output_detail(0, FFIOutputRole::Received);
         let mut record = empty_record();
         record.output_details = &mut detail as *mut _;
         record.output_details_count = MAX_DETAIL_COUNT + 1;
 
         let result = extract_ffi_outputs(&record, Network::Mainnet);
+        clear_borrowed_pointers(&mut record);
+
         assert!(result.is_empty());
     }
 
@@ -1899,10 +2052,7 @@ mod tests {
     #[test]
     fn extract_ffi_outputs_bad_tx_data_falls_back_to_zero_value_empty_address() {
         let garbage: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF];
-        let mut detail = FFIOutputDetail {
-            index: 0,
-            role: FFIOutputRole::Received,
-        };
+        let mut detail = empty_output_detail(0, FFIOutputRole::Received);
         let mut record = empty_record();
         record.output_details = &mut detail as *mut _;
         record.output_details_count = 1;
@@ -1910,6 +2060,8 @@ mod tests {
         record.tx_len = garbage.len();
 
         let result = extract_ffi_outputs(&record, Network::Mainnet);
+        clear_borrowed_pointers(&mut record);
+
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].value, 0);
         assert_eq!(result[0].address, "");
@@ -1918,10 +2070,7 @@ mod tests {
 
     #[test]
     fn extract_ffi_outputs_oversized_tx_len_skips_enrichment() {
-        let mut detail = FFIOutputDetail {
-            index: 0,
-            role: FFIOutputRole::Change,
-        };
+        let mut detail = empty_output_detail(0, FFIOutputRole::Change);
         let dummy_byte: u8 = 0;
         let mut record = empty_record();
         record.output_details = &mut detail as *mut _;
@@ -1930,6 +2079,8 @@ mod tests {
         record.tx_len = 2_000_000;
 
         let result = extract_ffi_outputs(&record, Network::Mainnet);
+        clear_borrowed_pointers(&mut record);
+
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].value, 0);
         assert_eq!(result[0].address, "");
@@ -1948,14 +2099,8 @@ mod tests {
         let tx_bytes = serialize(&tx);
 
         let mut details = [
-            FFIOutputDetail {
-                index: 0,
-                role: FFIOutputRole::Received,
-            },
-            FFIOutputDetail {
-                index: 1,
-                role: FFIOutputRole::Change,
-            },
+            empty_output_detail(0, FFIOutputRole::Received),
+            empty_output_detail(1, FFIOutputRole::Change),
         ];
         let mut record = empty_record();
         record.output_details = details.as_mut_ptr();
@@ -1964,6 +2109,8 @@ mod tests {
         record.tx_len = tx_bytes.len();
 
         let result = extract_ffi_outputs(&record, Network::Testnet);
+        clear_borrowed_pointers(&mut record);
+
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].index, 0);
         assert_eq!(result[0].value, 99_774);
@@ -2039,6 +2186,297 @@ mod tests {
     }
 
     #[test]
+    fn on_transaction_detected_null_record_emits_only_balance() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+        let balance = FFIBalance {
+            confirmed: 5_000,
+            unconfirmed: 0,
+            immature: 0,
+            locked: 0,
+            total: 5_000,
+        };
+
+        on_transaction_detected(
+            ptr::null(),
+            ptr::null(),
+            &balance as *const _,
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        let ev = rx.try_recv().unwrap();
+        match ev {
+            SpvEvent::BalanceUpdated(b) => {
+                assert_eq!(b.confirmed(), 5_000, "confirmed");
+                assert_eq!(b.unconfirmed(), 0, "unconfirmed");
+                assert_eq!(b.immature(), 0, "immature");
+                assert_eq!(b.locked(), 0, "locked");
+            }
+            other => panic!("expected BalanceUpdated, got {:?}", other),
+        }
+        assert!(rx.try_recv().is_err(), "expected exactly 1 event");
+    }
+
+    #[test]
+    fn on_transaction_detected_null_balance_emits_only_received() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+        let mut record = empty_record();
+        record.net_amount = 10_000;
+
+        on_transaction_detected(
+            ptr::null(),
+            &record as *const _,
+            ptr::null(),
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            user_data,
+        );
+        clear_borrowed_pointers(&mut record);
+
+        let ev = rx.try_recv().unwrap();
+        match ev {
+            SpvEvent::TransactionReceived(info) => assert_eq!(info.amount, 10_000),
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+        assert!(rx.try_recv().is_err(), "expected exactly 1 event");
+    }
+
+    #[test]
+    fn on_transaction_detected_both_null_emits_nothing() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+
+        on_transaction_detected(
+            ptr::null(),
+            ptr::null(),
+            ptr::null(),
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        assert!(rx.try_recv().is_err(), "expected no events");
+    }
+
+    #[test]
+    fn on_wallet_block_processed_emits_records_then_balance() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+
+        let mut r1 = empty_record();
+        r1.net_amount = 10_000;
+        let mut r2 = empty_record();
+        r2.net_amount = 20_000;
+        let balance = FFIBalance {
+            confirmed: 30_000,
+            unconfirmed: 0,
+            immature: 0,
+            locked: 0,
+            total: 30_000,
+        };
+
+        on_wallet_block_processed(
+            ptr::null(),
+            100,
+            &r1 as *const _,
+            1,
+            &r2 as *const _,
+            1,
+            ptr::null(),
+            0,
+            &balance as *const _,
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        let ev0 = rx.try_recv().unwrap();
+        let ev1 = rx.try_recv().unwrap();
+        let ev2 = rx.try_recv().unwrap();
+        assert!(rx.try_recv().is_err(), "expected exactly 3 events");
+
+        match ev0 {
+            SpvEvent::TransactionReceived(info) => assert_eq!(info.amount, 10_000),
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+        match ev1 {
+            SpvEvent::TransactionReceived(info) => assert_eq!(info.amount, 20_000),
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+        match ev2 {
+            SpvEvent::BalanceUpdated(b) => {
+                assert_eq!(b.confirmed(), 30_000, "confirmed");
+                assert_eq!(b.unconfirmed(), 0, "unconfirmed");
+                assert_eq!(b.immature(), 0, "immature");
+                assert_eq!(b.locked(), 0, "locked");
+            }
+            other => panic!("expected BalanceUpdated, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn on_wallet_block_processed_oversized_count_skips_records() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+
+        let record = empty_record();
+        let balance = FFIBalance {
+            confirmed: 1_000,
+            unconfirmed: 0,
+            immature: 0,
+            locked: 0,
+            total: 1_000,
+        };
+
+        on_wallet_block_processed(
+            ptr::null(),
+            1,
+            &record as *const _,
+            (MAX_DETAIL_COUNT as u32) + 1,
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            &balance as *const _,
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        let ev = rx.try_recv().unwrap();
+        assert!(
+            matches!(ev, SpvEvent::BalanceUpdated(_)),
+            "oversized count must be skipped, only balance emitted"
+        );
+        assert!(rx.try_recv().is_err(), "expected exactly 1 event");
+    }
+
+    #[test]
+    fn on_wallet_block_processed_null_balance_emits_only_records() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+
+        let mut r1 = empty_record();
+        r1.net_amount = 5_000;
+
+        on_wallet_block_processed(
+            ptr::null(),
+            1,
+            &r1 as *const _,
+            1,
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            ptr::null(),
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        let ev = rx.try_recv().unwrap();
+        assert!(
+            matches!(ev, SpvEvent::TransactionReceived(_)),
+            "expected TransactionReceived"
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "null balance must not emit BalanceUpdated"
+        );
+    }
+
+    #[test]
+    fn ffi_record_to_info_mempool_uses_fallback_timestamp_and_no_height() {
+        let mut record = empty_record();
+        record.net_amount = 55_000;
+        record.direction = FFITransactionDirection::Incoming;
+        record.context.context_type = FFITransactionContextType::Mempool;
+
+        let info = ffi_record_to_info(&record, Network::Mainnet);
+
+        assert_eq!(info.amount, 55_000);
+        assert_eq!(info.height, None);
+        assert!(!info.is_instant_send);
+        assert!(!info.is_chain_locked);
+        assert!(info.timestamp > 0);
+    }
+
+    #[test]
+    fn ffi_record_to_info_instant_send_sets_flag() {
+        let mut record = empty_record();
+        record.context.context_type = FFITransactionContextType::InstantSend;
+
+        let info = ffi_record_to_info(&record, Network::Mainnet);
+
+        assert!(info.is_instant_send);
+        assert!(!info.is_chain_locked);
+        assert_eq!(info.height, None);
+    }
+
+    #[test]
+    fn ffi_record_to_info_in_block_uses_block_timestamp_and_height() {
+        let mut record = empty_record();
+        record.context.context_type = FFITransactionContextType::InBlock;
+        record.context.block_info = FFIBlockInfo {
+            height: 800,
+            block_hash: [1u8; 32],
+            timestamp: 1_700_000_000,
+        };
+
+        let info = ffi_record_to_info(&record, Network::Mainnet);
+
+        assert_eq!(info.height, Some(800));
+        assert_eq!(info.timestamp, 1_700_000_000);
+        assert!(!info.is_instant_send);
+        assert!(!info.is_chain_locked);
+    }
+
+    #[test]
     fn extract_ffi_label_null_returns_none() {
         let result = unsafe { extract_ffi_label(ptr::null()) };
         assert_eq!(result, None);
@@ -2056,5 +2494,103 @@ mod tests {
         let s = CString::new("coffee payment").unwrap();
         let result = unsafe { extract_ffi_label(s.as_ptr()) };
         assert_eq!(result, Some("coffee payment".to_string()));
+    }
+
+    #[test]
+    fn on_transaction_instant_locked_null_txid_emits_only_balance() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+        let balance = FFIBalance {
+            confirmed: 1_000,
+            unconfirmed: 200,
+            immature: 50,
+            locked: 0,
+            total: 1_250,
+        };
+
+        on_transaction_instant_locked(
+            ptr::null(),
+            ptr::null(),
+            ptr::null(),
+            0,
+            &balance as *const _,
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        let ev = rx.try_recv().unwrap();
+        match ev {
+            SpvEvent::BalanceUpdated(b) => {
+                assert_eq!(b.confirmed(), 1_000, "confirmed");
+                assert_eq!(b.unconfirmed(), 200, "unconfirmed");
+                assert_eq!(b.immature(), 50, "immature");
+                assert_eq!(b.locked(), 0, "locked");
+            }
+            other => panic!("expected BalanceUpdated, got {:?}", other),
+        }
+        assert!(rx.try_recv().is_err(), "expected exactly 1 event");
+    }
+
+    #[test]
+    fn on_transaction_instant_locked_non_null_txid_emits_received_with_is_instant_send() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+        let txid: [u8; 32] = [0xAB; 32];
+
+        on_transaction_instant_locked(
+            ptr::null(),
+            &txid as *const _,
+            ptr::null(),
+            0,
+            ptr::null(),
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        let ev = rx.try_recv().unwrap();
+        match ev {
+            SpvEvent::TransactionReceived(info) => {
+                assert!(info.is_instant_send);
+                assert_eq!(info.amount, 0);
+            }
+            other => panic!("expected TransactionReceived, got {:?}", other),
+        }
+        assert!(rx.try_recv().is_err(), "expected exactly 1 event");
+    }
+
+    #[test]
+    fn on_transaction_instant_locked_both_null_emits_nothing() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+
+        on_transaction_instant_locked(
+            ptr::null(),
+            ptr::null(),
+            ptr::null(),
+            0,
+            ptr::null(),
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        assert!(rx.try_recv().is_err(), "expected no events");
     }
 }
