@@ -1326,6 +1326,35 @@ mod tests {
     }
 
     #[test]
+    fn from_record_non_empty_label_is_preserved() {
+        let tx = Transaction::dummy_empty();
+        let mut record = make_record(
+            tx,
+            TransactionContext::Mempool,
+            Vec::new(),
+            Vec::new(),
+            1_000,
+        );
+        record.label = "grocery store".to_string();
+        let info = TransactionInfo::from_record(&record, 0, Network::Testnet);
+        assert_eq!(info.label, Some("grocery store".to_string()));
+    }
+
+    #[test]
+    fn from_record_empty_label_maps_to_none() {
+        let tx = Transaction::dummy_empty();
+        let record = make_record(
+            tx,
+            TransactionContext::Mempool,
+            Vec::new(),
+            Vec::new(),
+            1_000,
+        );
+        let info = TransactionInfo::from_record(&record, 0, Network::Testnet);
+        assert_eq!(info.label, None);
+    }
+
+    #[test]
     fn extract_record_addresses_deduplicates() {
         let addr_a = test_address();
         // Create a distinct address using a different public key

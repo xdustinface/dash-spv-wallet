@@ -2377,6 +2377,47 @@ mod tests {
     }
 
     #[test]
+    fn on_wallet_block_processed_null_balance_emits_only_records() {
+        let (tx, mut rx) = super::super::events::event_channel(32);
+        let ctx = CallbackContext {
+            event_tx: tx,
+            progress: std::sync::Arc::new(std::sync::RwLock::new(SyncProgress::default())),
+            network: Network::Mainnet,
+        };
+        let user_data = &ctx as *const CallbackContext as *mut c_void;
+
+        let mut r1 = empty_record();
+        r1.net_amount = 5_000;
+
+        on_wallet_block_processed(
+            ptr::null(),
+            1,
+            &r1 as *const _,
+            1,
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            ptr::null(),
+            ptr::null(),
+            0,
+            ptr::null(),
+            0,
+            user_data,
+        );
+
+        let ev = rx.try_recv().unwrap();
+        assert!(
+            matches!(ev, SpvEvent::TransactionReceived(_)),
+            "expected TransactionReceived"
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "null balance must not emit BalanceUpdated"
+        );
+    }
+
+    #[test]
     fn ffi_record_to_info_mempool_uses_fallback_timestamp_and_no_height() {
         let mut record = empty_record();
         record.net_amount = 55_000;
