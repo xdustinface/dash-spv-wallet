@@ -1916,6 +1916,23 @@ mod tests {
         }
     }
 
+    /// Reset borrowed pointer fields on a test-built record before drop.
+    ///
+    /// `FFITransactionRecord::Drop` calls `Box::from_raw` on `input_details`,
+    /// `output_details`, `tx_data`, and `label` whenever they are non-null and
+    /// the matching length is non-zero. Tests build the record with stack or
+    /// borrowed pointers, so we null them out before the record drops to keep
+    /// Drop a no-op.
+    fn clear_borrowed_pointers(record: &mut FFITransactionRecord) {
+        record.input_details = ptr::null_mut();
+        record.input_details_count = 0;
+        record.output_details = ptr::null_mut();
+        record.output_details_count = 0;
+        record.tx_data = ptr::null_mut();
+        record.tx_len = 0;
+        record.label = ptr::null_mut();
+    }
+
     #[test]
     fn extract_ffi_inputs_null_pointer_returns_empty() {
         let record = empty_record();
@@ -1940,6 +1957,9 @@ mod tests {
         assert_eq!(result[0].index, 2);
         assert_eq!(result[0].value, 150_000_000);
         assert_eq!(result[0].address, "XqN8a73jYfHtFbEjz2XYBfrCHn6YQwBGsP");
+
+        clear_borrowed_pointers(&mut record);
+        detail.address = ptr::null_mut();
     }
 
     #[test]
@@ -1956,6 +1976,8 @@ mod tests {
         let result = extract_ffi_inputs(&record);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].address, "");
+
+        clear_borrowed_pointers(&mut record);
     }
 
     #[test]
@@ -1971,6 +1993,8 @@ mod tests {
 
         let result = extract_ffi_inputs(&record);
         assert!(result.is_empty());
+
+        clear_borrowed_pointers(&mut record);
     }
 
     #[test]
@@ -1982,6 +2006,8 @@ mod tests {
 
         let result = extract_ffi_outputs(&record, Network::Mainnet);
         assert!(result.is_empty());
+
+        clear_borrowed_pointers(&mut record);
     }
 
     #[test]
@@ -2006,6 +2032,8 @@ mod tests {
         assert_eq!(result[0].value, 0);
         assert_eq!(result[0].address, "");
         assert_eq!(result[0].role, OutputRole::Received);
+
+        clear_borrowed_pointers(&mut record);
     }
 
     #[test]
@@ -2022,6 +2050,8 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].value, 0);
         assert_eq!(result[0].address, "");
+
+        clear_borrowed_pointers(&mut record);
     }
 
     #[test]
@@ -2055,6 +2085,8 @@ mod tests {
         assert_eq!(result[1].index, 1);
         assert_eq!(result[1].value, 226);
         assert_eq!(result[1].role, OutputRole::Change);
+
+        clear_borrowed_pointers(&mut record);
     }
 
     #[test]
