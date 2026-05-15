@@ -899,8 +899,6 @@ impl SpvBackend for FfiBackend {
         let tip_height = self.tip_height().unwrap_or(0);
         let accounts = info.accounts();
 
-        // Resolve the derivation path for an input address by searching the
-        // standard BIP44 accounts first, then the BIP32 accounts.
         let path_resolver = |address: dashcore::Address| -> Option<key_wallet::DerivationPath> {
             accounts
                 .standard_bip44_accounts
