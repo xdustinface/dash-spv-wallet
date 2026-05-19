@@ -908,7 +908,7 @@ impl SpvBackend for FfiBackend {
         };
 
         let fee = FeeRate::new(fee_rate as u64);
-        let (tx, _fee) = TransactionBuilder::new()
+        let (tx, actual_fee) = TransactionBuilder::new()
             .set_fee_rate(fee)
             .set_change_address(change_address)
             .add_output(&recipient, amount)
@@ -920,6 +920,7 @@ impl SpvBackend for FfiBackend {
             .map_err(builder_error_to_backend)?;
 
         let txid = tx.txid();
+        tracing::debug!(txid = %txid, actual_fee, "transaction built");
 
         // Serialize and broadcast via FFI
         let tx_bytes = dashcore::consensus::serialize(&tx);

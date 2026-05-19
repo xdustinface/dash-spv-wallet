@@ -441,7 +441,7 @@ impl SpvBackend for NativeBackend {
         };
 
         let fee = FeeRate::new(fee_rate as u64);
-        let (tx, _fee) = TransactionBuilder::new()
+        let (tx, actual_fee) = TransactionBuilder::new()
             .set_fee_rate(fee)
             .set_change_address(change_address)
             .add_output(&recipient, amount)
@@ -469,6 +469,7 @@ impl SpvBackend for NativeBackend {
             })?;
 
         let txid = tx.txid();
+        tracing::debug!(txid = %txid, actual_fee, "transaction built");
 
         // Drop the wallet lock before broadcasting
         drop(wallet_guard);
