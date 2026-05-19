@@ -36,11 +36,9 @@ use dashcore::hashes::Hash;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
-use key_wallet::wallet::managed_wallet_info::coin_selection::{SelectionError, SelectionStrategy};
+use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
 use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
-use key_wallet::wallet::managed_wallet_info::transaction_builder::{
-    BuilderError, TransactionBuilder,
-};
+use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet_ffi::error::FFIError as WalletFFIError;
 use key_wallet_ffi::managed_account::{
@@ -917,7 +915,7 @@ impl SpvBackend for FfiBackend {
             .add_inputs(utxos)
             .build_signed(wallet, path_resolver)
             .await
-            .map_err(builder_error_to_backend)?;
+            .map_err(super::builder_error_to_backend)?;
 
         let txid = tx.txid();
         tracing::debug!(txid = %txid, actual_fee, "transaction built");
@@ -1030,26 +1028,6 @@ fn read_wallet_ffi_error(error: &WalletFFIError) -> String {
 
 fn network_to_ffi(network: Network) -> FFINetwork {
     FFINetwork::from(network)
-}
-
-fn builder_error_to_backend(e: BuilderError) -> BackendError {
-    match e {
-        BuilderError::InsufficientFunds {
-            available,
-            required,
-        } => BackendError::InsufficientFunds {
-            available,
-            required,
-        },
-        BuilderError::CoinSelection(SelectionError::InsufficientFunds {
-            available,
-            required,
-        }) => BackendError::InsufficientFunds {
-            available,
-            required,
-        },
-        other => BackendError::Internal(other.to_string()),
-    }
 }
 
 fn ffi_sync_state_to_rust(state: dash_spv_ffi::types::FFISyncState) -> SyncState {

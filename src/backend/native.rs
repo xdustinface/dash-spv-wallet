@@ -22,10 +22,8 @@ use key_wallet::mnemonic::Language;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
-use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
 use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
-use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
@@ -450,23 +448,7 @@ impl SpvBackend for NativeBackend {
             .add_inputs(utxos)
             .build_signed(wallet, path_resolver)
             .await
-            .map_err(|e| match e {
-                BuilderError::InsufficientFunds {
-                    available,
-                    required,
-                } => BackendError::InsufficientFunds {
-                    available,
-                    required,
-                },
-                BuilderError::CoinSelection(SelectionError::InsufficientFunds {
-                    available,
-                    required,
-                }) => BackendError::InsufficientFunds {
-                    available,
-                    required,
-                },
-                other => BackendError::Internal(other.to_string()),
-            })?;
+            .map_err(super::builder_error_to_backend)?;
 
         let txid = tx.txid();
         tracing::debug!(txid = %txid, actual_fee, "transaction built");

@@ -1,5 +1,10 @@
 use std::path::Path;
 
+use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
+use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
+
+use self::error::BackendError;
+
 pub mod dispatch;
 pub mod error;
 pub mod events;
@@ -9,6 +14,26 @@ pub mod mock;
 pub mod native;
 pub mod r#trait;
 pub mod types;
+
+fn builder_error_to_backend(e: BuilderError) -> BackendError {
+    match e {
+        BuilderError::InsufficientFunds {
+            available,
+            required,
+        } => BackendError::InsufficientFunds {
+            available,
+            required,
+        },
+        BuilderError::CoinSelection(SelectionError::InsufficientFunds {
+            available,
+            required,
+        }) => BackendError::InsufficientFunds {
+            available,
+            required,
+        },
+        other => BackendError::Internal(other.to_string()),
+    }
+}
 
 /// Recursively compute the total size of a directory.
 fn dir_size(dir: &Path) -> u64 {
