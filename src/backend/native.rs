@@ -13,8 +13,8 @@ use dash_spv::storage::DiskStorageManager;
 use dash_spv::sync::SyncEvent;
 use dash_spv::{ClientConfig, DashSpvClient, MempoolStrategy};
 use dashcore::hashes::Hash;
+use key_wallet::Mnemonic;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::managed_account::managed_account_type::ManagedAccountType;
 use key_wallet::managed_account::transaction_record::{
     OutputRole as UpstreamOutputRole, TransactionRecord,
 };
@@ -22,14 +22,11 @@ use key_wallet::mnemonic::Language;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
-use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
 use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
-use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use key_wallet::{DerivationPathBuilder, Mnemonic};
 use key_wallet_manager::{WalletEvent, WalletManager};
 use tokio_util::sync::CancellationToken;
 
@@ -268,7 +265,6 @@ impl SpvBackend for NativeBackend {
         wallet
             .create_wallet_from_mnemonic(
                 mnemonic,
-                "",
                 0,
                 WalletAccountCreationOptions::SpecificAccounts(
                     BTreeSet::from([0]),
@@ -304,7 +300,6 @@ impl SpvBackend for NativeBackend {
         wallet
             .create_wallet_from_mnemonic(
                 &mnemonic,
-                "",
                 0,
                 WalletAccountCreationOptions::SpecificAccounts(
                     BTreeSet::from([0]),
@@ -427,124 +422,36 @@ impl SpvBackend for NativeBackend {
                 BackendError::Internal("failed to generate change address".to_string())
             })?;
 
-        // Get wallet reference for key derivation
+        // Get wallet reference for signing and the managed accounts for path resolution
         let (wallet, info) = wallet_guard
             .get_wallet_and_info(wallet_id)
             .ok_or(BackendError::NoWallet)?;
 
         let tip_height = self.tip_height().unwrap_or(0);
-        let network = self.config.network;
         let accounts = info.accounts();
 
-        // Build the key provider closure that derives private keys for UTXOs
-        let key_provider = |utxo: &key_wallet::Utxo| -> Option<dashcore::secp256k1::SecretKey> {
-            // Search BIP44 accounts first, then BIP32
-            for (account_index, account) in &accounts.standard_bip44_accounts {
-                if let ManagedAccountType::Standard {
-                    external_addresses,
-                    internal_addresses,
-                    ..
-                } = account.managed_account_type()
-                {
-                    // Check external (receive) addresses
-                    if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
-                        let path = DerivationPathBuilder::new()
-                            .coin_type(coin_type_for_network(network))
-                            .account(*account_index)
-                            .change(0)
-                            .address_index(addr_idx)
-                            .bip44()
-                            .ok()?;
-                        return wallet.derive_private_key(&path).ok();
-                    }
-                    // Check internal (change) addresses
-                    if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
-                        let path = DerivationPathBuilder::new()
-                            .coin_type(coin_type_for_network(network))
-                            .account(*account_index)
-                            .change(1)
-                            .address_index(addr_idx)
-                            .bip44()
-                            .ok()?;
-                        return wallet.derive_private_key(&path).ok();
-                    }
-                }
-            }
-
-            for (account_index, account) in &accounts.standard_bip32_accounts {
-                if let ManagedAccountType::Standard {
-                    external_addresses,
-                    internal_addresses,
-                    ..
-                } = account.managed_account_type()
-                {
-                    if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
-                        let path = DerivationPathBuilder::new()
-                            .account(*account_index)
-                            .change(0)
-                            .address_index(addr_idx)
-                            .build()
-                            .ok()?;
-                        return wallet.derive_private_key(&path).ok();
-                    }
-                    if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
-                        let path = DerivationPathBuilder::new()
-                            .account(*account_index)
-                            .change(1)
-                            .address_index(addr_idx)
-                            .build()
-                            .ok()?;
-                        return wallet.derive_private_key(&path).ok();
-                    }
-                }
-            }
-
-            None
+        let path_resolver = |address: dashcore::Address| -> Option<key_wallet::DerivationPath> {
+            accounts
+                .standard_bip44_accounts
+                .values()
+                .chain(accounts.standard_bip32_accounts.values())
+                .find_map(|account| account.address_derivation_path(&address))
         };
 
-        // Build the transaction
         let fee = FeeRate::new(fee_rate as u64);
-        let mut builder = TransactionBuilder::new()
+        let (tx, actual_fee) = TransactionBuilder::new()
             .set_fee_rate(fee)
             .set_change_address(change_address)
             .add_output(&recipient, amount)
-            .map_err(|e| BackendError::Internal(e.to_string()))?
-            .select_inputs(
-                &utxos,
-                SelectionStrategy::BranchAndBound,
-                tip_height,
-                key_provider,
-            )
-            .map_err(|e| match e {
-                BuilderError::InsufficientFunds {
-                    available,
-                    required,
-                } => BackendError::InsufficientFunds {
-                    available,
-                    required,
-                },
-                BuilderError::CoinSelection(SelectionError::InsufficientFunds {
-                    available,
-                    required,
-                }) => BackendError::InsufficientFunds {
-                    available,
-                    required,
-                },
-                other => BackendError::Internal(other.to_string()),
-            })?;
-
-        let tx = builder.build().map_err(|e| match e {
-            BuilderError::InsufficientFunds {
-                available,
-                required,
-            } => BackendError::InsufficientFunds {
-                available,
-                required,
-            },
-            other => BackendError::Internal(other.to_string()),
-        })?;
+            .set_selection_strategy(SelectionStrategy::BranchAndBound)
+            .set_current_height(tip_height)
+            .add_inputs(utxos)
+            .build_signed(wallet, path_resolver)
+            .await
+            .map_err(super::builder_error_to_backend)?;
 
         let txid = tx.txid();
+        tracing::debug!(txid = %txid, actual_fee, "transaction built");
 
         // Drop the wallet lock before broadcasting
         drop(wallet_guard);
@@ -576,14 +483,6 @@ impl SpvBackend for NativeBackend {
 
     fn subscribe_events(&self) -> EventReceiver {
         self.event_tx.subscribe()
-    }
-}
-
-/// Return the BIP44 coin type for the given network.
-fn coin_type_for_network(network: Network) -> u32 {
-    match network {
-        Network::Mainnet => 5,
-        _ => 1,
     }
 }
 
@@ -701,6 +600,7 @@ fn map_wallet_event(event: WalletEvent, network: Network) -> Vec<SpvEvent> {
             events
         }
         WalletEvent::SyncHeightAdvanced { .. } => Vec::new(),
+        WalletEvent::TransactionsChainlocked { .. } => Vec::new(),
     }
 }
 
@@ -886,18 +786,6 @@ mod tests {
         ])
         .unwrap();
         Address::p2pkh(&pk, Network::Testnet)
-    }
-
-    #[test]
-    fn coin_type_mainnet_returns_5() {
-        assert_eq!(coin_type_for_network(Network::Mainnet), 5);
-    }
-
-    #[test]
-    fn coin_type_non_mainnet_returns_1() {
-        assert_eq!(coin_type_for_network(Network::Testnet), 1);
-        assert_eq!(coin_type_for_network(Network::Regtest), 1);
-        assert_eq!(coin_type_for_network(Network::Devnet), 1);
     }
 
     #[test]
@@ -1196,6 +1084,7 @@ mod tests {
         let event = WalletEvent::BlockProcessed {
             wallet_id: [0; 32],
             height: 100,
+            chain_lock: None,
             inserted: Vec::new(),
             updated: Vec::new(),
             matured: Vec::new(),
@@ -1235,6 +1124,7 @@ mod tests {
         let event = WalletEvent::BlockProcessed {
             wallet_id: [0; 32],
             height: 200,
+            chain_lock: None,
             inserted: vec![record1],
             updated: vec![record2],
             matured: Vec::new(),
@@ -1284,6 +1174,21 @@ mod tests {
         let event = WalletEvent::SyncHeightAdvanced {
             wallet_id: [0; 32],
             height: 200,
+        };
+        let mapped = map_wallet_event(event, Network::Mainnet);
+        assert!(mapped.is_empty());
+    }
+
+    #[test]
+    fn map_wallet_event_transactions_chainlocked_is_empty() {
+        let event = WalletEvent::TransactionsChainlocked {
+            wallet_id: [0; 32],
+            chain_lock: ChainLock {
+                block_height: 0,
+                block_hash: BlockHash::all_zeros(),
+                signature: BLSSignature::from([0; 96]),
+            },
+            per_account: BTreeMap::new(),
         };
         let mapped = map_wallet_event(event, Network::Mainnet);
         assert!(mapped.is_empty());

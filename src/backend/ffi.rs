@@ -33,9 +33,7 @@ use dash_spv_ffi::types::{
     FFISyncProgress,
 };
 use dashcore::hashes::Hash;
-use key_wallet::DerivationPathBuilder;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::managed_account::managed_account_type::ManagedAccountType;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
@@ -361,12 +359,11 @@ impl SpvBackend for FfiBackend {
             let mut error = WalletFFIError::default();
 
             // Safety: wm is valid (just obtained), c_mnemonic is a valid C string,
-            // passphrase is null (empty passphrase), error is a valid stack variable.
+            // error is a valid stack variable.
             let ok = unsafe {
                 wallet_manager_add_wallet_from_mnemonic(
                     wm as *mut key_wallet_ffi::FFIWalletManager,
                     c_mnemonic.as_ptr(),
-                    std::ptr::null(),
                     &mut error,
                 )
             };
@@ -418,7 +415,6 @@ impl SpvBackend for FfiBackend {
                 wallet_manager_add_wallet_from_mnemonic(
                     wm as *mut key_wallet_ffi::FFIWalletManager,
                     c_mnemonic.as_ptr(),
-                    std::ptr::null(),
                     &mut error,
                 )
             };
@@ -698,7 +694,6 @@ impl SpvBackend for FfiBackend {
         let wallet_id = local_wm
             .create_wallet_from_mnemonic(
                 &mnemonic_str,
-                "",
                 0,
                 WalletAccountCreationOptions::SpecificAccounts(
                     BTreeSet::from([0]),
@@ -901,89 +896,29 @@ impl SpvBackend for FfiBackend {
 
         let tip_height = self.tip_height().unwrap_or(0);
         let accounts = info.accounts();
-        let coin_type = coin_type_for_network(network);
 
-        // Build the key provider closure that derives private keys for UTXOs
-        let key_provider = |utxo: &key_wallet::Utxo| -> Option<dashcore::secp256k1::SecretKey> {
-            for (account_index, account) in &accounts.standard_bip44_accounts {
-                if let ManagedAccountType::Standard {
-                    external_addresses,
-                    internal_addresses,
-                    ..
-                } = account.managed_account_type()
-                {
-                    if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
-                        let path = DerivationPathBuilder::new()
-                            .coin_type(coin_type)
-                            .account(*account_index)
-                            .change(0)
-                            .address_index(addr_idx)
-                            .bip44()
-                            .ok()?;
-                        return wallet.derive_private_key(&path).ok();
-                    }
-                    if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
-                        let path = DerivationPathBuilder::new()
-                            .coin_type(coin_type)
-                            .account(*account_index)
-                            .change(1)
-                            .address_index(addr_idx)
-                            .bip44()
-                            .ok()?;
-                        return wallet.derive_private_key(&path).ok();
-                    }
-                }
-            }
-
-            for (account_index, account) in &accounts.standard_bip32_accounts {
-                if let ManagedAccountType::Standard {
-                    external_addresses,
-                    internal_addresses,
-                    ..
-                } = account.managed_account_type()
-                {
-                    if let Some(addr_idx) = external_addresses.address_index(&utxo.address) {
-                        let path = DerivationPathBuilder::new()
-                            .account(*account_index)
-                            .change(0)
-                            .address_index(addr_idx)
-                            .build()
-                            .ok()?;
-                        return wallet.derive_private_key(&path).ok();
-                    }
-                    if let Some(addr_idx) = internal_addresses.address_index(&utxo.address) {
-                        let path = DerivationPathBuilder::new()
-                            .account(*account_index)
-                            .change(1)
-                            .address_index(addr_idx)
-                            .build()
-                            .ok()?;
-                        return wallet.derive_private_key(&path).ok();
-                    }
-                }
-            }
-
-            None
+        let path_resolver = |address: dashcore::Address| -> Option<key_wallet::DerivationPath> {
+            accounts
+                .standard_bip44_accounts
+                .values()
+                .chain(accounts.standard_bip32_accounts.values())
+                .find_map(|account| account.address_derivation_path(&address))
         };
 
-        // Build the transaction
         let fee = FeeRate::new(fee_rate as u64);
-        let mut builder = TransactionBuilder::new()
+        let (tx, actual_fee) = TransactionBuilder::new()
             .set_fee_rate(fee)
             .set_change_address(change_address)
             .add_output(&recipient, amount)
-            .map_err(|e| BackendError::Internal(e.to_string()))?
-            .select_inputs(
-                &utxos,
-                SelectionStrategy::BranchAndBound,
-                tip_height,
-                key_provider,
-            )
-            .map_err(builder_error_to_backend)?;
-
-        let tx = builder.build().map_err(builder_error_to_backend)?;
+            .set_selection_strategy(SelectionStrategy::BranchAndBound)
+            .set_current_height(tip_height)
+            .add_inputs(utxos)
+            .build_signed(wallet, path_resolver)
+            .await
+            .map_err(super::builder_error_to_backend)?;
 
         let txid = tx.txid();
+        tracing::debug!(txid = %txid, actual_fee, "transaction built");
 
         // Serialize and broadcast via FFI
         let tx_bytes = dashcore::consensus::serialize(&tx);
@@ -1093,39 +1028,6 @@ fn read_wallet_ffi_error(error: &WalletFFIError) -> String {
 
 fn network_to_ffi(network: Network) -> FFINetwork {
     FFINetwork::from(network)
-}
-
-/// Return the BIP44 coin type for the given network.
-fn coin_type_for_network(network: Network) -> u32 {
-    match network {
-        Network::Mainnet => 5,
-        _ => 1,
-    }
-}
-
-fn builder_error_to_backend(
-    e: key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError,
-) -> BackendError {
-    use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
-    use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
-
-    match e {
-        BuilderError::InsufficientFunds {
-            available,
-            required,
-        } => BackendError::InsufficientFunds {
-            available,
-            required,
-        },
-        BuilderError::CoinSelection(SelectionError::InsufficientFunds {
-            available,
-            required,
-        }) => BackendError::InsufficientFunds {
-            available,
-            required,
-        },
-        other => BackendError::Internal(other.to_string()),
-    }
 }
 
 fn ffi_sync_state_to_rust(state: dash_spv_ffi::types::FFISyncState) -> SyncState {
@@ -1281,6 +1183,7 @@ fn build_wallet_callbacks(user_data: *mut c_void) -> FFIWalletEventCallbacks {
         on_transaction_instant_locked: Some(on_transaction_instant_locked),
         on_block_processed: Some(on_wallet_block_processed),
         on_sync_height_advanced: None,
+        on_transactions_chainlocked: None,
         user_data,
     }
 }
@@ -1617,6 +1520,9 @@ extern "C" fn on_wallet_block_processed(
     _account_balances_count: u32,
     _addresses_derived: *const dash_spv_ffi::callbacks::FFIDerivedAddress,
     _addresses_derived_count: u32,
+    _cl_height: u32,
+    _cl_hash: *const [u8; 32],
+    _cl_signature: *const [u8; 96],
     user_data: *mut c_void,
 ) {
     // Safety: user_data is a valid CallbackContext pointer (borrowed, not owned).
@@ -2318,6 +2224,9 @@ mod tests {
             0,
             ptr::null(),
             0,
+            0,
+            ptr::null(),
+            ptr::null(),
             user_data,
         );
 
@@ -2378,6 +2287,9 @@ mod tests {
             0,
             ptr::null(),
             0,
+            0,
+            ptr::null(),
+            ptr::null(),
             user_data,
         );
 
@@ -2416,6 +2328,9 @@ mod tests {
             0,
             ptr::null(),
             0,
+            0,
+            ptr::null(),
+            ptr::null(),
             user_data,
         );
 
