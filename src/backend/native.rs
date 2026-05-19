@@ -1198,6 +1198,21 @@ mod tests {
     }
 
     #[test]
+    fn map_wallet_event_transactions_chainlocked_is_empty() {
+        let event = WalletEvent::TransactionsChainlocked {
+            wallet_id: [0; 32],
+            chain_lock: ChainLock {
+                block_height: 0,
+                block_hash: BlockHash::all_zeros(),
+                signature: BLSSignature::from([0; 96]),
+            },
+            per_account: BTreeMap::new(),
+        };
+        let mapped = map_wallet_event(event, Network::Mainnet);
+        assert!(mapped.is_empty());
+    }
+
+    #[test]
     fn from_record_in_block_uses_block_timestamp_over_fallback() {
         let tx = Transaction::dummy_empty();
         let block_hash = BlockHash::all_zeros();
